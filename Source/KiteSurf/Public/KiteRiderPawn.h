@@ -9,6 +9,8 @@ class UStaticMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
+class UBoardMovementComponent;
+class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
 
@@ -36,6 +38,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetKiteAzimuthDeg() const;
 
+	UInputMappingContext* GetDefaultMappingContext() const { return DefaultMappingContext.Get(); }
+	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
+	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
+	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
+
+	UKiteComponent* GetKite() const { return Kite.Get(); }
+	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UKiteComponent> Kite;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -52,6 +65,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWindComponent> Wind;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoardMovementComponent> BoardMovement;
+
 	// Enhanced Input
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -62,9 +78,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SheetAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> EdgeAction;
+
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
+	void OnEdgeTriggered(const FInputActionValue& Value);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

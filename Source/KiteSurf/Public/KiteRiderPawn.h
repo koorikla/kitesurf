@@ -36,6 +36,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetKiteAzimuthDeg() const;
 
+	UInputMappingContext* GetDefaultMappingContext() const { return DefaultMappingContext.Get(); }
+	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
+	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
+
 protected:
 	virtual void BeginPlay() override;
 

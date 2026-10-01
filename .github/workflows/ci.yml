@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, linux, unreal]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Build KiteSurfEditor
+        run: scripts/build.sh Development
+
+      - name: Run Automation Tests
+        run: scripts/run-tests.sh -nullrhi

@@ -1,0 +1,14 @@
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+.vs/
+.vscode/
+.idea/
+*.sln
+*.code-workspace
+Makefile
+CMakeLists.txt
+.ubt/
+.engine-path

@@ -14,7 +14,10 @@ public class KiteSurf : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"PhysicsCore",
-			"Water"
+			"Water",
+			"UMG",
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

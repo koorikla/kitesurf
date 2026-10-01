@@ -37,4 +37,7 @@ public:
 	/** Injectable time override for automated tests when World is null */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind")
 	float TimeOverride;
+
+protected:
+	virtual void BeginPlay() override;
 };

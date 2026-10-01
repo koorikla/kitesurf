@@ -16,6 +16,21 @@ public:
 
 	virtual void DrawHUD() override;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
+	TSubclassOf<class UKiteSurfPauseMenuWidget> PauseMenuWidgetClass;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ShowPauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void HidePauseMenu();
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI")
+	TObjectPtr<class UKiteSurfPauseMenuWidget> ActivePauseMenuWidget;
+
 	/** Converts velocity in cm/s to formatted knots string, e.g. "15.0 kn" */
 	UFUNCTION(BlueprintPure, Category = "KiteSurf|HUD")
 	static FString FormatKnots(float SpeedCmPerSec, bool bIncludeUnit = true);

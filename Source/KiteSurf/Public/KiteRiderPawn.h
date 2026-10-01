@@ -84,10 +84,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> EdgeAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> PauseAction;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePause();
+
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
+	void OnPauseTriggered(const FInputActionValue& Value);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

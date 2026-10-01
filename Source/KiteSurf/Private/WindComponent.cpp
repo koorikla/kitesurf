@@ -1,4 +1,6 @@
 #include "WindComponent.h"
+#include "UI/KiteSurfGameInstance.h"
+#include "Engine/World.h"
 
 UWindComponent::UWindComponent()
 {
@@ -10,6 +12,28 @@ UWindComponent::UWindComponent()
 	DirectionDriftDeg = 10.0f;
 	ShearHeightCm = 1000.0f;
 	TimeOverride = 0.0f;
+}
+
+void UWindComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			if (GI->PendingWindKnots > 0.0f)
+			{
+				const float SpeedCmPerSec = GI->PendingWindKnots * 51.44f;
+				FVector Dir = BaseWind.GetSafeNormal();
+				if (Dir.IsNearlyZero())
+				{
+					Dir = FVector(1.0f, 0.0f, 0.0f);
+				}
+				BaseWind = Dir * SpeedCmPerSec;
+			}
+		}
+	}
 }
 
 FVector UWindComponent::GetWindAt(const FVector& WorldLocation) const

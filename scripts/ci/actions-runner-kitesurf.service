@@ -1,0 +1,18 @@
+[Unit]
+Description=GitHub Actions Runner for koorikla/kitesurf
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/actions-runner-kitesurf
+ExecStart=%h/.local/share/actions-runner-kitesurf/run.sh
+Restart=always
+RestartSec=5s
+Environment=UE_ROOT=/opt/unreal-engine
+Environment="PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=default.target

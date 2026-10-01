@@ -124,7 +124,20 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
+		if (PauseAction)
+		{
+			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
+		}
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
+		}
 	}
+
+	// Fallback binding for standard Escape key in case Enhanced Input action is unassigned
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
 }
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
@@ -140,6 +153,20 @@ void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
 	EdgeBoard(Value.Get<float>());
+}
+
+void AKiteRiderPawn::OnJumpTriggered(const FInputActionValue& Value)
+{
+	Jump();
+}
+
+bool AKiteRiderPawn::Jump()
+{
+	if (BoardMovement)
+	{
+		return BoardMovement->Jump();
+	}
+	return false;
 }
 
 void AKiteRiderPawn::EdgeBoard(float Axis)

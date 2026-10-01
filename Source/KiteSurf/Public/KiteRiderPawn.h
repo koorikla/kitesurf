@@ -36,6 +36,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board")
 	void EdgeBoard(float Axis /* -1..1 */);
 
+	UFUNCTION(BlueprintCallable, Category = "Board")
+	bool Jump();
+
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetBoardVelocity() const;
 
@@ -46,6 +49,7 @@ public:
 	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
 	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
 	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
+	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
@@ -93,10 +97,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> EdgeAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> PauseAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> JumpAction;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePause();
+
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
+	void OnPauseTriggered(const FInputActionValue& Value);
+	void OnJumpTriggered(const FInputActionValue& Value);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

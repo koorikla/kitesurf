@@ -10,6 +10,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
 class UBoardMovementComponent;
+class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
 
@@ -36,6 +37,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetKiteAzimuthDeg() const;
+
+	UKiteComponent* GetKite() const { return Kite.Get(); }
+	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UKiteComponent> Kite;
 
 protected:
 	virtual void BeginPlay() override;

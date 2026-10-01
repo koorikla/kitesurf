@@ -4,6 +4,7 @@
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
+#include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -36,6 +37,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Board movement component
 	BoardMovement = CreateDefaultSubobject<UBoardMovementComponent>(TEXT("BoardMovement"));
 	BoardMovement->UpdatedComponent = RootComponent;
+
+	// Kite component: aerodynamics producing the line force consumed by BoardMovement
+	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
 
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
@@ -104,11 +108,19 @@ void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::SteerKite(float Axis)
 {
 	CurrentSteerInput = FMath::Clamp(Axis, -1.0f, 1.0f);
+	if (Kite)
+	{
+		Kite->SteerKite(CurrentSteerInput);
+	}
 }
 
 void AKiteRiderPawn::SheetKite(float Amount)
 {
 	CurrentSheetInput = FMath::Clamp(Amount, 0.0f, 1.0f);
+	if (Kite)
+	{
+		Kite->SheetKite(CurrentSheetInput);
+	}
 }
 
 FVector AKiteRiderPawn::GetBoardVelocity() const
@@ -122,6 +134,10 @@ FVector AKiteRiderPawn::GetBoardVelocity() const
 
 float AKiteRiderPawn::GetKiteAzimuthDeg() const
 {
+	if (Kite)
+	{
+		return Kite->GetAzimuthDeg();
+	}
 	return KiteAzimuthDeg;
 }
 
@@ -129,26 +145,10 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Placeholder kite aerodynamics:
-	// azimuth += steer * 90°/s clamped to [-90, 90]
-	KiteAzimuthDeg += CurrentSteerInput * 90.0f * DeltaTime;
-	KiteAzimuthDeg = FMath::Clamp(KiteAzimuthDeg, -90.0f, 90.0f);
-
-	FVector WindVec = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector(772.0f, 0.0f, 0.0f);
-	float WindSpeed = WindVec.Size();
-	FVector DownwindDir = WindVec.GetSafeNormal2D();
-	if (DownwindDir.IsNearlyZero())
+	// UKiteComponent computes the aerodynamic line force (kg*cm/s^2);
+	// UBoardMovementComponent owns all velocity integration and hydrodynamics.
+	if (Kite && BoardMovement)
 	{
-		DownwindDir = FVector::ForwardVector;
-	}
-
-	// pull = downwind dir rotated by azimuth * wind speed * sheet * 0.8
-	FVector PullDir = DownwindDir.RotateAngleAxis(KiteAzimuthDeg, FVector::UpVector);
-	FVector Pull = PullDir * (WindSpeed * CurrentSheetInput * 0.8f);
-
-	if (BoardMovement)
-	{
-		// Feed placeholder pull force into BoardMovement (Force = Pull * MassKg in kg*cm/s^2)
-		BoardMovement->AddExternalForce(Pull * BoardMovement->MassKg);
+		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
 }

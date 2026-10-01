@@ -9,6 +9,7 @@ class UStaticMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
+class UBoardMovementComponent;
 class UInputMappingContext;
 class UInputAction;
 
@@ -52,6 +53,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWindComponent> Wind;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoardMovementComponent> BoardMovement;
+
 	// Enhanced Input
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -62,9 +66,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> SheetAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> EdgeAction;
+
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
+	void OnEdgeTriggered(const FInputActionValue& Value);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

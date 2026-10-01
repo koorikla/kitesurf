@@ -3,6 +3,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
+#include "BoardMovementComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -31,6 +32,10 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Wind component
 	Wind = CreateDefaultSubobject<UWindComponent>(TEXT("Wind"));
+
+	// Board movement component
+	BoardMovement = CreateDefaultSubobject<UBoardMovementComponent>(TEXT("BoardMovement"));
+	BoardMovement->UpdatedComponent = RootComponent;
 
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
@@ -70,6 +75,11 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(SheetAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnSheetTriggered);
 			EnhancedInputComponent->BindAction(SheetAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnSheetTriggered);
 		}
+		if (EdgeAction)
+		{
+			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
+			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
+		}
 	}
 }
 
@@ -81,6 +91,14 @@ void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 {
 	SheetKite(Value.Get<float>());
+}
+
+void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
+{
+	if (BoardMovement)
+	{
+		BoardMovement->SetEdgeInput(Value.Get<float>());
+	}
 }
 
 void AKiteRiderPawn::SteerKite(float Axis)
@@ -95,6 +113,10 @@ void AKiteRiderPawn::SheetKite(float Amount)
 
 FVector AKiteRiderPawn::GetBoardVelocity() const
 {
+	if (BoardMovement)
+	{
+		return BoardMovement->Velocity;
+	}
 	return BoardVelocity;
 }
 
@@ -107,7 +129,7 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Placeholder physics:
+	// Placeholder kite aerodynamics:
 	// azimuth += steer * 90°/s clamped to [-90, 90]
 	KiteAzimuthDeg += CurrentSteerInput * 90.0f * DeltaTime;
 	KiteAzimuthDeg = FMath::Clamp(KiteAzimuthDeg, -90.0f, 90.0f);
@@ -124,25 +146,9 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	FVector PullDir = DownwindDir.RotateAngleAxis(KiteAzimuthDeg, FVector::UpVector);
 	FVector Pull = PullDir * (WindSpeed * CurrentSheetInput * 0.8f);
 
-	// velocity += pull * dt
-	BoardVelocity += Pull * DeltaTime;
-
-	// velocity -= velocity * 0.6 * dt (drag)
-	BoardVelocity -= BoardVelocity * 0.6f * DeltaTime;
-
-	// Z locked to 0
-	BoardVelocity.Z = 0.0f;
-
-	// Rotate pawn to face velocity
-	if (!BoardVelocity.IsNearlyZero(1.0f))
+	if (BoardMovement)
 	{
-		FRotator TargetRotation = BoardVelocity.ToOrientationRotator();
-		TargetRotation.Pitch = 0.0f;
-		TargetRotation.Roll = 0.0f;
-		SetActorRotation(TargetRotation);
+		// Feed placeholder pull force into BoardMovement (Force = Pull * MassKg in kg*cm/s^2)
+		BoardMovement->AddExternalForce(Pull * BoardMovement->MassKg);
 	}
-
-	FVector NewLocation = GetActorLocation() + BoardVelocity * DeltaTime;
-	NewLocation.Z = 0.0f;
-	SetActorLocation(NewLocation, true);
 }

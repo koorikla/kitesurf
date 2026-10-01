@@ -12,8 +12,13 @@
 
 | Class | Method / Property | Description |
 |---|---|---|
-| `UWindComponent` | `FVector GetWindAt(const FVector& WorldLocation) const` | Returns the wind vector at a given 3D position. |
+| `UWindComponent` | `FVector GetWindAt(const FVector& WorldLocation) const` | Returns the wind vector at a given 3D position (including gusts, drift, shear). |
 | `UWindComponent` | `FVector BaseWind` | Default baseline wind vector (default: `(772, 0, 0)` cm/s). |
+| `UWindComponent` | `float GustStrength` | Fraction of base speed variation for gusts (0..1, default: 0.3). |
+| `UWindComponent` | `float GustPeriodSeconds` | Gust fluctuation period in seconds (default: 8.0s). |
+| `UWindComponent` | `float DirectionDriftDeg` | Maximum wind direction drift in degrees (default: 10.0°). |
+| `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
+| `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
 | `AKiteRiderPawn` | `void SteerKite(float Axis)` | Steers kite left/right; `Axis` clamped to `[-1.0, 1.0]`. |
 | `AKiteRiderPawn` | `void SheetKite(float Amount)` | Pulls/releases kite bar; `Amount` clamped to `[0.0, 1.0]`. |
 | `AKiteRiderPawn` | `FVector GetBoardVelocity() const` | Returns current board velocity vector. |

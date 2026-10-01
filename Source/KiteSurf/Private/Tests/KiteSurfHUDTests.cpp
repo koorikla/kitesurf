@@ -71,6 +71,9 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has DefaultMappingContext"), CDO->GetDefaultMappingContext());
 			TestNotNull(TEXT("BP_KiteRider has SteerAction"), CDO->GetSteerAction());
 			TestNotNull(TEXT("BP_KiteRider has SheetAction"), CDO->GetSheetAction());
+			TestNotNull(TEXT("BP_KiteRider has EdgeAction (IA_Edge wired to BoardMovement edging)"), CDO->GetEdgeAction());
+			TestNotNull(TEXT("BP_KiteRider CDO has Kite component"), CDO->GetKite());
+			TestNotNull(TEXT("BP_KiteRider CDO has BoardMovement component"), CDO->GetBoardMovement());
 		}
 	}
 
@@ -85,6 +88,15 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		{
 			TestNotNull(TEXT("BP_KiteSurfGameMode DefaultPawnClass set"), CDO->DefaultPawnClass.Get());
 			TestNotNull(TEXT("BP_KiteSurfGameMode HUDClass set"), CDO->HUDClass.Get());
+			if (UClass* PawnClass = CDO->DefaultPawnClass.Get())
+			{
+				TestTrue(TEXT("BP_KiteSurfGameMode pawn is an AKiteRiderPawn"), PawnClass->IsChildOf(AKiteRiderPawn::StaticClass()));
+				if (AKiteRiderPawn* PawnCDO = Cast<AKiteRiderPawn>(PawnClass->GetDefaultObject()))
+				{
+					TestNotNull(TEXT("GameMode pawn has Kite component"), PawnCDO->GetKite());
+					TestNotNull(TEXT("GameMode pawn has BoardMovement component"), PawnCDO->GetBoardMovement());
+				}
+			}
 		}
 	}
 

@@ -135,6 +135,7 @@ def build_assets():
         cdo_rider.set_editor_property('default_mapping_context', imc)
         cdo_rider.set_editor_property('steer_action', ia_steer)
         cdo_rider.set_editor_property('sheet_action', ia_sheet)
+        cdo_rider.set_editor_property('edge_action', ia_edge)
 
         boom = cdo_rider.get_editor_property('camera_boom')
         if boom:

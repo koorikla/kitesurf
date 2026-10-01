@@ -1,5 +1,6 @@
 #include "KiteComponent.h"
 #include "WindComponent.h"
+#include "KiteWindMath.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 
@@ -138,21 +139,13 @@ void UKiteComponent::ComputeKiteTransform(FVector& OutKitePos, FVector& OutLineD
 		DownwindDir = FVector::ForwardVector;
 	}
 
-	const float ClampedAzimuth = FMath::Clamp(AzimuthDeg, -90.0f, 90.0f);
-	const float ClampedElevation = FMath::Clamp(ElevationDeg, 0.0f, 90.0f);
-
-	const FVector HorizontalDir = DownwindDir.RotateAngleAxis(ClampedAzimuth, FVector::UpVector);
-	const float ElevRad = FMath::DegreesToRadians(ClampedElevation);
-	const float CosElev = FMath::Cos(ElevRad);
-	const float SinElev = FMath::Sin(ElevRad);
-
-	OutLineDir = (HorizontalDir * CosElev + FVector(0.0f, 0.0f, SinElev)).GetSafeNormal();
+	// Shared wind-window geometry lives in KiteWindMath (clamps azimuth/elevation itself).
+	OutKitePos = UKiteWindMath::KitePositionInWindow(RiderPos, DownwindDir, AzimuthDeg, ElevationDeg, LineLengthCm);
+	OutLineDir = (OutKitePos - RiderPos).GetSafeNormal();
 	if (OutLineDir.IsNearlyZero())
 	{
 		OutLineDir = FVector::UpVector;
 	}
-
-	OutKitePos = RiderPos + OutLineDir * LineLengthCm;
 }
 
 void UKiteComponent::UpdateKite(float DeltaTime)
@@ -173,7 +166,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 	// Apparent wind: true wind at kite position - kite velocity
 	const FVector TrueWind = GetWindAt(CurrentPos);
-	const FVector ApparentWind = TrueWind - KiteVelocity;
+	const FVector ApparentWind = UKiteWindMath::ApparentWind(TrueWind, KiteVelocity);
 	const float ApparentWindSpeedCmS = ApparentWind.Size();
 	const float ApparentWindSpeedMps = ApparentWindSpeedCmS / 100.0f; // cm/s -> m/s
 

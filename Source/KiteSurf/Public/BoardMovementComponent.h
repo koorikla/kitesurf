@@ -52,48 +52,60 @@ public:
 
 public:
 	// Tunables (Spec)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MassKg;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BoardLengthCm;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BoardWidthCm;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BuoyancyN;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningThresholdCmS;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float DisplacementDragCoef;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningDragCoef;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float EdgeGripCoef;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Tunables")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxEdgeAngleDeg;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float MaxBoardSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float LinearDisplacementDragCoef;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float EdgeDriveEfficiency;
+
 	// Additional physics tuning
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BaseLateralDragCoef;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BuoyancySpringStiffness;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BuoyancyDamping;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningLiftCoef;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
+
+	UFUNCTION(BlueprintPure, Category = "Tuning")
+	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeed <= 100.0f ? (MaxBoardSpeed * 51.44f) : MaxBoardSpeed; }
 
 protected:
 	virtual void BeginPlay() override;

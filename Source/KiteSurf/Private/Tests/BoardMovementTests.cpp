@@ -174,4 +174,95 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfBoardDepowersAndStops, "KiteSurf.Board.DepowersAndStops", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfBoardDepowersAndStops::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				// Start in displacement mode moving forward at 350 cm/s (~6.8 knots)
+				Pawn->SetActorLocation(FVector::ZeroVector);
+				BoardComp->Velocity = FVector(350.0f, 0.0f, 0.0f);
+				BoardComp->SetEdgeInput(0.0f);
+
+				const float DeltaTime = 0.0333f;
+				// 5 seconds of zero external force (depowered)
+				for (int32 i = 0; i < 150; ++i)
+				{
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+
+				const float FinalSpeed = BoardComp->GetForwardSpeed();
+				const float TwoKnotsCmS = 2.0f * 51.44f; // ~102.88 cm/s
+				UE_LOG(LogKiteSurf, Log, TEXT("DepowersAndStops: Final Speed = %.1f cm/s (%.2f kn, target < %.2f kn)"),
+					FinalSpeed, FinalSpeed / 51.44f, 2.0f);
+
+				TestTrue(TEXT("Depowering stops rider to under 2 knots within 5 seconds in displacement mode"), FinalSpeed < TwoKnotsCmS);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfBoardSpeedCappedAtMax, "KiteSurf.Board.SpeedCappedAtMax", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfBoardSpeedCappedAtMax::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				Pawn->SetActorLocation(FVector::ZeroVector);
+				BoardComp->Velocity = FVector(1000.0f, 0.0f, 0.0f);
+
+				const float DeltaTime = 0.0333f;
+				const FVector HugeForwardForce(5000000.0f, 0.0f, 0.0f);
+
+				for (int32 i = 0; i < 90; ++i) // 3 seconds
+				{
+					BoardComp->AddExternalForce(HugeForwardForce);
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+
+				const float FinalSpeed = BoardComp->GetForwardSpeed();
+				const float MaxSpeedCmS = BoardComp->GetMaxBoardSpeedCmS();
+				UE_LOG(LogKiteSurf, Log, TEXT("SpeedCappedAtMax: Final Speed = %.1f cm/s (Max = %.1f cm/s)"), FinalSpeed, MaxSpeedCmS);
+
+				TestTrue(TEXT("Speed capped at 35 knots"), FinalSpeed <= MaxSpeedCmS + 0.1f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

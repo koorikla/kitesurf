@@ -38,6 +38,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetKiteAzimuthDeg() const;
 
+	UInputMappingContext* GetDefaultMappingContext() const { return DefaultMappingContext.Get(); }
+	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
+	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
+	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
+
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
 

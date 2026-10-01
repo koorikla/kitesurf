@@ -23,6 +23,6 @@ if [[ ! -d "$UE_ROOT" ]]; then
 fi
 
 export UE_BUILD="$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh"
-export UE_RUNUAT="$UE_ROOT/Engine/Build/BatchFiles/Linux/RunUAT.sh"
+export UE_RUNUAT="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
 export UE_EDITOR="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor"
 export UE_EDITOR_CMD="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor-Cmd"

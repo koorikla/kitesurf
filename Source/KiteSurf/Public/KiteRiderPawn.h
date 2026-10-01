@@ -9,6 +9,7 @@ class UStaticMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
+class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
 
@@ -35,6 +36,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetKiteAzimuthDeg() const;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UKiteComponent> Kite;
 
 protected:
 	virtual void BeginPlay() override;

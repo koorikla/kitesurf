@@ -3,6 +3,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
+#include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -31,6 +32,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Wind component
 	Wind = CreateDefaultSubobject<UWindComponent>(TEXT("Wind"));
+
+	// Kite component
+	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
 
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
@@ -86,11 +90,19 @@ void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::SteerKite(float Axis)
 {
 	CurrentSteerInput = FMath::Clamp(Axis, -1.0f, 1.0f);
+	if (Kite)
+	{
+		Kite->SteerKite(CurrentSteerInput);
+	}
 }
 
 void AKiteRiderPawn::SheetKite(float Amount)
 {
 	CurrentSheetInput = FMath::Clamp(Amount, 0.0f, 1.0f);
+	if (Kite)
+	{
+		Kite->SheetKite(CurrentSheetInput);
+	}
 }
 
 FVector AKiteRiderPawn::GetBoardVelocity() const
@@ -100,6 +112,10 @@ FVector AKiteRiderPawn::GetBoardVelocity() const
 
 float AKiteRiderPawn::GetKiteAzimuthDeg() const
 {
+	if (Kite)
+	{
+		return Kite->GetAzimuthDeg();
+	}
 	return KiteAzimuthDeg;
 }
 
@@ -107,22 +123,12 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Placeholder physics:
-	// azimuth += steer * 90°/s clamped to [-90, 90]
-	KiteAzimuthDeg += CurrentSteerInput * 90.0f * DeltaTime;
-	KiteAzimuthDeg = FMath::Clamp(KiteAzimuthDeg, -90.0f, 90.0f);
-
-	FVector WindVec = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector(772.0f, 0.0f, 0.0f);
-	float WindSpeed = WindVec.Size();
-	FVector DownwindDir = WindVec.GetSafeNormal2D();
-	if (DownwindDir.IsNearlyZero())
+	const float MassKg = 85.0f; // rider + board mass
+	FVector Pull = FVector::ZeroVector;
+	if (Kite)
 	{
-		DownwindDir = FVector::ForwardVector;
+		Pull = Kite->GetLineForce() / MassKg;
 	}
-
-	// pull = downwind dir rotated by azimuth * wind speed * sheet * 0.8
-	FVector PullDir = DownwindDir.RotateAngleAxis(KiteAzimuthDeg, FVector::UpVector);
-	FVector Pull = PullDir * (WindSpeed * CurrentSheetInput * 0.8f);
 
 	// velocity += pull * dt
 	BoardVelocity += Pull * DeltaTime;

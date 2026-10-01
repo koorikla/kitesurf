@@ -99,9 +99,15 @@ void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
+	EdgeBoard(Value.Get<float>());
+}
+
+void AKiteRiderPawn::EdgeBoard(float Axis)
+{
+	const float ClampedAxis = FMath::Clamp(Axis, -1.0f, 1.0f);
 	if (BoardMovement)
 	{
-		BoardMovement->SetEdgeInput(Value.Get<float>());
+		BoardMovement->SetEdgeInput(ClampedAxis);
 	}
 }
 
@@ -151,4 +157,7 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+
+	const FVector Vel = GetBoardVelocity();
+	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 }

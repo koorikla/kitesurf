@@ -32,6 +32,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SheetKite(float Amount /* 0..1 */);
 
+	UFUNCTION(BlueprintCallable, Category = "Board")
+	void EdgeBoard(float Axis /* -1..1 */);
+
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetBoardVelocity() const;
 

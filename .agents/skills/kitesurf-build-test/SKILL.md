@@ -1,0 +1,80 @@
+---
+name: kitesurf-build-test
+description: Build, test, run and package the KiteSurf Unreal project on Linux.
+version: 0.1.0
+metadata:
+  hermes:
+    tags: [kitesurf, unreal-engine, build, ci, linux]
+    related_skills: [kitesurf-automation-tests, kitesurf-editor-python, unreal-packaging]
+---
+
+# KiteSurf build, test and run
+
+How to compile, test, launch and package this repository from a shell. Everything goes
+through `scripts/`; do not call engine binaries with hand-written paths.
+
+## When to Use
+
+- Before reporting any C++ change as done: it must build and the automation tests must pass.
+- When CI (`.github/workflows/ci.yml`) fails and you need to reproduce it locally.
+- When you need to see the game running, or produce a packaged build.
+
+Do not use this for writing new tests (`kitesurf-automation-tests`) or generating assets
+(`kitesurf-editor-python`).
+
+## Procedure
+
+1. **Engine location.** `scripts/common.sh` resolves the engine from `$UE_ROOT`, then a
+   `.engine-path` file in the repo root, then `/opt/unreal-engine`. The project targets
+   Unreal Engine 5.8 on Linux with Vulkan SM6.
+2. **Build the editor target.**
+   ```bash
+   scripts/build.sh Development
+   ```
+   This builds `KiteSurfEditor Linux Development`. Extra arguments are passed to the
+   engine's `Build.sh`.
+3. **Run the automation tests headless.**
+   ```bash
+   scripts/run-tests.sh -nullrhi
+   ```
+   This runs every test whose name starts with `KiteSurf` and writes a report to
+   `Saved/Automation/Report/index.json`. The last line printed should read
+   `Test Results: Total=N, Succeeded=N, Failed=0`.
+4. **Launch the game in a window** (needs a display and the GPU):
+   ```bash
+   scripts/run-editor.sh -game -windowed -ResX=1920 -ResY=1080 -log
+   ```
+   Without `-game` the same script opens the editor.
+5. **Package a Linux Shipping build.**
+   ```bash
+   scripts/package-linux.sh
+   ```
+   Output is archived under `Build/`.
+6. **CI** runs steps 2 and 3 on a self-hosted runner for every push and pull request to
+   `main`.
+
+## Pitfalls
+
+- **A green test run can be empty.** `scripts/run-tests.sh` only warns when the report is
+  missing, and `scripts/parse_test_report.py` exits 0 if the report cannot be parsed. Always
+  read the `Test Results:` line and check that `Total` is the number of tests you expect.
+- **Header or `UPROPERTY` changes need a full build**, not Live Coding.
+- **`-nullrhi` has no renderer.** Tests that need rendering must be flagged `NonNullRHI`
+  (see `kitesurf-automation-tests`) or they will fail or silently do nothing.
+- **A cook or `-nullrhi` log saying "Ray tracing is disabled. Reason: not supported by
+  current RHI" is expected.** It says nothing about the real game; check a `-game` run.
+- **Headless `-RenderOffScreen` runs of the editor have lost the Vulkan device** in the
+  editor-only selection outline pass. Prefer `-game` for rendering checks.
+- **Binary assets are in Git LFS** (`.uasset`, `.umap`, textures, audio). A checkout
+  without LFS content builds but fails at runtime.
+- **Logs** are in `Saved/Logs/KiteSurf.log`; each run rotates the previous log to a
+  `KiteSurf-backup-*.log` file. Make sure you are reading the run you care about.
+- **Config changes live in `Config/DefaultEngine.ini`.** A running game only reflects the
+  checkout it was started from.
+
+## Verification
+
+- `scripts/build.sh Development` exits 0.
+- `scripts/run-tests.sh -nullrhi` prints `Failed=0` and the expected `Total`.
+- For anything visual, state plainly whether you saw it in a `-game` run or only inferred
+  it from logs.

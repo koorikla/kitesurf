@@ -14,12 +14,12 @@ if [[ ! -f "$ZIP_PATH" ]]; then
     exit 1
 fi
 
-echo "=== Installing Unreal Engine 5.7 runtime dependencies via pacman ==="
+echo "=== Installing Unreal Engine 5.8 runtime dependencies via pacman ==="
 sudo pacman -S --needed --noconfirm     vulkan-icd-loader     vulkan-tools     lib32-vulkan-icd-loader     sdl3     libxcursor     libxrandr     libxi     libxinerama     libxss     alsa-lib     dotnet-sdk     xdg-user-dirs
 
 echo "=== Extracting engine archive to $DEST_DIR ==="
 sudo mkdir -p "$DEST_DIR"
-TMP_EXTRACT="$(mktemp -d)"
+TMP_EXTRACT="$(sudo mktemp -d -p /opt .tmp_extract_XXXXXX)"
 trap 'sudo rm -rf "$TMP_EXTRACT"' EXIT
 
 sudo unzip -q "$ZIP_PATH" -d "$TMP_EXTRACT"

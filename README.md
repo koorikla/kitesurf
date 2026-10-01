@@ -1,6 +1,6 @@
 # KiteSurf
 
-Kitesurfing game built on Unreal Engine 5.7 with C++ and Enhanced Input.
+Kitesurfing game built on Unreal Engine 5.8 with C++ and Enhanced Input.
 
 ## Repository Layout
 
@@ -26,7 +26,7 @@ Kitesurfing game built on Unreal Engine 5.7 with C++ and Enhanced Input.
    scripts/free-resources.sh stop
    ```
 
-2. **Install Unreal Engine 5.7** (one-time setup):
+2. **Install Unreal Engine 5.8** (one-time setup):
    ```bash
    scripts/setup-engine.sh /path/to/Linux_Unreal_Engine_5.7.x.zip /opt/unreal-engine
    ```

@@ -6,11 +6,11 @@ if len(sys.argv) < 2:
     sys.exit(0)
 
 try:
-    with open(sys.argv[1], 'r') as f:
+    with open(sys.argv[1], 'r', encoding='utf-8-sig') as f:
         data = json.load(f)
     failed = data.get('failed', 0)
     succeeded = data.get('succeeded', 0)
-    total = data.get('total', 0)
+    total = data.get('total', len(data.get('tests', [])))
     print(f"Test Results: Total={total}, Succeeded={succeeded}, Failed={failed}")
     if failed > 0:
         sys.exit(1)

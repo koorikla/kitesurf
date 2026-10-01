@@ -4,7 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "WindComponent.generated.h"
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), KITESURF_API)
+UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UWindComponent : public UActorComponent
 {
 	GENERATED_BODY()

@@ -4,7 +4,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "KiteSurfGameMode.generated.h"
 
-UCLASS(KITESURF_API)
+UCLASS()
 class KITESURF_API AKiteSurfGameMode : public AGameModeBase
 {
 	GENERATED_BODY()

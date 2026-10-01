@@ -1,8 +1,8 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.7",
+	"EngineAssociation": "5.8",
 	"Category": "",
-	"Description": "Kitesurfing game on Unreal Engine 5.7",
+	"Description": "Kitesurfing game on Unreal Engine 5.8",
 	"Modules": [
 		{
 			"Name": "KiteSurf",

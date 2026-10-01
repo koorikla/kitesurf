@@ -12,7 +12,7 @@ class UWindComponent;
 class UInputMappingContext;
 class UInputAction;
 
-UCLASS(KITESURF_API)
+UCLASS()
 class KITESURF_API AKiteRiderPawn : public APawn
 {
 	GENERATED_BODY()

@@ -130,6 +130,10 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		{
 			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
 		}
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
+		}
 	}
 
 	// Fallback binding for standard Escape key in case Enhanced Input action is unassigned
@@ -151,6 +155,20 @@ void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
 	EdgeBoard(Value.Get<float>());
+}
+
+void AKiteRiderPawn::OnJumpTriggered(const FInputActionValue& Value)
+{
+	Jump();
+}
+
+bool AKiteRiderPawn::Jump()
+{
+	if (BoardMovement)
+	{
+		return BoardMovement->Jump();
+	}
+	return false;
 }
 
 void AKiteRiderPawn::EdgeBoard(float Axis)

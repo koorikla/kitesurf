@@ -2,6 +2,8 @@
 #include "Misc/AutomationTest.h"
 #include "BoardMovementComponent.h"
 #include "KiteRiderPawn.h"
+#include "KiteComponent.h"
+#include "WindComponent.h"
 #include "KiteSurf.h"
 #include "Engine/World.h"
 
@@ -256,6 +258,273 @@ bool FKiteSurfBoardSpeedCappedAtMax::RunTest(const FString& Parameters)
 				UE_LOG(LogKiteSurf, Log, TEXT("SpeedCappedAtMax: Final Speed = %.1f cm/s (Max = %.1f cm/s)"), FinalSpeed, MaxSpeedCmS);
 
 				TestTrue(TEXT("Speed capped at 35 knots"), FinalSpeed <= MaxSpeedCmS + 0.1f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpOnlyFromPlaning, "KiteSurf.Jump.OnlyFromPlaning", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpOnlyFromPlaning::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				Pawn->SetActorLocation(FVector::ZeroVector);
+
+				// Case 1: In displacement state with low speed (< 8 knots)
+				BoardComp->Velocity = FVector(200.0f, 0.0f, 0.0f);
+				BoardComp->SetBoardState(EBoardState::Displacement);
+				BoardComp->SetEdgeInput(0.8f);
+				TestFalse(TEXT("Jump rejected when in Displacement state"), BoardComp->Jump());
+				TestEqual(TEXT("State remains Displacement"), BoardComp->GetBoardState(), EBoardState::Displacement);
+
+				// Case 2: In Planing state, but edge input is below minimum (0.4)
+				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+				BoardComp->SetBoardState(EBoardState::Planing);
+				BoardComp->SetEdgeInput(0.2f);
+				TestFalse(TEXT("Jump rejected when EdgeInput < 0.4"), BoardComp->Jump());
+				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
+
+				// Case 3: In Planing state, but speed is below minimum (8 kn = 411.5 cm/s)
+				BoardComp->Velocity = FVector(350.0f, 0.0f, 0.0f);
+				BoardComp->SetBoardState(EBoardState::Planing);
+				BoardComp->SetEdgeInput(0.8f);
+				TestFalse(TEXT("Jump rejected when Speed < 8 knots"), BoardComp->Jump());
+				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
+
+				// Case 4: Planing, speed >= 8 knots, edge input >= 0.4 -> Success
+				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+				BoardComp->SetBoardState(EBoardState::Planing);
+				BoardComp->SetEdgeInput(0.8f);
+				TestTrue(TEXT("Jump succeeds when planing, fast enough, and edging hard"), BoardComp->Jump());
+				TestEqual(TEXT("State transitions to Airborne"), BoardComp->GetBoardState(), EBoardState::Airborne);
+				TestTrue(TEXT("Vertical velocity positive on takeoff"), BoardComp->Velocity.Z > 200.0f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpApexEnvelope, "KiteSurf.Jump.ApexEnvelope", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			UKiteComponent* KiteComp = Pawn->FindComponentByClass<UKiteComponent>();
+			TestNotNull(TEXT("KiteComponent found"), KiteComp);
+
+			UWindComponent* WindComp = Pawn->FindComponentByClass<UWindComponent>();
+			TestNotNull(TEXT("WindComponent found"), WindComp);
+
+			if (BoardComp && KiteComp && WindComp)
+			{
+				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+				KiteComp->SheetKite(1.0f);
+				KiteComp->SetElevationDeg(80.0f);
+				KiteComp->UpdateKite(0.0333f);
+
+				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+				BoardComp->SetBoardState(EBoardState::Planing);
+				BoardComp->SetEdgeInput(0.8f);
+
+				TestTrue(TEXT("Jump pop succeeds"), BoardComp->Jump());
+				TestEqual(TEXT("Enters Airborne"), BoardComp->GetBoardState(), EBoardState::Airborne);
+
+				// Flight simulation with continuous kite lift
+				const float DeltaTime = 0.0333f;
+				float MaxHeightReached = 0.0f;
+				for (int32 i = 0; i < 90; ++i) // 3 seconds
+				{
+					KiteComp->UpdateKite(DeltaTime);
+					Pawn->Tick(DeltaTime);
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+					MaxHeightReached = FMath::Max(MaxHeightReached, Pawn->GetActorLocation().Z);
+				}
+
+				UE_LOG(LogKiteSurf, Log, TEXT("ApexEnvelope: Max Height = %.1f cm (%.2f m), BestJump = %.1f cm"),
+					MaxHeightReached, MaxHeightReached / 100.0f, BoardComp->GetBestJumpHeight());
+
+				// Standard conditions yield 2m to 6m apex
+				TestTrue(TEXT("Apex reached at least 2m (200 cm)"), MaxHeightReached >= 200.0f);
+				TestTrue(TEXT("Apex within 12m clamp"), MaxHeightReached <= 1200.0f);
+				TestTrue(TEXT("Best jump height recorded"), BoardComp->GetBestJumpHeight() >= 200.0f);
+
+				// Test hard ceiling clamp at MaxJumpHeight (1200 cm)
+				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
+				BoardComp->Velocity = FVector(0.0f, 0.0f, 10000.0f);
+				BoardComp->SetBoardState(EBoardState::Airborne);
+				for (int32 i = 0; i < 30; ++i)
+				{
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+				TestTrue(TEXT("Pawn height clamped at MaxJumpHeight"), Pawn->GetActorLocation().Z <= BoardComp->MaxJumpHeight + 0.1f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpCleanLanding, "KiteSurf.Jump.CleanLanding", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpCleanLanding::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				// Align heading with forward velocity (+X)
+				Pawn->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));
+				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 8.0f));
+				const float PreLandSpeed = 600.0f;
+				BoardComp->Velocity = FVector(PreLandSpeed, 0.0f, -50.0f);
+				BoardComp->SetBoardState(EBoardState::Airborne);
+				BoardComp->SetCurrentJumpAirtime(0.5f);
+
+				// Step downward into water surface
+				const float DeltaTime = 0.0333f;
+				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+
+				TestTrue(TEXT("Last landing was clean"), BoardComp->WasLastLandingClean());
+				TestFalse(TEXT("Did not crash on aligned landing"), BoardComp->IsCrashing());
+				TestEqual(TEXT("Board enters Landing state"), BoardComp->GetBoardState(), EBoardState::Landing);
+
+				const float PostLandSpeed = BoardComp->GetForwardSpeed();
+				UE_LOG(LogKiteSurf, Log, TEXT("CleanLanding: PostLandSpeed = %.1f, Expected ≈ %.1f"), PostLandSpeed, PreLandSpeed * 0.8f);
+				TestNearlyEqual(TEXT("Speed retained ~80% on clean landing"), PostLandSpeed, PreLandSpeed * 0.8f, 25.0f);
+				TestNearlyEqual(TEXT("Vertical velocity reset to 0"), (float)BoardComp->Velocity.Z, 0.0f, 1.0f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpCrashRecovery, "KiteSurf.Jump.CrashRecovery", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpCrashRecovery::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				// Rotate board 90 degrees away from velocity (+X vs +Y heading)
+				Pawn->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 8.0f));
+				BoardComp->Velocity = FVector(600.0f, 0.0f, -50.0f);
+				BoardComp->SetBoardState(EBoardState::Airborne);
+				BoardComp->SetCurrentJumpAirtime(0.5f);
+
+				const float DeltaTime = 0.0333f;
+				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+
+				TestFalse(TEXT("Last landing was not clean"), BoardComp->WasLastLandingClean());
+				TestTrue(TEXT("Crash triggered when landing angle > 30 deg"), BoardComp->IsCrashing());
+				TestEqual(TEXT("Board enters Landing state"), BoardComp->GetBoardState(), EBoardState::Landing);
+
+				// Simulate crash deceleration and respawn (~2.3 seconds)
+				for (int32 i = 0; i < 70; ++i)
+				{
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+
+				TestFalse(TEXT("Crash recovery completes and clears crash flag"), BoardComp->IsCrashing());
+				TestEqual(TEXT("Resets to Displacement state after crash"), BoardComp->GetBoardState(), EBoardState::Displacement);
+				TestNearlyEqual(TEXT("Velocity zeroed after crash recovery"), (float)BoardComp->Velocity.Size(), 0.0f, 1.0f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpPawnIntegration, "KiteSurf.Jump.PawnIntegration", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpPawnIntegration::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				Pawn->EdgeBoard(0.8f);
+				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f);
+				BoardComp->SetBoardState(EBoardState::Planing);
+
+				TestTrue(TEXT("Pawn Jump() succeeds when conditions met"), Pawn->Jump());
+				TestEqual(TEXT("Pawn board enters Airborne state"), BoardComp->GetBoardState(), EBoardState::Airborne);
+				TestTrue(TEXT("Pawn board velocity has positive vertical component"), Pawn->GetBoardVelocity().Z > 0.0f);
 			}
 		}
 

@@ -1,5 +1,6 @@
 #include "KiteSurfHUD.h"
 #include "KiteRiderPawn.h"
+#include "BoardMovementComponent.h"
 #include "WindComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -130,12 +131,12 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		return;
 	}
 
-	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 145.0f);
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 180.0f);
 	DrawText(TEXT("KITESURF TELEMETRY"), FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 28.0f, nullptr, 1.1f);
 
 	FVector Vel = RiderPawn->GetBoardVelocity();
 	FString SpeedStr = FString::Printf(TEXT("SPEED: %s"), *FormatKnots(Vel.Size2D()));
-	DrawText(SpeedStr, FLinearColor::White, 32.0f, 52.0f, nullptr, 1.2f);
+	DrawText(SpeedStr, FLinearColor::White, 32.0f, 50.0f, nullptr, 1.1f);
 
 	float HeadingDeg = FRotator::NormalizeAxis(RiderPawn->GetActorRotation().Yaw);
 	if (HeadingDeg < 0.0f)
@@ -143,14 +144,38 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		HeadingDeg += 360.0f;
 	}
 	FString HeadingStr = FString::Printf(TEXT("HEADING: %.0f deg"), HeadingDeg);
-	DrawText(HeadingStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 76.0f, nullptr, 1.2f);
+	DrawText(HeadingStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 72.0f, nullptr, 1.1f);
 
 	UWindComponent* WindComp = RiderPawn->FindComponentByClass<UWindComponent>();
 	FVector WindVec = WindComp ? WindComp->GetWindAt(RiderPawn->GetActorLocation()) : FVector(772.0f, 0.0f, 0.0f);
 	FString WindStr = FString::Printf(TEXT("WIND:  %s"), *FormatKnots(WindVec.Size()));
-	DrawText(WindStr, FLinearColor(0.3f, 0.8f, 1.0f), 32.0f, 102.0f, nullptr, 1.2f);
+	DrawText(WindStr, FLinearColor(0.3f, 0.8f, 1.0f), 32.0f, 94.0f, nullptr, 1.1f);
 
-	DrawWindCompass(WindVec, 255.0f, 108.0f, 18.0f);
+	DrawWindCompass(WindVec, 255.0f, 96.0f, 18.0f);
+
+	if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
+	{
+		const EBoardState BoardState = BoardMove->GetBoardState();
+		FString StateStr = TEXT("STATE: Displacement");
+		if (BoardState == EBoardState::Planing)
+		{
+			StateStr = TEXT("STATE: Planing");
+		}
+		else if (BoardState == EBoardState::Airborne)
+		{
+			StateStr = FString::Printf(TEXT("STATE: Airborne (%.1fm)"), BoardMove->GetCurrentJumpHeight() / 100.0f);
+		}
+		else if (BoardState == EBoardState::Landing)
+		{
+			StateStr = BoardMove->IsCrashing() ? TEXT("STATE: Crash!") : TEXT("STATE: Clean Landing");
+		}
+		DrawText(StateStr, FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 120.0f, nullptr, 1.1f);
+
+		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1fm | Apex %.1fm"),
+			BoardMove->GetBestJumpHeight() / 100.0f,
+			BoardMove->GetLastJumpApexHeight() / 100.0f);
+		DrawText(JumpStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 144.0f, nullptr, 1.1f);
+	}
 }
 
 void AKiteSurfHUD::DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius)

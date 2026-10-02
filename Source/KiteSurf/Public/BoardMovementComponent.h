@@ -14,6 +14,15 @@ enum class EBoardDragRegime : uint8
 	Planing      UMETA(DisplayName = "Planing")
 };
 
+UENUM(BlueprintType)
+enum class EBoardState : uint8
+{
+	Displacement UMETA(DisplayName = "Displacement"),
+	Planing      UMETA(DisplayName = "Planing"),
+	Airborne     UMETA(DisplayName = "Airborne"),
+	Landing      UMETA(DisplayName = "Landing")
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
 {
@@ -40,6 +49,40 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	EBoardDragRegime GetCurrentDragRegime() const { return CurrentDragRegime; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|State")
+	EBoardState GetBoardState() const { return CurrentBoardState; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|State")
+	void SetBoardState(EBoardState InState) { CurrentBoardState = InState; }
+
+	/** Attempt to trigger a kite-powered jump. Returns true if jump conditions were met. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	bool Jump();
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	bool WasLastLandingClean() const { return bLastLandingClean; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	bool IsCrashing() const { return bIsCrashing; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetCurrentJumpHeight() const { return CurrentJumpHeight; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetCurrentJumpAirtime() const { return CurrentJumpAirtime; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	void SetCurrentJumpAirtime(float Value) { CurrentJumpAirtime = Value; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetLastJumpApexHeight() const { return LastJumpApexHeight; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetLastJumpAirtime() const { return LastJumpAirtime; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetBestJumpHeight() const { return BestJumpHeight; }
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	float GetForwardSpeed() const;
@@ -104,6 +147,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
 
+	// Jump tunables (Spec)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float BaseJumpImpulse;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float KiteLiftFactor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float JumpMinSpeedKnots;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float JumpMinEdgeInput;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float MaxJumpHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float MaxLandingAngle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float CleanLandingSpeedRetention;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float CrashDecelDuration;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float CrashRespawnDelay;
+
 	UFUNCTION(BlueprintPure, Category = "Tuning")
 	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeed <= 100.0f ? (MaxBoardSpeed * 51.44f) : MaxBoardSpeed; }
 
@@ -114,8 +185,24 @@ private:
 	UPROPERTY(Transient)
 	EBoardDragRegime CurrentDragRegime;
 
+	UPROPERTY(Transient)
+	EBoardState CurrentBoardState;
+
 	float CurrentEdgeInput;
 	FVector AccumulatedExternalForce;
+
+	float CurrentJumpHeight;
+	float CurrentJumpAirtime;
+	float CurrentJumpApexHeight;
+	float LastJumpApexHeight;
+	float LastJumpAirtime;
+	float BestJumpHeight;
+
+	bool bLastLandingClean;
+	bool bIsCrashing;
+	float CrashTimer;
+	FVector CrashInitialVelocity;
+	float LandingStateTimer;
 
 	mutable TWeakObjectPtr<const UWaterBodyComponent> CachedWaterBodyComponent;
 };

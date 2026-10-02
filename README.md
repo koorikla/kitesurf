@@ -61,7 +61,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power (the bar holds its position) | Down / Up | Right stick up / down, triggers |
+| Bar in / out: power (the bar holds its position) | Down / Up | Right stick pulled back / pushed forward, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |

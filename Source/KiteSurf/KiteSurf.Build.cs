@@ -18,7 +18,8 @@ public class KiteSurf : ModuleRules
 			"CableComponent",
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"EngineSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

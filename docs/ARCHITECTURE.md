@@ -30,6 +30,13 @@
 - Must contain a `PlayerStart` positioned above or on the water plane.
 - Default GameMode is `/Script/KiteSurf.KiteSurfGameMode`.
 
+## Game Instance, Settings & Master Volume
+
+- **GameInstance**: `UKiteSurfGameInstance` persists user settings across level transitions (`L_MainMenu` -> `L_OpenWater`).
+- **Settings Persistence**: Saves and loads via `UKiteSurfSaveGame` (wind strength: 8–30 kn, master volume: 0.0–1.0).
+- **Master Volume**: Controlled via `FApp::SetVolumeMultiplier(MasterVolume)` both when settings are loaded from disk (`LoadSettingsFromDisk`) and when updated interactively (`SetMasterVolume`).
+- **Entry Level & Maps**: In standalone/packaged runs (`-game`), `GameDefaultMap` is `/Game/Maps/L_MainMenu` and uses `AKiteSurfMainMenuGameMode` configured via `L_MainMenu.umap` WorldSettings. `EditorStartupMap` remains `/Game/Maps/L_OpenWater`.
+
 ## Tick Execution Order
 
 Physics simulation and component updates execute in the following sequential order:

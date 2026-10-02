@@ -50,6 +50,9 @@ namespace
 					Wind->DirectionDriftDeg = 0.0f;
 				}
 				AKiteSurfGameMode::InitializeRide(Pawn, 12.0f * KnotCmS, TackSide);
+				// The ride tests hold the kite where the start (or the test) put it, as a rider's hands
+				// would, rather than letting it drift up to 12 with the bar centred.
+				Kite->bParkHoldAssist = true;
 			}
 		}
 
@@ -90,7 +93,9 @@ namespace
 	};
 }
 
-// The opening seconds must not need any input: the rider starts planing across the wind and stays there.
+// Hands off: the rider starts planing across the wind and needs no input for the opening seconds.
+// With the bar centred the kite then drifts up the window edge towards 12, as a real one does, and
+// takes the power with it.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideKeepsPlaningWithoutInput, "KiteSurf.Ride.KeepsPlaningWithoutInput", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfRideKeepsPlaningWithoutInput::RunTest(const FString& Parameters)
@@ -101,23 +106,30 @@ bool FKiteSurfRideKeepsPlaningWithoutInput::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	Ride.Kite->bParkHoldAssist = false; // hands off: the kite does what it does with the bar centred
 
 	const FVector Start = Ride.Pawn->GetActorLocation();
-	for (int32 Segment = 0; Segment < 6; ++Segment)
+	const float StartClockDeg = Ride.Kite->GetClockDeg();
+	const int32 Segments = 6;
+	const float SegmentSeconds = 5.0f;
+	float ClockAt[Segments] = {};
+	bool bPlaningAt[Segments] = {};
+	for (int32 Segment = 0; Segment < Segments; ++Segment)
 	{
-		Ride.Simulate(5.0f);
-		UE_LOG(LogKiteSurf, Log, TEXT("KeepsPlaningWithoutInput t=%ds: %.1f kn, fwd %.0f lat %.0f cm/s, yaw %.0f, tension %.0f N, kite az %.0f el %.0f"),
-			(Segment + 1) * 5, Ride.SpeedKnots(), Ride.Board->GetForwardSpeed(), Ride.Board->GetLateralSpeed(),
-			Ride.Pawn->GetActorRotation().Yaw, Ride.Kite->GetLineTensionN(), Ride.Kite->GetAzimuthDeg(), Ride.Kite->GetElevationDeg());
+		Ride.Simulate(SegmentSeconds);
+		ClockAt[Segment] = Ride.Kite->GetClockDeg();
+		bPlaningAt[Segment] = Ride.Board->IsPlaning();
+		const FVector Travelled = Ride.Pawn->GetActorLocation() - Start;
+		UE_LOG(LogKiteSurf, Log, TEXT("KeepsPlaningWithoutInput t=%.0fs: %.1f kn, planing %d, kite clock %.0f, tension %.0f N, kite az %.0f el %.0f, travelled %.0f m across and %.0f m downwind"),
+			(Segment + 1) * SegmentSeconds, Ride.SpeedKnots(), bPlaningAt[Segment], ClockAt[Segment], Ride.Kite->GetLineTensionN(), Ride.Kite->GetAzimuthDeg(), Ride.Kite->GetElevationDeg(),
+			Travelled.Y / 100.0f, Travelled.X / 100.0f);
 	}
 
-	const FVector Travelled = Ride.Pawn->GetActorLocation() - Start;
-	TestTrue(TEXT("Still planing after 30 s with no input"), Ride.Board->IsPlaning());
-	TestTrue(FString::Printf(TEXT("Speed %.1f kn is at least 10 kn after 30 s"), Ride.SpeedKnots()), Ride.SpeedKnots() >= 10.0f);
-	TestTrue(FString::Printf(TEXT("Speed %.1f kn is at most 30 kn after 30 s"), Ride.SpeedKnots()), Ride.SpeedKnots() <= 30.0f);
-	TestTrue(FString::Printf(TEXT("Rode %.0f m across the wind"), Travelled.Y / 100.0f), Travelled.Y >= 15000.0f);
-	TestTrue(FString::Printf(TEXT("Lost %.0f m downwind, less than the distance ridden across"), Travelled.X / 100.0f), Travelled.X < Travelled.Y);
-	TestTrue(FString::Printf(TEXT("The kite stays parked on the side it started (clock %.0f)"), Ride.Kite->GetClockDeg()), FMath::IsNearlyEqual(Ride.Kite->GetClockDeg(), AKiteSurfGameMode::StartKiteClockDeg, 15.0f));
+	// Riding, the kite has more air over it than for a rider standing still and climbs faster, so the
+	// board drops off the plane before 10 s; at 5 s it is still going.
+	TestTrue(FString::Printf(TEXT("Still planing 5 s into the ride with no input (clock %.0f)"), ClockAt[0]), bPlaningAt[0]);
+	TestTrue(FString::Printf(TEXT("The kite has climbed from clock %.0f by 10 s (clock %.0f)"), StartClockDeg, ClockAt[1]), FMath::Abs(ClockAt[1]) < FMath::Abs(StartClockDeg));
+	TestTrue(FString::Printf(TEXT("and by 20 s (clock %.0f)"), ClockAt[3]), FMath::Abs(ClockAt[3]) < FMath::Abs(StartClockDeg));
 	return true;
 }
 
@@ -205,7 +217,8 @@ namespace
 	};
 }
 
-// With the bar centred the kite turns nose-out and parks at the window edge, wherever it is.
+// With the bar centred and the park-hold assist on, the kite turns nose-out and parks at the window
+// edge wherever it is. (Without the assist it drifts up to 12: KiteSurf.Kite.DriftsToZenithWithBarCentred.)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteParksAtWindowEdge, "KiteSurf.Kite.ParksAtWindowEdge", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfKiteParksAtWindowEdge::RunTest(const FString& Parameters)
@@ -217,7 +230,7 @@ bool FKiteSurfKiteParksAtWindowEdge::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-
+	Kite->bParkHoldAssist = true;
 
 	for (float ClockDeg : { 0.0f, 45.0f, -60.0f })
 	{
@@ -235,6 +248,66 @@ bool FKiteSurfKiteParksAtWindowEdge::RunTest(const FString& Parameters)
 	return true;
 }
 
+// With the bar centred a kite drifts up the window edge to 12 o'clock and sits there, as a real one
+// does; the park-hold assist keeps it where the bar was centred instead.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteDriftsToZenithWithBarCentred, "KiteSurf.Kite.DriftsToZenithWithBarCentred", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteDriftsToZenithWithBarCentred::RunTest(const FString& Parameters)
+{
+	const float StartClockDeg = 65.0f;
+	const float NearZenithDeg = 10.0f;
+	const float FlySeconds = 20.0f;
+	for (const float Side : { 1.0f, -1.0f })
+	{
+		FStandingFixture Standing;
+		UKiteComponent* Kite = Standing.Kite;
+		TestNotNull(TEXT("Kite created"), Kite);
+		if (!Kite)
+		{
+			return false;
+		}
+		TestFalse(TEXT("The kite drifts to 12 by default"), Kite->bParkHoldAssist);
+
+		Kite->SetWindowPosition(StartClockDeg * Side, 8.0f);
+		float SecondsToZenith = -1.0f;
+		float ClockAt[3] = { 0.0f, 0.0f, 0.0f };
+		FKiteFlight Flight;
+		const int32 Steps = FMath::RoundToInt(FlySeconds / RideDeltaTime);
+		const int32 StepsPerMark = FMath::RoundToInt(5.0f / RideDeltaTime);
+		for (int32 Step = 1; Step <= Steps; ++Step)
+		{
+			Flight.Fly(Kite, 0.0f, RideDeltaTime);
+			if (SecondsToZenith < 0.0f && FMath::Abs(Kite->GetClockDeg()) <= NearZenithDeg)
+			{
+				SecondsToZenith = Step * RideDeltaTime;
+			}
+			if (Step % StepsPerMark == 0 && Step / StepsPerMark <= 3)
+			{
+				ClockAt[Step / StepsPerMark - 1] = Kite->GetClockDeg();
+			}
+		}
+		UE_LOG(LogKiteSurf, Log, TEXT("DriftsToZenithWithBarCentred (from clock %.0f): within %.0f deg of 12 after %.1f s; clock %.0f / %.0f / %.0f at 5 / 10 / 15 s, %.1f at 20 s, depth %.1f deg, %.0f N, lowest elevation %.1f deg"),
+			StartClockDeg * Side, NearZenithDeg, SecondsToZenith, ClockAt[0], ClockAt[1], ClockAt[2], Kite->GetClockDeg(), Kite->GetWindowDepthDeg(), Kite->GetLineTensionN(), Flight.MinElevationDeg);
+
+		TestTrue(FString::Printf(TEXT("From clock %.0f the kite is within %.0f deg of 12 after %.0f s (clock %.1f)"), StartClockDeg * Side, NearZenithDeg, FlySeconds, Kite->GetClockDeg()),
+			FMath::Abs(Kite->GetClockDeg()) < NearZenithDeg);
+		TestTrue(FString::Printf(TEXT("It got there in 8 to 15 s (%.1f s)"), SecondsToZenith), SecondsToZenith >= 8.0f && SecondsToZenith <= 15.0f);
+		TestTrue(TEXT("The lines are tight"), Kite->AreLinesTaut());
+		TestTrue(FString::Printf(TEXT("It sits near the window edge (depth %.1f deg)"), Kite->GetWindowDepthDeg()), Kite->GetWindowDepthDeg() < 25.0f);
+		TestFalse(TEXT("It stays out of the water"), Kite->IsCrashed());
+
+		// The park-hold assist keeps it where the bar was centred.
+		Kite->bParkHoldAssist = true;
+		Kite->SetWindowPosition(StartClockDeg * Side, 8.0f);
+		FKiteFlight Held;
+		Held.Fly(Kite, 0.0f, FlySeconds);
+		UE_LOG(LogKiteSurf, Log, TEXT("DriftsToZenithWithBarCentred (from clock %.0f, park-hold assist): clock %.1f after %.0f s"), StartClockDeg * Side, Kite->GetClockDeg(), FlySeconds);
+		TestNearlyEqual(FString::Printf(TEXT("With the park-hold assist the kite stays at clock %.0f"), StartClockDeg * Side), Kite->GetClockDeg(), StartClockDeg * Side, 10.0f);
+		TestTrue(TEXT("with tight lines"), Kite->AreLinesTaut());
+	}
+	return true;
+}
+
 // A loop taken too low puts the kite in the water; it lies there with slack lines and then relaunches.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteCrashesAndRelaunches, "KiteSurf.Kite.CrashesAndRelaunches", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
@@ -248,7 +321,9 @@ bool FKiteSurfKiteCrashesAndRelaunches::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// Parked low on the right, then pulled hard right: the nose swings down into the water.
+	// Parked low on the right, then pulled hard right: the nose swings down into the water. The
+	// park-hold assist keeps it low while it settles, instead of letting it drift up to 12.
+	Kite->bParkHoldAssist = true;
 	Kite->SetWindowPosition(70.0f, 10.0f);
 	FKiteFlight Settle;
 	Settle.Fly(Kite, 0.0f, 4.0f);
@@ -295,7 +370,7 @@ bool FKiteSurfKiteCrashesAndRelaunches::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Plain steering travels the kite round the window edge and it stops where the bar is centred.
+// Plain steering travels the kite round the window edge and, with the park-hold assist, it stops where the bar is centred.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteSteeringTravelsRoundTheWindow, "KiteSurf.Kite.SteeringTravelsRoundTheWindow", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfKiteSteeringTravelsRoundTheWindow::RunTest(const FString& Parameters)
@@ -308,6 +383,8 @@ bool FKiteSurfKiteSteeringTravelsRoundTheWindow::RunTest(const FString& Paramete
 		return false;
 	}
 
+	// With the park-hold assist the kite stops where the bar is centred, which is what this measures.
+	Kite->bParkHoldAssist = true;
 	Kite->SetWindowPosition(60.0f, 10.0f);
 	FKiteFlight Settle;
 	Settle.Fly(Kite, 0.0f, 4.0f);
@@ -390,6 +467,7 @@ bool FKiteSurfKiteLoopsWhenSteerHeld::RunTest(const FString& Parameters)
 			return false;
 		}
 
+		Kite->bParkHoldAssist = true; // parked and recovered where the bar is centred, so the tensions compare
 		Kite->SetWindowPosition(0.0f, 10.0f);
 		FKiteFlight Parked;
 		Parked.Fly(Kite, 0.0f, 5.0f);
@@ -871,7 +949,8 @@ bool FKiteSurfKiteAppliedSteer::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	// Parked and settled with the bar centred, the assist has little left to do.
+	// Parked and settled with the bar centred, the park-hold assist has little left to do.
+	Kite->bParkHoldAssist = true;
 	Kite->SetWindowPosition(45.0f, 10.0f);
 	FKiteFlight Parked;
 	Parked.Fly(Kite, 0.0f, 6.0f);
@@ -1187,6 +1266,7 @@ bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
 		}
 		Standing.Kite->SetKiteSize(Sizes[Index]);
 		TestEqual(TEXT("The kite is the size that was rigged"), Standing.Kite->AreaM2, Sizes[Index]);
+		Standing.Kite->bParkHoldAssist = true; // both measured parked at the same clock position
 		Standing.Kite->SetWindowPosition(45.0f, 10.0f);
 		FKiteFlight Parked;
 		Parked.Fly(Standing.Kite, 0.0f, 6.0f);
@@ -1230,6 +1310,7 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 		Standing.Kite->SetKiteModel(Models[Index]);
 		TestEqual(TEXT("The kite is the model that was rigged"), Standing.Kite->GetKiteModel(), Models[Index]);
 		TestEqual(TEXT("Changing the model keeps the size"), Standing.Kite->AreaM2, 12.0f);
+		Standing.Kite->bParkHoldAssist = true; // both measured parked at the same clock position
 		Standing.Kite->SetWindowPosition(45.0f, 10.0f);
 		FKiteFlight Parked;
 		Parked.Fly(Standing.Kite, 0.0f, 6.0f);

@@ -76,6 +76,9 @@ UKiteComponent::UKiteComponent()
 	GravityTurnGain = 0.15f;
 	TravelHeadingDeg = 100.0f;
 	SteerAssistGain = 2.5f;
+	ZenithDriftGain = 1.0f;
+	ZenithDriftMaxHeadingDeg = 20.0f;
+	bParkHoldAssist = false;
 	ParkHoldGain = 2.0f;
 	ParkHoldMaxDeg = 45.0f;
 	MinElevationDeg = 10.0f;
@@ -624,10 +627,10 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 		OffsetDeg = Steer * TravelHeadingDeg;
 		bHasParkClock = false;
 	}
-	else
+	else if (bParkHoldAssist)
 	{
-		// Bar centred: stay at this clock position. Gravity and gusts push the kite along the
-		// window edge, so the assist leans the nose against the drift, as a rider's hands would.
+		// Bar centred, hold assist: stay at this clock position. Gravity and gusts push the kite
+		// along the window edge, so the assist leans the nose against the drift, as a rider's hands would.
 		if (!bHasParkClock)
 		{
 			ParkClockDeg = GetClockDeg();
@@ -635,6 +638,16 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 		}
 		const float DriftDeg = FMath::FindDeltaAngleDegrees(GetClockDeg(), ParkClockDeg);
 		OffsetDeg = FMath::Clamp(ParkHoldGain * DriftDeg, -ParkHoldMaxDeg, ParkHoldMaxDeg);
+	}
+	else
+	{
+		// Bar centred: the kite drifts up the window edge to the zenith and sits there. A kite in
+		// the window has a lift component along the sphere towards 12 that gravity only opposes
+		// near the horizon; the nose leans that way, so it climbs rather than hangs where it is.
+		bHasParkClock = false;
+		const float ZenithClockDeg = 0.0f;
+		const float DriftDeg = FMath::FindDeltaAngleDegrees(GetClockDeg(), ZenithClockDeg);
+		OffsetDeg = FMath::Clamp(ZenithDriftGain * DriftDeg, -ZenithDriftMaxHeadingDeg, ZenithDriftMaxHeadingDeg);
 	}
 
 	const float OffsetRad = FMath::DegreesToRadians(OffsetDeg);

@@ -358,6 +358,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
 				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f); // 15 kn
 				KiteComp->SheetKite(1.0f);
+				KiteComp->bParkHoldAssist = true; // held where it is placed through the hop
 				KiteComp->SetElevationDeg(80.0f);
 				KiteComp->UpdateKite(0.0333f);
 

@@ -30,8 +30,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
  * side of the canopy (overflying the window, or outrunning the wind) luffs it.
  *
  * Steering turns the nose at a rate proportional to airspeed. Normally an assist flies it: bar
- * over means travel round the window that way, bar centred means hold this position at the
- * window edge. With the loop input held the bar turns the kite directly, so holding it flies a loop.
+ * over means travel round the window that way; bar centred lets the kite drift up the window edge
+ * to the zenith and sit there, as a real kite does with the bar neutral (or, with bParkHoldAssist,
+ * holds it where the bar was centred). With the loop input held the bar turns the kite directly,
+ * so holding it flies a loop.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -319,7 +321,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float SteerAssistGain;
 
-	/** With the bar centred the assist holds the kite's clock position: degrees of heading correction per degree of drift... */
+	/**
+	 * With the bar centred the kite drifts up the window edge to the zenith (12 o'clock): the assist
+	 * leans its nose towards 12 by this many degrees per degree of clock it still has to go...
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning", meta = (ClampMin = "0.0"))
+	float ZenithDriftGain;
+
+	/** ...up to this much (deg of nose lean). More climbs faster. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float ZenithDriftMaxHeadingDeg;
+
+	/** With the bar centred, hold the kite at the clock position it had when the bar was centred, instead of letting it drift up to 12. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist")
+	bool bParkHoldAssist;
+
+	/** With bParkHoldAssist, degrees of heading correction per degree the kite has drifted from where the bar was centred... */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float ParkHoldGain;
 

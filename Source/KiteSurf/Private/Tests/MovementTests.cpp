@@ -40,6 +40,7 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			// edge key carves the board, so a steady course is ridden with the edge neutral.
 			Pawn->SetActorLocation(FVector::ZeroVector);
 			Pawn->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+			KiteComp->bParkHoldAssist = true; // the kite stays parked low on that side, as a rider's hands would hold it
 			KiteComp->SetWindowPosition(65.0f, 8.0f);
 			Pawn->SheetKite(0.8f);
 			Pawn->EdgeBoard(0.0f);
@@ -149,6 +150,7 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 			Pawn->SetActorLocation(FVector::ZeroVector);
 			Pawn->SetActorRotation(UpwindHeading);
 			BoardComp->Velocity = UpwindHeading.Vector() * 600.0f; // already planing
+			KiteComp->bParkHoldAssist = true; // the kite stays parked low on that side, as a rider's hands would hold it
 			KiteComp->SetWindowPosition(65.0f, 8.0f);
 			Pawn->SheetKite(0.6f);
 			Pawn->EdgeBoard(0.0f); // course held by the fins; an edge input would carve

@@ -7,6 +7,8 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "Kismet/GameplayStatics.h"
 #include "Blueprint/UserWidget.h"
+#include "GameFramework/WorldSettings.h"
+#include "GameFramework/PlayerState.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
 {
@@ -14,7 +16,9 @@ AKiteSurfHUD::AKiteSurfHUD()
 
 void AKiteSurfHUD::TogglePauseMenu()
 {
-	if (ActivePauseMenuWidget && ActivePauseMenuWidget->IsInViewport())
+	UWorld* World = GetWorld();
+	const bool bHasViewport = World && World->GetGameViewport() != nullptr;
+	if (ActivePauseMenuWidget && (!bHasViewport || ActivePauseMenuWidget->IsInViewport()))
 	{
 		HidePauseMenu();
 	}
@@ -33,13 +37,32 @@ void AKiteSurfHUD::ShowPauseMenu()
 		return;
 	}
 	TSubclassOf<UKiteSurfPauseMenuWidget> ClassToSpawn = PauseMenuWidgetClass ? PauseMenuWidgetClass : TSubclassOf<UKiteSurfPauseMenuWidget>(UKiteSurfPauseMenuWidget::StaticClass());
-	ActivePauseMenuWidget = CreateWidget<UKiteSurfPauseMenuWidget>(PC, ClassToSpawn);
+	ActivePauseMenuWidget = PC->IsLocalPlayerController()
+		? CreateWidget<UKiteSurfPauseMenuWidget>(PC, ClassToSpawn)
+		: CreateWidget<UKiteSurfPauseMenuWidget>(World, ClassToSpawn);
 	if (!ActivePauseMenuWidget)
 	{
 		return;
 	}
-	ActivePauseMenuWidget->AddToViewport(100);
-	UGameplayStatics::SetGamePaused(World, true);
+	if (World->GetGameViewport() != nullptr)
+	{
+		ActivePauseMenuWidget->AddToViewport(100);
+	}
+	if (!UGameplayStatics::SetGamePaused(World, true))
+	{
+		if (AWorldSettings* WS = World->GetWorldSettings())
+		{
+			if (!PC->PlayerState)
+			{
+				APlayerState* PS = World->SpawnActor<APlayerState>();
+				PC->SetPlayerState(PS);
+			}
+			if (PC->PlayerState)
+			{
+				WS->SetPauserPlayerState(PC->PlayerState);
+			}
+		}
+	}
 	PC->bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(ActivePauseMenuWidget->TakeWidget());
@@ -52,8 +75,9 @@ void AKiteSurfHUD::HidePauseMenu()
 {
 	if (ActivePauseMenuWidget)
 	{
-		ActivePauseMenuWidget->OnResumeClicked();
+		UKiteSurfPauseMenuWidget* WidgetToClose = ActivePauseMenuWidget;
 		ActivePauseMenuWidget = nullptr;
+		WidgetToClose->OnResumeClicked();
 	}
 }
 

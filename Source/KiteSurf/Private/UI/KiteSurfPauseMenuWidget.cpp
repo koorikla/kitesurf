@@ -10,6 +10,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/WorldSettings.h"
 #include "Input/Reply.h"
 
 UKiteSurfPauseMenuWidget::UKiteSurfPauseMenuWidget(const FObjectInitializer& ObjectInitializer)
@@ -158,7 +159,13 @@ void UKiteSurfPauseMenuWidget::OnResumeClicked()
 {
 	if (UWorld* World = GetWorld())
 	{
-		UGameplayStatics::SetGamePaused(World, false);
+		if (!UGameplayStatics::SetGamePaused(World, false))
+		{
+			if (AWorldSettings* WS = World->GetWorldSettings())
+			{
+				WS->SetPauserPlayerState(nullptr);
+			}
+		}
 	}
 
 	if (APlayerController* PC = GetOwningPlayer())

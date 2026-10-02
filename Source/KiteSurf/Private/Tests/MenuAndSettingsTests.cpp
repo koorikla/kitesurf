@@ -7,6 +7,11 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UI/KiteSurfMainMenuGameMode.h"
 #include "WindComponent.h"
+#include "KiteSurfHUD.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FKiteSurfSaveGameDefaultsAndClampingTest,
@@ -92,5 +97,53 @@ bool FKiteSurfUIWidgetsInstantiationTest::RunTest(const FString& Parameters)
     AKiteSurfMainMenuGameMode* GameMode = NewObject<AKiteSurfMainMenuGameMode>();
     TestNotNull(TEXT("AKiteSurfMainMenuGameMode can be instantiated"), GameMode);
 
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FKiteSurfPauseMenuTogglesTest,
+    "KiteSurf.UI.PauseMenuToggles",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FKiteSurfPauseMenuTogglesTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    TestNotNull(TEXT("World created"), World);
+    if (!World)
+    {
+        return false;
+    }
+
+    APlayerController* PC = World->SpawnActor<APlayerController>();
+    TestNotNull(TEXT("PlayerController spawned"), PC);
+    if (PC)
+    {
+        APlayerState* PS = World->SpawnActor<APlayerState>();
+        PC->SetPlayerState(PS);
+    }
+
+    AKiteSurfHUD* HUD = World->SpawnActor<AKiteSurfHUD>();
+    TestNotNull(TEXT("HUD spawned"), HUD);
+
+    if (HUD && PC)
+    {
+        HUD->PlayerOwner = PC;
+
+        TestFalse(TEXT("Initially game is not paused"), UGameplayStatics::IsGamePaused(World));
+        TestNull(TEXT("Initially ActivePauseMenuWidget is null"), HUD->GetActivePauseMenuWidget());
+
+        // First toggle: open pause menu
+        HUD->TogglePauseMenu();
+        TestTrue(TEXT("After 1st toggle: game is paused"), UGameplayStatics::IsGamePaused(World));
+        TestNotNull(TEXT("After 1st toggle: ActivePauseMenuWidget is valid"), HUD->GetActivePauseMenuWidget());
+
+        // Second toggle: close pause menu
+        HUD->TogglePauseMenu();
+        TestFalse(TEXT("After 2nd toggle: game is unpaused"), UGameplayStatics::IsGamePaused(World));
+        TestNull(TEXT("After 2nd toggle: ActivePauseMenuWidget is cleared"), HUD->GetActivePauseMenuWidget());
+    }
+
+    World->DestroyWorld(false);
     return true;
 }

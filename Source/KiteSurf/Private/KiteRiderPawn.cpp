@@ -838,8 +838,8 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 	DrawDebugVector(World, KiteAt, KiteStep.SideN, DebugCmPerN, FColor::Magenta);
 	DrawDebugVector(World, KiteAt, (LineStart - KiteAt).GetSafeNormal() * Kite->GetLineTensionN(), DebugCmPerN, bTaut ? FColor::Yellow : FColor::Red);
 	DrawDebugVector(World, KiteAt, Kite->GetKiteHeading(), DebugHeadingLengthCm, FColor::White);
-	const FString KiteText = FString::Printf(TEXT("airspeed %.1f m/s  alpha %.1f deg\nCl %.2f  Cd %.2f\ntension %.0f N %s\nclock %.0f  depth %.0f deg\nsteps last frame %d"),
-		Kite->GetAirspeedCmS() / KiteUnits::CmPerM, KiteStep.AlphaDeg, KiteStep.LiftCoefficient, KiteStep.DragCoefficient,
+	const FString KiteText = FString::Printf(TEXT("%.0f m^2 (%.1f projected)\nairspeed %.1f m/s  alpha %.1f deg\nCl %.2f  Cd %.2f\ntension %.0f N %s\nclock %.0f  depth %.0f deg\nsteps last frame %d"),
+		Kite->AreaM2, Kite->GetProjectedAreaM2(), Kite->GetAirspeedCmS() / KiteUnits::CmPerM, KiteStep.AlphaDeg, KiteStep.LiftCoefficient, KiteStep.DragCoefficient,
 		Kite->GetLineTensionN(), bTaut ? TEXT("taut") : TEXT("SLACK"), Kite->GetClockDeg(), Kite->GetWindowDepthDeg(), LastFrameSimSteps);
 	DrawDebugString(World, KiteAt + FVector(0.0f, 0.0f, DebugKiteTextHeightCm), KiteText, nullptr, FColor::White, 0.0f, true);
 

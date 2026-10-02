@@ -160,7 +160,8 @@ namespace KiteScenario
 using namespace KiteScenario;
 
 // A 12 m^2 kite and an 81 kg rider and board across the wind in 15 and 20 kn: the speed, pull and
-// kite position a rider would expect.
+// kite position a rider would expect. Research: riding pull 0.5 to 1.0 body weights
+// (docs/physics/research.md 3.1).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsSteadyRideAcross, "KiteSurf.Physics.SteadyRideAcross", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsSteadyRideAcross::RunTest(const FString& Parameters)
@@ -185,8 +186,9 @@ bool FKiteSurfPhysicsSteadyRideAcross::RunTest(const FString& Parameters)
 			ElevationDeg, Ride.Kite->GetAzimuthDeg(), Ride.Kite->GetClockDeg(), Ride.Kite->GetAngleOfAttackDeg(), Ride.bTautThroughout, Ride.Invariants.MaxLineExcessCm);
 
 		const FString What = FString::Printf(TEXT("%.0f kn"), WindKnots);
+		const float BodyWeights = TensionN / (Ride.Board->MassKg * KiteUnits::GravityMS2);
 		TestTrue(FString::Printf(TEXT("%s: board speed %.1f kn is within 12 to 25 kn"), *What, SpeedKnots), SpeedKnots >= 12.0f && SpeedKnots <= 25.0f);
-		TestTrue(FString::Printf(TEXT("%s: line tension %.0f N is within 400 to 1100 N"), *What, TensionN), TensionN >= 400.0f && TensionN <= 1100.0f);
+		TestTrue(FString::Printf(TEXT("%s: the pull, %.0f N, is 0.5 to 1.0 body weights (%.2f)"), *What, TensionN, BodyWeights), BodyWeights >= 0.5f && BodyWeights <= 1.0f);
 		TestTrue(FString::Printf(TEXT("%s: kite elevation %.1f deg is within 15 to 50 deg"), *What, ElevationDeg), ElevationDeg >= 15.0f && ElevationDeg <= 50.0f);
 		TestTrue(FString::Printf(TEXT("%s: the lines were tight throughout"), *What), Ride.bTautThroughout);
 		TestTrue(FString::Printf(TEXT("%s: still planing"), *What), Ride.Board->IsPlaning());
@@ -236,13 +238,10 @@ bool FKiteSurfPhysicsUpwindAtEdgeAngle::RunTest(const FString& Parameters)
 
 // A 9 m^2 kite parked at the zenith in 30 kn over a standing rider, sheeted in and out.
 //
-// Known gap: research (docs/physics/research.md 1.3, an estimate) puts the sheeted-in pull at 0.9 to
-// 1.0 kN, and the target range for this check is 0.8 to 1.2 kN. The model pulls about 1.65 kN: its
-// forces use the kite's whole flat area at Cl about 1.04, where the estimate uses the projected area
-// (0.72 of flat) at Cl 1.0, and the kite at 23 m sees 10% more wind than the 10 m figure the estimate
-// used (21% more force). A projected-area factor would bring this into range but would also take
-// the riding pull at 15 kn (KiteSurf.Physics.SteadyRideAcross, 0.59 body weights) below the
-// research's 0.5 to 1.0, so it waits for a calibration pass. Until then this pins the model's value.
+// Research (docs/physics/research.md 1.3, an estimate): sheeted in about 0.94 kN, the lift of the
+// projected area (0.72 of flat) at Cl 1.0 in 15.4 m/s; sheeted out about 0.38 kN. The kite here sits at
+// 23 m, where the wind is 10% stronger than the 10 m figure, and the target range is 0.85 to 1.1 kN
+// (docs/physics/plan-2.md item 1). Before phase 2 the forces used the flat area and this pulled 1.66 kN.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsParkedAtZenith, "KiteSurf.Physics.ParkedAtZenith", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsParkedAtZenith::RunTest(const FString& Parameters)
@@ -251,10 +250,9 @@ bool FKiteSurfPhysicsParkedAtZenith::RunTest(const FString& Parameters)
 	const float KiteAreaM2 = 9.0f;
 	const float SettleSeconds = 10.0f;
 	const float AverageSeconds = 2.0f;
-	const float ResearchZenithTensionN = 950.0f;   // research: 0.9 to 1.0 kN sheeted in (estimate)
-	const float ModelZenithTensionN = 1650.0f;     // what the model pulls today (see the known gap above)
-	const float ModelTolerance = 0.15f;
-	const float SheetedOutMaxN = 500.0f;
+	const float SheetedInMinN = 850.0f;   // research about 0.94 kN at the 10 m wind (estimate)
+	const float SheetedInMaxN = 1100.0f;
+	const float SheetedOutMaxN = 450.0f;  // research about 0.38 kN
 
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
@@ -302,21 +300,166 @@ bool FKiteSurfPhysicsParkedAtZenith::RunTest(const FString& Parameters)
 	Kite->SetWindowPosition(0.0f, 10.0f);
 	const FSettled In = Settle(1.0f);
 	const FSettled Out = Settle(0.0f);
-	UE_LOG(LogKiteSurf, Log, TEXT("ParkedAtZenith: %.0f m^2 in %.0f kn, sheeted in %.0f N (%.2f of the research's %.0f N; alpha %.1f deg, elevation %.1f deg, %.0f cm/s, taut %d), sheeted out %.0f N (alpha %.1f deg, elevation %.1f deg, %.0f cm/s, taut %d)"),
-		KiteAreaM2, WindKnots, In.TensionN, In.TensionN / ResearchZenithTensionN, ResearchZenithTensionN, In.AlphaDeg, In.ElevationDeg, In.SpeedCmS, In.bTaut,
+	UE_LOG(LogKiteSurf, Log, TEXT("ParkedAtZenith: %.0f m^2 (%.1f m^2 projected) in %.0f kn, sheeted in %.0f N (alpha %.1f deg, elevation %.1f deg, %.0f cm/s, taut %d), sheeted out %.0f N (alpha %.1f deg, elevation %.1f deg, %.0f cm/s, taut %d)"),
+		KiteAreaM2, Kite->GetProjectedAreaM2(), WindKnots, In.TensionN, In.AlphaDeg, In.ElevationDeg, In.SpeedCmS, In.bTaut,
 		Out.TensionN, Out.AlphaDeg, Out.ElevationDeg, Out.SpeedCmS, Out.bTaut);
 
-	TestNearlyEqual(FString::Printf(TEXT("Sheeted in it pulls the model's %.0f N within %.0f%% (%.0f N; research 0.9 to 1.0 kN, see the known gap)"), ModelZenithTensionN, 100.0f * ModelTolerance, In.TensionN),
-		In.TensionN, ModelZenithTensionN, ModelTolerance * ModelZenithTensionN);
+	TestTrue(FString::Printf(TEXT("Sheeted in it pulls %.0f to %.0f N (%.0f N)"), SheetedInMinN, SheetedInMaxN, In.TensionN), In.TensionN >= SheetedInMinN && In.TensionN <= SheetedInMaxN);
 	TestTrue(TEXT("Sheeted in the lines are tight"), In.bTaut);
 	TestTrue(FString::Printf(TEXT("Sheeted in it is not stalled (alpha %.1f deg)"), In.AlphaDeg), In.AlphaDeg < Kite->StallAngleDeg);
 	TestTrue(FString::Printf(TEXT("Sheeted in it is overhead (elevation %.1f deg)"), In.ElevationDeg), In.ElevationDeg > 60.0f);
-	TestTrue(FString::Printf(TEXT("Sheeted out it pulls under 0.5 kN (%.0f N)"), Out.TensionN), Out.TensionN < SheetedOutMaxN);
+	TestTrue(FString::Printf(TEXT("Sheeted out it pulls under %.0f N (%.0f N)"), SheetedOutMaxN, Out.TensionN), Out.TensionN < SheetedOutMaxN);
 	TestTrue(TEXT("Sheeted out the lines are tight"), Out.bTaut);
 	TestTrue(FString::Printf(TEXT("Sheeted out it is not stalled (alpha %.1f deg)"), Out.AlphaDeg), Out.AlphaDeg < Kite->StallAngleDeg);
 	Invariants.Assert(*this, TEXT("Parked"));
 
 	World->DestroyWorld(false);
+	return true;
+}
+
+namespace KiteScenario
+{
+	/** A standing rider whose kite is stepped on its own, in steady wind along +X. */
+	struct FStandingKite
+	{
+		UWorld* World = nullptr;
+		AKiteRiderPawn* Pawn = nullptr;
+		UKiteComponent* Kite = nullptr;
+		UBoardMovementComponent* Board = nullptr;
+		FInvariants Invariants;
+
+		FStandingKite(float WindKnots, float KiteAreaM2)
+		{
+			World = UWorld::CreateWorld(EWorldType::Game, false);
+			Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+			Kite = Pawn ? Pawn->GetKite() : nullptr;
+			Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+			UWindComponent* Wind = Pawn ? Pawn->GetWind() : nullptr;
+			if (!Kite || !Board || !Wind)
+			{
+				Kite = nullptr;
+				return;
+			}
+			Wind->BaseWind = FVector(KiteUnits::KnotsToCmS(WindKnots), 0.0f, 0.0f);
+			Wind->GustStrength = 0.0f;
+			Wind->DirectionDriftDeg = 0.0f;
+			Kite->SetKiteSize(KiteAreaM2);
+			Kite->bParkHoldAssist = true;
+		}
+
+		~FStandingKite()
+		{
+			if (World)
+			{
+				World->DestroyWorld(false);
+			}
+		}
+
+		bool IsValid() const { return Kite != nullptr; }
+
+		void Fly(float Seconds)
+		{
+			for (int32 Index = 0, Frames = FMath::RoundToInt(Seconds / DefaultFrameSeconds); Index < Frames; ++Index)
+			{
+				Kite->UpdateKite(DefaultFrameSeconds);
+				Invariants.Check(Pawn, Kite, Board);
+			}
+		}
+	};
+}
+
+// The bar's trim, measured where it was set: a 9 m^2 kite parked at the window edge in 20 kn. Bar in
+// it flies 5 to 6 deg short of the stall; bar out, in the same place, the flow meets the canopy at
+// about -5 deg, a luff margin and not a collapse, and the kite then settles deeper in the window and
+// keeps flying. The difference, the bar's throw, is 15 to 20 deg (research 12 to 20,
+// docs/physics/research.md 1.5; docs/physics/plan-2.md item 1).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteTrimSetsTheAngleOfAttack, "KiteSurf.Kite.TrimSetsTheAngleOfAttack", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteTrimSetsTheAngleOfAttack::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 20.0f;
+	const float KiteAreaM2 = 9.0f;
+	const float SettleSeconds = 8.0f;
+	for (const float ClockDeg : { 45.0f, 70.0f })
+	{
+		FStandingKite Standing(WindKnots, KiteAreaM2);
+		TestTrue(TEXT("Rider and kite created"), Standing.IsValid());
+		if (!Standing.IsValid())
+		{
+			return false;
+		}
+		UKiteComponent* Kite = Standing.Kite;
+		Kite->SetWindowPosition(ClockDeg, 10.0f);
+		Kite->SheetKite(1.0f);
+		Standing.Fly(SettleSeconds);
+		const float InAlphaDeg = Kite->GetAngleOfAttackDeg();
+		const float InDepthDeg = Kite->GetWindowDepthDeg();
+
+		// The bar right out, before the kite has moved: a zero-length step works out the air on the
+		// canopy where it is.
+		Kite->SheetKite(0.0f);
+		Kite->UpdateKite(0.0f);
+		const float OutAlphaDeg = Kite->GetAngleOfAttackDeg();
+		const float ThrowDeg = InAlphaDeg - OutAlphaDeg;
+
+		Standing.Fly(SettleSeconds);
+		const float SettledOutAlphaDeg = Kite->GetAngleOfAttackDeg();
+		UE_LOG(LogKiteSurf, Log, TEXT("TrimSetsTheAngleOfAttack: %.0f m^2 in %.0f kn at clock %.0f: bar in alpha %.1f deg (%.1f short of the %.0f deg stall) at depth %.1f deg, bar out there %.1f deg, throw %.1f deg; bar out settled at alpha %.1f deg, depth %.1f deg, %.0f N"),
+			KiteAreaM2, WindKnots, ClockDeg, InAlphaDeg, Kite->StallAngleDeg - InAlphaDeg, Kite->StallAngleDeg, InDepthDeg, OutAlphaDeg, ThrowDeg,
+			SettledOutAlphaDeg, Kite->GetWindowDepthDeg(), Kite->GetLineTensionN());
+
+		const FString What = FString::Printf(TEXT("Clock %.0f"), ClockDeg);
+		TestTrue(FString::Printf(TEXT("%s: bar in, the kite flies 5 to 6 deg short of the stall (%.1f deg)"), *What, Kite->StallAngleDeg - InAlphaDeg),
+			InAlphaDeg >= Kite->StallAngleDeg - 6.0f && InAlphaDeg <= Kite->StallAngleDeg - 5.0f);
+		TestTrue(FString::Printf(TEXT("%s: bar out in the same place, about -5 deg (%.1f deg)"), *What, OutAlphaDeg), OutAlphaDeg >= -6.0f && OutAlphaDeg <= -4.0f);
+		TestTrue(FString::Printf(TEXT("%s: the bar's throw is 15 to 20 deg (%.1f deg)"), *What, ThrowDeg), ThrowDeg >= 15.0f && ThrowDeg <= 20.0f);
+		TestTrue(FString::Printf(TEXT("%s: bar out, it settles deeper and keeps flying: lines tight, lifting, not stalled (alpha %.1f deg)"), *What, SettledOutAlphaDeg),
+			Kite->AreLinesTaut() && !Kite->IsCrashed() && SettledOutAlphaDeg > Kite->ZeroLiftAngleDeg && SettledOutAlphaDeg < Kite->StallAngleDeg);
+		Standing.Invariants.Assert(*this, What);
+	}
+	return true;
+}
+
+// The air acts on the projected area of the arched canopy, AreaM2 * ProjectedAreaRatio; the mass does
+// not change with it. Read back from the step: lift over (0.5 rho Cl v^2) is the area the air saw.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteForceFollowsProjectedArea, "KiteSurf.Kite.ForceFollowsProjectedArea", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteForceFollowsProjectedArea::RunTest(const FString& Parameters)
+{
+	const float KiteAreaM2 = 9.0f;
+	float TensionN[2] = { 0.0f, 0.0f };
+	const float Ratios[2] = { 1.0f, 0.0f }; // 0: the default
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FStandingKite Standing(20.0f, KiteAreaM2);
+		TestTrue(TEXT("Rider and kite created"), Standing.IsValid());
+		if (!Standing.IsValid())
+		{
+			return false;
+		}
+		UKiteComponent* Kite = Standing.Kite;
+		const float MassKg = Kite->MassKg;
+		if (Ratios[Index] > 0.0f)
+		{
+			Kite->ProjectedAreaRatio = Ratios[Index];
+		}
+		TestNearlyEqual(TEXT("The projected area is the flat area times the ratio (m^2)"), Kite->GetProjectedAreaM2(), KiteAreaM2 * Kite->ProjectedAreaRatio, 1.0e-4f);
+		Kite->SetWindowPosition(0.0f, 10.0f);
+		Kite->SheetKite(0.7f);
+		Standing.Fly(6.0f);
+
+		const FKiteStepDebug& Step = Kite->GetLastStepDebug();
+		const float AirspeedMS = Kite->GetAirspeedCmS() / KiteUnits::CmPerM;
+		const float AreaSeenM2 = Step.LiftN.Size() / FMath::Max(0.5f * KiteUnits::AirDensityKgM3 * Step.LiftCoefficient * FMath::Square(AirspeedMS), KINDA_SMALL_NUMBER);
+		TensionN[Index] = Kite->GetLineTensionN();
+		UE_LOG(LogKiteSurf, Log, TEXT("ForceFollowsProjectedArea: %.0f m^2 at ratio %.2f: the lift saw %.3f m^2 (projected %.3f m^2), %.0f N at alpha %.1f deg, %.1f m/s, mass %.2f kg"),
+			KiteAreaM2, Kite->ProjectedAreaRatio, AreaSeenM2, Kite->GetProjectedAreaM2(), TensionN[Index], Kite->GetAngleOfAttackDeg(), AirspeedMS, Kite->MassKg);
+		TestNearlyEqual(FString::Printf(TEXT("At ratio %.2f the lift acts on the projected area (m^2)"), Kite->ProjectedAreaRatio), AreaSeenM2, Kite->GetProjectedAreaM2(), 0.01f * Kite->GetProjectedAreaM2());
+		TestEqual(TEXT("The ratio does not change the kite's mass (kg)"), Kite->MassKg, MassKg);
+		TestTrue(TEXT("and it flies: lines tight"), Kite->AreLinesTaut());
+		Standing.Invariants.Assert(*this, FString::Printf(TEXT("Ratio %.2f"), Kite->ProjectedAreaRatio));
+	}
+	TestTrue(FString::Printf(TEXT("The kite on its projected area pulls less than on its flat area (%.0f N against %.0f N)"), TensionN[1], TensionN[0]), TensionN[1] < 0.8f * TensionN[0]);
 	return true;
 }
 

@@ -55,14 +55,15 @@ UKiteComponent::UKiteComponent()
 	LineLengthCm = 2400.0f; // 24 m
 	RiderWindHeightCm = 150.0f;
 	AreaM2 = 12.0f;
+	ProjectedAreaRatio = 0.69f;
 	MassKg = 3.0f;
 	Sheet = 0.0f;
 	Steer = 0.0f;
 
 	AddedMassKg = 3.0f;
-	MaxLiftCoefficient = 1.2f;
-	StallAngleDeg = 18.0f;
-	ZeroLiftAngleDeg = 0.0f;
+	MaxLiftCoefficient = 1.1f;
+	StallAngleDeg = 20.0f;
+	ZeroLiftAngleDeg = -3.0f;
 	StalledForwardTiltDeg = 10.0f;
 	ParasiteDragCoefficient = 0.09f;
 	InducedDragFactor = 0.085f;
@@ -70,8 +71,11 @@ UKiteComponent::UKiteComponent()
 	SideForceCoefficient = 1.2f;
 	SlackDragCoefficient = 0.7f;
 	SlackCollapseCm = 150.0f;
-	TrimSheetedOutDeg = -22.0f; // bar right out: the kite flags and barely pulls
-	TrimSheetedInDeg = 2.0f;    // bar right in: full power, a few degrees short of the stall
+	// Parked at the window edge in 20 kn the flow meets the canopy at about 10.8 deg; these put
+	// the bar right in 5.6 deg short of the stall (14.4 deg) and right out at -4.6 deg, a luff
+	// margin, for a bar throw of 19 deg of angle of attack (docs/physics/plan-2.md item 1).
+	TrimSheetedOutDeg = -15.4f;
+	TrimSheetedInDeg = 3.6f;
 
 	MinTurnRadiusCm = 420.0f;
 	TurnResponse = 9.0f;
@@ -85,7 +89,7 @@ UKiteComponent::UKiteComponent()
 	ZenithDriftGain = 1.0f;
 	ZenithDriftMaxHeadingDeg = 20.0f;
 	bParkHoldAssist = false;
-	ParkHoldGain = 2.0f;
+	ParkHoldGain = 2.5f;
 	ParkHoldMaxDeg = 45.0f;
 	MinElevationDeg = 10.0f;
 	CrashHeightCm = 60.0f;
@@ -411,11 +415,11 @@ void UKiteComponent::SetKiteSize(float InAreaM2)
 	const float Scale = GetSizeScale();
 	const FKiteModelTraits Traits = KiteGear::GetTraits(KiteModel);
 	// Reference 12 m^2 loop kite: 3 kg, 3 kg of air to push, 4.2 m turning radius, lift
-	// coefficient up to 1.2, induced drag factor 0.085.
+	// coefficient up to 1.1, induced drag factor 0.085.
 	MassKg = 3.0f * AreaRatio * Traits.MassScale;
 	AddedMassKg = 3.0f * AreaRatio * Scale;
 	MinTurnRadiusCm = 420.0f * Scale * Traits.TurnRadiusScale;
-	MaxLiftCoefficient = 1.2f * Traits.LiftScale;
+	MaxLiftCoefficient = 1.1f * Traits.LiftScale;
 	InducedDragFactor = 0.085f * Traits.InducedDragScale;
 	if (KiteMesh)
 	{
@@ -703,7 +707,10 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 
 	const FVector Airflow = (Wind - KiteVelocity) / CmPerM; // air moving past the kite
 	const float FlowSpeed = Airflow.Size();
-	const float HalfRhoArea = 0.5f * AirDensityKgM3 * AreaM2;
+	// The flying canopy is arched: the air acts on its projected area. Collapsed, it is a sheet of
+	// its full area (SlackDragCoefficient is on that).
+	const float HalfRhoArea = 0.5f * AirDensityKgM3 * GetProjectedAreaM2();
+	const float HalfRhoFlatArea = 0.5f * AirDensityKgM3 * AreaM2;
 	const FVector Weight(0.0f, 0.0f, -GravityMS2 * MassKg);
 
 	// Held by tight lines, the canopy faces the rider: its normal is along the lines, its nose
@@ -763,7 +770,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		// what takes the slack back up: a rider who pops towards the kite does not drop it. With
 		// a lot of slack nothing holds it to the wind and it is a sheet in the air: drag and weight.
 		const float Collapse = FMath::Clamp((LineLengthCm - TautSlackCm - DistanceCm) / FMath::Max(SlackCollapseCm, 1.0f), 0.0f, 1.0f);
-		const FVector SheetForce = HalfRhoArea * SlackDragCoefficient * FlowSpeed * Airflow;
+		const FVector SheetForce = HalfRhoFlatArea * SlackDragCoefficient * FlowSpeed * Airflow;
 		Force = FMath::Lerp(FlyingForce, SheetForce, Collapse) + Weight;
 		LastStepDebug.LiftN = LiftForce * (1.0f - Collapse);
 		LastStepDebug.SideN = SideForce * (1.0f - Collapse);

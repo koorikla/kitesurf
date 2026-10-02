@@ -270,8 +270,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "100.0"))
 	float LineLengthCm; // Default 2400 = 24m
 
+	/** Flat area (m^2): the size a kite is sold by. Mass, added mass, turning circle and the mesh follow it; the air acts on GetProjectedAreaM2(). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "1.0"))
 	float AreaM2; // Default 12 m^2
+
+	/**
+	 * Share of the flat area the arched canopy presents to the air: lift, drag and the side force
+	 * act on AreaM2 times this (a collapsed canopy drags on its full area, SlackDragCoefficient).
+	 * Research: 0.65 to 0.80, typically 0.72 (docs/physics/research.md 1.7); 0.69 puts a 9 m^2 kite
+	 * at the zenith in 30 kn at 1.09 kN (research 0.9 to 1.1). 1 flies on the flat area, as the model
+	 * did before phase 2.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float ProjectedAreaRatio;
+
+	/** The area the air acts on (m^2): AreaM2 * ProjectedAreaRatio. */
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	float GetProjectedAreaM2() const { return AreaM2 * ProjectedAreaRatio; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "0.1"))
 	float MassKg; // Default 3 kg
@@ -286,20 +301,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float AddedMassKg;
 
-	/** Lift coefficient at the stall, the most the canopy can make. */
+	/**
+	 * Lift coefficient at the stall, the most the canopy can make. Research: 1.0 to 1.2 at 16 to 20 deg
+	 * (docs/physics/research.md 1.2). SetKiteSize and SetKiteModel re-rig it as 1.1 times the model's
+	 * lift scale; before phase 2 it was 1.2.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float MaxLiftCoefficient;
 
-	/** Angle of attack at which the kite stalls (deg). */
+	/**
+	 * Angle of attack at which the kite stalls (deg). 20: the top of the research's 16 to 20, so a
+	 * kite overhead in the air keeps flying as the rider's sink raises its angle of attack. Before
+	 * phase 2 it was 18.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float StallAngleDeg;
 
 	/**
 	 * Angle of attack at which the canopy makes no lift (deg): attached-flow lift follows the angle
 	 * above it, reaching MaxLiftCoefficient at StallAngleDeg. A cambered tube kite still lifts at zero
-	 * angle; research puts this at about -3 deg (docs/physics/research.md 1.2), the value to tune
-	 * towards. The default is 0 (no camber) because -3 at today's trim adds so much power that a
-	 * small board planes in 12 kn and the upwind leeway passes 10 deg.
+	 * angle: research puts this at about -3 deg (docs/physics/research.md 1.2). Before phase 2 it was 0
+	 * (no camber), with the trims 2 to 3 deg higher doing its job.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "-15.0", ClampMax = "5.0"))
 	float ZeroLiftAngleDeg;
@@ -337,11 +359,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "1.0"))
 	float SlackCollapseCm;
 
-	/** Canopy trim angle with the bar out (deg): depowered. */
+	/**
+	 * Canopy trim angle with the bar out (deg): depowered. Added to the angle the flow meets the canopy
+	 * at; parked at the window edge in 20 kn that is about 10.8 deg, so -15.4 gives -4.6 deg of angle
+	 * of attack there, a luff margin rather than a collapse (the kite then settles deeper in the
+	 * window at about +2 deg). Before phase 2 it was -22.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float TrimSheetedOutDeg;
 
-	/** Canopy trim angle with the bar in (deg): powered. */
+	/**
+	 * Canopy trim angle with the bar in (deg): powered. 3.6 gives 14.4 deg of angle of attack parked
+	 * at the window edge in 20 kn, 5.6 deg short of the stall, and puts the bar's throw at 19 deg
+	 * (research 12 to 20, docs/physics/research.md 1.5). Before phase 2 it was +2.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float TrimSheetedInDeg;
 
@@ -414,7 +445,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist")
 	bool bParkHoldAssist;
 
-	/** With bParkHoldAssist, degrees of heading correction per degree the kite has drifted from where the bar was centred... */
+	/**
+	 * With bParkHoldAssist, degrees of heading correction per degree the kite has drifted from where
+	 * the bar was centred... 2.5 holds a kite parked low at the edge within 4 deg of its clock; it was
+	 * 2 before phase 2, when the kite flew on its flat area and its weight counted for less.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float ParkHoldGain;
 

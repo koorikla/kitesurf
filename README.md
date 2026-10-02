@@ -52,17 +52,26 @@ Kitesurfing game built on Unreal Engine 5.8 with C++ and Enhanced Input.
 scripts/run-editor.sh -game -windowed -ResX=1600 -ResY=900 -log
 ```
 
-You start planing across the wind with the kite powered up low on your right. The kite and the
-bar stay where you leave them, so no key needs to be held to keep riding.
+You start planing across the wind with the kite parked low on your right. The kite and the
+bar stay where you leave them, so no key needs to be held to keep riding. The same table is
+shown in the main menu and the pause menu.
 
-| Action | Keyboard | Gamepad |
+The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick.
+
+| Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
-| Fly the kite round the window (over the top to change tack) | A / D or Left / Right | Left stick X |
-| Sheet in / out (the bar holds its position) | W / S or Up / Down | Right / left trigger |
-| Carve the board (hold to keep turning) | Q / E | Left stick Y |
-| Jump (while planing with an edge held) | Space | Bottom face button |
+| Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
+| Sheet in / out (the bar holds its position) | Up / Down | Right stick up / down, triggers |
+| Loop the kite | Hold Shift while steering | Hold right bumper while steering |
+| Bar on the mouse | Hold right button: move to steer and sheet, left button loops | |
+| Carve the board; spin it in the air | A / D | Left stick left / right |
+| Edge harder / flatten the board | W / S | Left stick up / down |
+| Jump (pop, with the edge loaded) | Space | Bottom face button |
 | Reset | R | Right face button |
-| Pause | Esc | Start |
+| Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
+
+Sending the kite up over your head with the bar in lifts you off the water without a pop, and a
+kite looped through the middle of the window pulls several times harder than a parked one.
 
 ## Conventions
 

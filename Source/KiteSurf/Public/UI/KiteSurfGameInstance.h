@@ -48,6 +48,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetMotionBar(bool bEnabled);
 
+	/** Controller vibration on pops, landings, crashes and hard pulls (on by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bHaptics;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetHaptics(bool bEnabled);
+
 	/** What is in the water at the spot */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSpotIslands;

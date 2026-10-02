@@ -301,12 +301,12 @@ namespace
 			Sample.GyroRadS = FVector::ZeroVector;
 		}
 
-		/** "Up" in the controller's axes for a pad rolled right and tipped towards the player. */
+		/** "Up" in the controller's axes for a pad rolled right and pulled in like a bar. */
 		static FVector UpFor(float RollDeg, float PitchDeg)
 		{
 			const float Roll = FMath::DegreesToRadians(RollDeg);
 			const float Pitch = FMath::DegreesToRadians(PitchDeg);
-			return FVector(-FMath::Sin(Roll) * FMath::Cos(Pitch), FMath::Cos(Roll) * FMath::Cos(Pitch), -FMath::Sin(Pitch)).GetSafeNormal();
+			return FVector(-FMath::Sin(Roll) * FMath::Cos(Pitch), FMath::Cos(Roll) * FMath::Cos(Pitch), FMath::Sin(Pitch)).GetSafeNormal();
 		}
 
 		FKiteMotionSample Sample;
@@ -345,8 +345,20 @@ bool FKiteSurfMotionBarFilter::RunTest(const FString& Parameters)
 	{
 		Filter.Update(Sample, DeltaTime);
 	}
-	TestNearlyEqual(TEXT("Top tipped 20 deg towards the player reads as 20 deg of pitch"), Filter.GetPitchDeg(), 20.0f, 0.5f);
+	TestNearlyEqual(TEXT("Pulled in 20 deg reads as 20 deg of pitch"), Filter.GetPitchDeg(), 20.0f, 0.5f);
 	TestNearlyEqual(TEXT("with no roll"), Filter.GetRollDeg(), 0.0f, 0.5f);
+
+	// The direction of "pulled in", pinned to the controller's own axes rather than to the test's
+	// helper: checked on a DualSense, pulling the bar in raises the edge nearest the player, which
+	// shows as "up" gaining a part along +Z. The other sign let the bar out when it was pulled.
+	FMotionBarFilter Pulled;
+	Sample.GyroRadS = FVector::ZeroVector;
+	Sample.AccelG = FVector(0.0f, FMath::Cos(FMath::DegreesToRadians(20.0f)), FMath::Sin(FMath::DegreesToRadians(20.0f)));
+	Pulled.Update(Sample, DeltaTime);
+	TestNearlyEqual(TEXT("Up tilted towards +Z is the bar pulled in"), Pulled.GetPitchDeg(), 20.0f, 0.01f);
+	FMotionBarMapping PullMapping;
+	PullMapping.Calibrate(0.0f, 0.0f, 0.5f);
+	TestTrue(TEXT("and pulling in adds power"), PullMapping.GetSheet(Pulled.GetPitchDeg()) > 0.5f);
 
 	// A quick turn of the wrist: the gyro follows it at once, before the accelerometer has caught up.
 	// Rolling right is turning about the axis that points at the player.
@@ -466,7 +478,7 @@ bool FKiteSurfMotionBarOnThePawn::RunTest(const FString& Parameters)
 	Tick(240);
 	TestTrue(FString::Printf(TEXT("Right side down steers the kite right (%.2f)"), Pawn->GetCurrentSteerInput()), Pawn->GetCurrentSteerInput() > 0.5f);
 	TestNearlyEqual(TEXT("The kite gets that steering"), Pawn->GetKite()->Steer, Pawn->GetCurrentSteerInput(), 0.001f);
-	TestNearlyEqual(TEXT("Tipping it 10 deg towards you pulls the bar in by a fifth"), Pawn->GetCurrentSheetInput(), 0.9f, 0.02f);
+	TestNearlyEqual(TEXT("Pulling it in 10 deg pulls the bar in by a fifth"), Pawn->GetCurrentSheetInput(), 0.9f, 0.02f);
 
 	// Tilt left and tip away.
 	Controller->Hold(8.0f - 35.0f, 30.0f - 40.0f);
@@ -526,6 +538,76 @@ bool FKiteSurfMotionBarOnThePawn::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and can be switched on"), GI->bMotionBar);
 
 	World->DestroyWorld(false);
+	return true;
+}
+
+// Brief controller vibration for the things that would be felt.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHaptics, "KiteSurf.Input.Haptics", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfHaptics::RunTest(const FString& Parameters)
+{
+	// A landing buzzes harder and longer the harder it is, within limits.
+	float SoftIntensity = 0.0f, SoftDuration = 0.0f, HardIntensity = 0.0f, HardDuration = 0.0f, HugeIntensity = 0.0f, HugeDuration = 0.0f;
+	AKiteRiderPawn::GetLandingHaptic(1.0f, SoftIntensity, SoftDuration);
+	AKiteRiderPawn::GetLandingHaptic(3.0f, HardIntensity, HardDuration);
+	AKiteRiderPawn::GetLandingHaptic(12.0f, HugeIntensity, HugeDuration);
+	TestTrue(TEXT("A soft landing is a light, short tap"), SoftIntensity > 0.0f && SoftIntensity < 0.4f && SoftDuration < 0.15f);
+	TestTrue(TEXT("A harder one is stronger and longer"), HardIntensity > SoftIntensity && HardDuration > SoftDuration);
+	TestTrue(TEXT("The hardest is full strength and still brief"), HugeIntensity == 1.0f && HugeDuration <= 0.35f);
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	TestNotNull(TEXT("Pawn spawned"), Pawn);
+	if (Pawn)
+	{
+		TestTrue(TEXT("Haptics are on by default"), Pawn->AreHapticsEnabled());
+		Pawn->PlayHaptic(0.5f, 0.1f, false);
+		TestEqual(TEXT("A buzz is asked for"), Pawn->GetHapticCount(), 1);
+		TestEqual(TEXT("at the strength given"), Pawn->GetLastHapticIntensity(), 0.5f);
+		Pawn->PlayHaptic(3.0f, 0.1f, true);
+		TestEqual(TEXT("Strength is limited to full"), Pawn->GetLastHapticIntensity(), 1.0f);
+
+		// The yank of a loop: once as the pull comes on, not for as long as it lasts, and not again at once.
+		const float DeltaTime = 1.0f / 60.0f;
+		const int32 Before = Pawn->GetHapticCount();
+		Pawn->UpdateTensionHaptic(800.0f, DeltaTime);
+		TestEqual(TEXT("Ordinary riding tension does not buzz"), Pawn->GetHapticCount(), Before);
+		for (int32 Step = 0; Step < 30; ++Step)
+		{
+			Pawn->UpdateTensionHaptic(4000.0f, DeltaTime);
+		}
+		TestEqual(TEXT("A hard pull buzzes once, however long it lasts"), Pawn->GetHapticCount(), Before + 1);
+		TestTrue(TEXT("and briefly"), Pawn->GetLastHapticDuration() <= 0.2f);
+		Pawn->UpdateTensionHaptic(500.0f, DeltaTime);
+		Pawn->UpdateTensionHaptic(4000.0f, DeltaTime);
+		TestEqual(TEXT("A second pull straight after does not buzz again"), Pawn->GetHapticCount(), Before + 1);
+		for (int32 Step = 0; Step < 90; ++Step)
+		{
+			Pawn->UpdateTensionHaptic(500.0f, DeltaTime);
+		}
+		Pawn->UpdateTensionHaptic(4000.0f, DeltaTime);
+		TestEqual(TEXT("but one a second and a half later does"), Pawn->GetHapticCount(), Before + 2);
+
+		// Switched off: nothing.
+		Pawn->SetHapticsEnabled(false);
+		const int32 WhenOff = Pawn->GetHapticCount();
+		Pawn->PlayHaptic(1.0f, 0.3f, true);
+		for (int32 Step = 0; Step < 120; ++Step)
+		{
+			Pawn->UpdateTensionHaptic(Step < 60 ? 500.0f : 4000.0f, DeltaTime);
+		}
+		TestEqual(TEXT("Switched off, nothing buzzes"), Pawn->GetHapticCount(), WhenOff);
+	}
+
+	UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
+	TestTrue(TEXT("Vibration is on in a new game"), GI->bHaptics);
+	GI->SetHaptics(false);
+	TestFalse(TEXT("and can be switched off"), GI->bHaptics);
+
+	if (World)
+	{
+		World->DestroyWorld(false);
+	}
 	return true;
 }
 

@@ -59,9 +59,11 @@ float FMotionBarFilter::GetRollDeg() const
 
 float FMotionBarFilter::GetPitchDeg() const
 {
-	// Tipped with its top towards the player, the pad's near edge points down. Measured as the
-	// angle of that edge below level, so it reads the same however far the pad is rolled.
-	return FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(-Up.Z, -1.0f, 1.0f)));
+	// Pulled in like a bar, the pad tips so that its near edge rises: "up" gains a part along
+	// the axis that points at the player. (Checked on a DualSense: the opposite sign had the
+	// bar letting out when it was pulled.) Measured as the angle of that edge above level, so
+	// it reads the same however far the pad is rolled.
+	return FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(Up.Z, -1.0f, 1.0f)));
 }
 
 void FMotionBarMapping::Calibrate(float RollDeg, float PitchDeg, float CurrentSheet)

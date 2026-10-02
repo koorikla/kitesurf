@@ -9,6 +9,8 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
+#include "KiteSurfHUD.h"
+#include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 
 AKiteRiderPawn::AKiteRiderPawn()
@@ -124,7 +126,16 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
+		if (PauseAction)
+		{
+			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
+		}
 	}
+
+	// Fallback binding for standard Escape key in case Enhanced Input action is unassigned
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
 }
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
@@ -205,4 +216,20 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	}
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
+}
+
+void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)
+{
+	TogglePause();
+}
+
+void AKiteRiderPawn::TogglePause()
+{
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))
+		{
+			HUD->TogglePauseMenu();
+		}
+	}
 }

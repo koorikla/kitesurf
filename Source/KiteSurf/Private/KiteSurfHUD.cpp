@@ -4,9 +4,81 @@
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "GameFramework/PlayerController.h"
+#include "UI/KiteSurfPauseMenuWidget.h"
+#include "Kismet/GameplayStatics.h"
+#include "Blueprint/UserWidget.h"
+#include "GameFramework/WorldSettings.h"
+#include "GameFramework/PlayerState.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
 {
+}
+
+void AKiteSurfHUD::TogglePauseMenu()
+{
+	UWorld* World = GetWorld();
+	const bool bHasViewport = World && World->GetGameViewport() != nullptr;
+	if (ActivePauseMenuWidget && (!bHasViewport || ActivePauseMenuWidget->IsInViewport()))
+	{
+		HidePauseMenu();
+	}
+	else
+	{
+		ShowPauseMenu();
+	}
+}
+
+void AKiteSurfHUD::ShowPauseMenu()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PC = GetOwningPlayerController();
+	if (!World || !PC)
+	{
+		return;
+	}
+	TSubclassOf<UKiteSurfPauseMenuWidget> ClassToSpawn = PauseMenuWidgetClass ? PauseMenuWidgetClass : TSubclassOf<UKiteSurfPauseMenuWidget>(UKiteSurfPauseMenuWidget::StaticClass());
+	ActivePauseMenuWidget = PC->IsLocalPlayerController()
+		? CreateWidget<UKiteSurfPauseMenuWidget>(PC, ClassToSpawn)
+		: CreateWidget<UKiteSurfPauseMenuWidget>(World, ClassToSpawn);
+	if (!ActivePauseMenuWidget)
+	{
+		return;
+	}
+	if (World->GetGameViewport() != nullptr)
+	{
+		ActivePauseMenuWidget->AddToViewport(100);
+	}
+	if (!UGameplayStatics::SetGamePaused(World, true))
+	{
+		if (AWorldSettings* WS = World->GetWorldSettings())
+		{
+			if (!PC->PlayerState)
+			{
+				APlayerState* PS = World->SpawnActor<APlayerState>();
+				PC->SetPlayerState(PS);
+			}
+			if (PC->PlayerState)
+			{
+				WS->SetPauserPlayerState(PC->PlayerState);
+			}
+		}
+	}
+	PC->bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(ActivePauseMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
+	ActivePauseMenuWidget->FocusFirst();
+}
+
+void AKiteSurfHUD::HidePauseMenu()
+{
+	if (ActivePauseMenuWidget)
+	{
+		UKiteSurfPauseMenuWidget* WidgetToClose = ActivePauseMenuWidget;
+		ActivePauseMenuWidget = nullptr;
+		WidgetToClose->OnResumeClicked();
+	}
 }
 
 float AKiteSurfHUD::CmPerSecToKnots(float SpeedCmPerSec)

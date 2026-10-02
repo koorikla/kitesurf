@@ -84,6 +84,10 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
+		}
 	}
 }
 
@@ -100,6 +104,20 @@ void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
 	EdgeBoard(Value.Get<float>());
+}
+
+void AKiteRiderPawn::OnJumpTriggered(const FInputActionValue& Value)
+{
+	Jump();
+}
+
+bool AKiteRiderPawn::Jump()
+{
+	if (BoardMovement)
+	{
+		return BoardMovement->Jump();
+	}
+	return false;
 }
 
 void AKiteRiderPawn::EdgeBoard(float Axis)

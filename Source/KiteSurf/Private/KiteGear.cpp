@@ -37,6 +37,24 @@ FKiteModelTraits KiteGear::GetTraits(EKiteModel Model)
 	return Traits;
 }
 
+const TCHAR* KiteGear::GetMeshPath(EKiteModel Model)
+{
+	return Model == EKiteModel::Boost ? TEXT("/Game/Meshes/SM_KiteBoost") : TEXT("/Game/Meshes/SM_Kite");
+}
+
+float KiteGear::GetLengthScale(EBoardSize Size)
+{
+	switch (Size)
+	{
+	case EBoardSize::Small:
+		return 132.0f / 138.0f;
+	case EBoardSize::Large:
+		return 145.0f / 138.0f;
+	default:
+		return 1.0f;
+	}
+}
+
 const TCHAR* KiteGear::GetDisplayName(EBoardSize Size)
 {
 	switch (Size)

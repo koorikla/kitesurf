@@ -1,5 +1,6 @@
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfSaveGame.h"
+#include "Misc/App.h"
 
 UKiteSurfGameInstance::UKiteSurfGameInstance()
 	: PendingWindKnots(15.0f)
@@ -20,6 +21,7 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 	{
 		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 30.0f);
 		MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
+		FApp::SetVolumeMultiplier(MasterVolume);
 	}
 }
 
@@ -42,4 +44,5 @@ void UKiteSurfGameInstance::SetPendingWindKnots(float InKnots)
 void UKiteSurfGameInstance::SetMasterVolume(float InVolume)
 {
 	MasterVolume = FMath::Clamp(InVolume, 0.0f, 1.0f);
+	FApp::SetVolumeMultiplier(MasterVolume);
 }

@@ -12,6 +12,8 @@
 #include "GameFramework/PlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "Misc/App.h"
+#include "GameMapsSettings.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FKiteSurfSaveGameDefaultsAndClampingTest,
@@ -68,9 +70,21 @@ bool FKiteSurfGameInstanceSettingsTest::RunTest(const FString& Parameters)
 
     GI->SetMasterVolume(-0.2f);
     TestEqual(TEXT("MasterVolume clamped at 0.0"), GI->MasterVolume, 0.0f);
+    TestEqual(TEXT("FApp::GetVolumeMultiplier matches MasterVolume (0.0)"), FApp::GetVolumeMultiplier(), 0.0f);
 
     GI->SetMasterVolume(1.8f);
     TestEqual(TEXT("MasterVolume clamped at 1.0"), GI->MasterVolume, 1.0f);
+    TestEqual(TEXT("FApp::GetVolumeMultiplier matches MasterVolume (1.0)"), FApp::GetVolumeMultiplier(), 1.0f);
+
+    // Test that GameMapsSettings has L_MainMenu as GameDefaultMap and KiteSurfGameInstance registered
+    const UGameMapsSettings* MapsSettings = GetDefault<UGameMapsSettings>();
+    TestNotNull(TEXT("UGameMapsSettings default object exists"), MapsSettings);
+    if (MapsSettings)
+    {
+        TestTrue(TEXT("GameDefaultMap points to L_MainMenu"), MapsSettings->GetGameDefaultMap().Contains(TEXT("L_MainMenu")));
+        TestTrue(TEXT("EditorStartupMap points to L_OpenWater"), MapsSettings->EditorStartupMap.ToString().Contains(TEXT("L_OpenWater")));
+        TestTrue(TEXT("GameInstanceClass is KiteSurfGameInstance"), MapsSettings->GameInstanceClass.ToString().Contains(TEXT("KiteSurfGameInstance")));
+    }
 
     return true;
 }

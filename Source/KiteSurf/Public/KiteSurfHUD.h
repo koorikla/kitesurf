@@ -17,6 +17,37 @@ public:
 
 	virtual void DrawHUD() override;
 
+	/** Onboarding Tutorial Steps */
+	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
+	int32 CurrentOnboardingStep; // 0=Steer, 1=Sheet, 2=Edge, 3=Jump, 4=Completed
+
+	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
+	bool bOnboardingActive;
+
+	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
+	float CurrentStepProgress;
+
+	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
+	bool IsOnboardingActive() const { return bOnboardingActive; }
+
+	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
+	int32 GetCurrentOnboardingStep() const { return CurrentOnboardingStep; }
+
+	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
+	float GetCurrentStepProgress() const { return CurrentStepProgress; }
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
+	void StartOnboarding();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
+	void SkipOnboarding();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
+	void AdvanceOnboardingStep();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
+	FString GetCurrentPromptText() const;
+
 	UFUNCTION(BlueprintCallable, Category = "UI|Jump")
 	void ShowJumpRejection(EJumpRejectReason Reason);
 
@@ -67,4 +98,11 @@ protected:
 	void DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius);
 	void DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius);
 	void DrawFPS(float ScreenX, float ScreenY);
+	void DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
+	void DrawOnboardingPrompt(float ScreenW, float ScreenH);
+	void UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn);
+
+	bool bHasInitializedOnboarding;
+	float PromptAlpha;
+	float StepCompletionTimer;
 };

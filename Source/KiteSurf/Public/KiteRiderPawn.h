@@ -54,8 +54,15 @@ public:
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+	UWindComponent* GetWind() const { return Wind.Get(); }
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	float GetCurrentSteerInput() const { return CurrentSteerInput; }
+
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	float GetCurrentSheetInput() const { return CurrentSheetInput; }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UKiteComponent> Kite;

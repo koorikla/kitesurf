@@ -20,6 +20,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float MasterVolume;
 
+	/** Whether onboarding prompts should be skipped */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSkipOnboarding;
+
+	/** Whether the player has completed the first-run onboarding prompt sequence */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bOnboardingCompleted;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

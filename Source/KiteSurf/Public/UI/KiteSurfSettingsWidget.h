@@ -119,6 +119,15 @@ public:
 	int32 CurrentQualityPreset; // 0=Low, 1=Medium, 2=High, 3=Epic
 
 	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bSkipOnboarding;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleSkipOnboarding();
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetSkipOnboarding(bool bInSkip);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
 	TArray<FIntPoint> SupportedResolutions;
 
 protected:

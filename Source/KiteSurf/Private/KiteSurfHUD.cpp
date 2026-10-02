@@ -1,17 +1,25 @@
 #include "KiteSurfHUD.h"
 #include "KiteRiderPawn.h"
 #include "BoardMovementComponent.h"
+#include "KiteComponent.h"
 #include "WindComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfGameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/WorldSettings.h"
 #include "GameFramework/PlayerState.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
+	: CurrentOnboardingStep(0)
+	, bOnboardingActive(true)
+	, CurrentStepProgress(0.0f)
+	, bHasInitializedOnboarding(false)
+	, PromptAlpha(1.0f)
+	, StepCompletionTimer(0.0f)
 {
 }
 
@@ -102,6 +110,65 @@ FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)
 	return FString::Printf(TEXT("%.1f"), Knots);
 }
 
+void AKiteSurfHUD::StartOnboarding()
+{
+	CurrentOnboardingStep = 0;
+	bOnboardingActive = true;
+	CurrentStepProgress = 0.0f;
+	StepCompletionTimer = 0.0f;
+	PromptAlpha = 1.0f;
+}
+
+void AKiteSurfHUD::SkipOnboarding()
+{
+	bOnboardingActive = false;
+	CurrentOnboardingStep = 4;
+	if (UWorld* World = GetWorld())
+	{
+		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			GI->SetSkipOnboarding(true);
+			GI->SaveSettingsToDisk();
+		}
+	}
+}
+
+void AKiteSurfHUD::AdvanceOnboardingStep()
+{
+	CurrentOnboardingStep++;
+	CurrentStepProgress = 0.0f;
+	StepCompletionTimer = 0.0f;
+	if (CurrentOnboardingStep >= 4)
+	{
+		bOnboardingActive = false;
+		if (UWorld* World = GetWorld())
+		{
+			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+			{
+				GI->SetOnboardingCompleted(true);
+				GI->SaveSettingsToDisk();
+			}
+		}
+	}
+}
+
+FString AKiteSurfHUD::GetCurrentPromptText() const
+{
+	switch (CurrentOnboardingStep)
+	{
+	case 0:
+		return TEXT("STEER THE KITE: Turn left & right [A/D or Left Stick]");
+	case 1:
+		return TEXT("POWER UP: Pull the bar to sheet in [W / S or Right Trigger]");
+	case 2:
+		return TEXT("CARVE & EDGE: Lean against the kite to build tension [Q / E]");
+	case 3:
+		return TEXT("SEND IT: Pop off the water to jump [SPACE or Bottom Face Button]");
+	default:
+		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
+	}
+}
+
 void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
 {
 	JumpRejectionText = UBoardMovementComponent::JumpRejectReasonToString(Reason);
@@ -126,6 +193,7 @@ void AKiteSurfHUD::DrawHUD()
 
 	const float ScreenW = Canvas->ClipX;
 	const float ScreenH = Canvas->ClipY;
+	const float DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
 
 	DrawFPS(ScreenW - 130.0f, 25.0f);
 
@@ -134,11 +202,17 @@ void AKiteSurfHUD::DrawHUD()
 	{
 		DrawTelemetry(RiderPawn);
 		DrawWindWindowArc(RiderPawn, ScreenW * 0.5f, ScreenH - 50.0f, 110.0f);
+		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
+		UpdateOnboarding(DeltaTime, RiderPawn);
+	}
+
+	if (bOnboardingActive)
+	{
+		DrawOnboardingPrompt(ScreenW, ScreenH);
 	}
 
 	if (JumpRejectionRemainingTime > 0.0f)
 	{
-		const float DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
 		JumpRejectionRemainingTime = FMath::Max(0.0f, JumpRejectionRemainingTime - DeltaTime);
 
 		if (!JumpRejectionText.IsEmpty())
@@ -288,4 +362,196 @@ void AKiteSurfHUD::DrawFPS(float ScreenX, float ScreenY)
 	FString FPSText = FString::Printf(TEXT("FPS: %.0f"), FPS);
 	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.5f), ScreenX - 10.0f, ScreenY - 5.0f, 110.0f, 30.0f);
 	DrawText(FPSText, FLinearColor::Green, ScreenX, ScreenY, nullptr, 1.1f);
+}
+
+void AKiteSurfHUD::DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height)
+{
+	if (!RiderPawn)
+	{
+		return;
+	}
+
+	UKiteComponent* Kite = RiderPawn->GetKite();
+	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;
+	// Reference rider weight tension: 75 kg * 9.81 m/s^2 = ~735 N (full rider lift)
+	const float MaxTensionReference = 1200.0f;
+	const float TensionFraction = FMath::Clamp(LineTensionN / MaxTensionReference, 0.0f, 1.0f);
+
+	// Draw background box
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.75f), ScreenX - 60.0f, ScreenY - 30.0f, Width + 70.0f, Height + 45.0f);
+	DrawText(TEXT("POWER"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX - 50.0f, ScreenY - 24.0f, nullptr, 1.0f);
+
+	// Gauge track background
+	DrawRect(FLinearColor(0.1f, 0.12f, 0.15f, 0.9f), ScreenX, ScreenY, Width, Height);
+
+	// Fill from bottom up
+	const float FilledHeight = Height * TensionFraction;
+	const float FillTopY = ScreenY + (Height - FilledHeight);
+
+	// Color transitions: Green (low) -> Yellow (moderate) -> Orange/Red (high power zone)
+	FLinearColor BarColor;
+	if (TensionFraction < 0.4f)
+	{
+		BarColor = FMath::Lerp(FLinearColor(0.2f, 0.8f, 0.3f), FLinearColor(0.9f, 0.9f, 0.2f), TensionFraction / 0.4f);
+	}
+	else if (TensionFraction < 0.75f)
+	{
+		BarColor = FMath::Lerp(FLinearColor(0.9f, 0.9f, 0.2f), FLinearColor(1.0f, 0.5f, 0.1f), (TensionFraction - 0.4f) / 0.35f);
+	}
+	else
+	{
+		BarColor = FMath::Lerp(FLinearColor(1.0f, 0.5f, 0.1f), FLinearColor(1.0f, 0.2f, 0.2f), (TensionFraction - 0.75f) / 0.25f);
+	}
+
+	DrawRect(BarColor, ScreenX + 2.0f, FillTopY, Width - 4.0f, FilledHeight);
+
+	// Tick marks for reference
+	// 100% rider weight lift (~735 N / 1200 N = 0.6125)
+	const float RiderWeightY = ScreenY + Height * (1.0f - (735.0f / MaxTensionReference));
+	DrawLine(ScreenX - 6.0f, RiderWeightY, ScreenX + Width + 6.0f, RiderWeightY, FLinearColor::White, 2.0f);
+	DrawText(TEXT("1G"), FLinearColor::White, ScreenX - 25.0f, RiderWeightY - 7.0f, nullptr, 0.8f);
+
+	// Tension numeric display
+	FString TensionStr = FString::Printf(TEXT("%.0f N"), LineTensionN);
+	DrawText(TensionStr, FLinearColor::White, ScreenX - 45.0f, ScreenY + Height - 16.0f, nullptr, 0.9f);
+}
+
+void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
+{
+	if (!bHasInitializedOnboarding)
+	{
+		bHasInitializedOnboarding = true;
+		if (UWorld* World = GetWorld())
+		{
+			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+			{
+				if (GI->bSkipOnboarding || GI->bOnboardingCompleted)
+				{
+					bOnboardingActive = false;
+					CurrentOnboardingStep = 4;
+					return;
+				}
+			}
+		}
+	}
+
+	if (!bOnboardingActive || !RiderPawn)
+	{
+		return;
+	}
+
+	switch (CurrentOnboardingStep)
+	{
+	case 0: // Steer
+		{
+			const float SteerInput = FMath::Abs(RiderPawn->GetCurrentSteerInput());
+			if (SteerInput > 0.25f)
+			{
+				CurrentStepProgress += DeltaTime * 0.75f;
+			}
+			if (CurrentStepProgress >= 1.0f)
+			{
+				StepCompletionTimer += DeltaTime;
+				if (StepCompletionTimer >= 0.8f)
+				{
+					AdvanceOnboardingStep();
+				}
+			}
+			break;
+		}
+	case 1: // Sheet
+		{
+			const float SheetInput = RiderPawn->GetCurrentSheetInput();
+			if (SheetInput > 0.3f)
+			{
+				CurrentStepProgress += DeltaTime * 0.75f;
+			}
+			if (CurrentStepProgress >= 1.0f)
+			{
+				StepCompletionTimer += DeltaTime;
+				if (StepCompletionTimer >= 0.8f)
+				{
+					AdvanceOnboardingStep();
+				}
+			}
+			break;
+		}
+	case 2: // Edge
+		{
+			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
+			{
+				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f)
+				{
+					CurrentStepProgress += DeltaTime * 0.75f;
+				}
+			}
+			if (CurrentStepProgress >= 1.0f)
+			{
+				StepCompletionTimer += DeltaTime;
+				if (StepCompletionTimer >= 0.8f)
+				{
+					AdvanceOnboardingStep();
+				}
+			}
+			break;
+		}
+	case 3: // Jump
+		{
+			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
+			{
+				if (BoardMove->GetBoardState() == EBoardState::Airborne || BoardMove->GetLastJumpApexHeight() > 10.0f)
+				{
+					CurrentStepProgress = 1.0f;
+					StepCompletionTimer += DeltaTime;
+					if (StepCompletionTimer >= 1.2f)
+					{
+						AdvanceOnboardingStep();
+					}
+				}
+			}
+			break;
+		}
+	default:
+		break;
+	}
+}
+
+void AKiteSurfHUD::DrawOnboardingPrompt(float ScreenW, float ScreenH)
+{
+	const FString PromptText = GetCurrentPromptText();
+	float TextW = 0.0f;
+	float TextH = 0.0f;
+	GetTextSize(PromptText, TextW, TextH, nullptr, 1.25f);
+
+	const float CenterX = ScreenW * 0.5f;
+	const float PromptY = 90.0f;
+	const float BoxW = FMath::Max(TextW + 40.0f, 480.0f);
+	const float BoxH = 75.0f;
+	const float BoxX = CenterX - (BoxW * 0.5f);
+
+	// Background container
+	DrawRect(FLinearColor(0.02f, 0.06f, 0.12f, 0.85f), BoxX, PromptY, BoxW, BoxH);
+	// Top accent line
+	DrawRect(FLinearColor(0.2f, 0.8f, 1.0f, 0.9f), BoxX, PromptY, BoxW, 3.0f);
+
+	// Step indicator (e.g. "STEP 1/4")
+	FString StepHeader = FString::Printf(TEXT("ONBOARDING - STEP %d OF 4"), FMath::Min(CurrentOnboardingStep + 1, 4));
+	if (CurrentOnboardingStep >= 4)
+	{
+		StepHeader = TEXT("ONBOARDING COMPLETE");
+	}
+	DrawText(StepHeader, FLinearColor(0.2f, 0.85f, 1.0f), BoxX + 16.0f, PromptY + 10.0f, nullptr, 0.9f);
+
+	// Prompt instruction text
+	const FLinearColor TextColor = (CurrentStepProgress >= 1.0f) ? FLinearColor(0.3f, 1.0f, 0.4f) : FLinearColor::White;
+	DrawText(PromptText, TextColor, BoxX + 16.0f, PromptY + 30.0f, nullptr, 1.15f);
+
+	// Progress bar at bottom of card
+	const float BarW = BoxW - 32.0f;
+	const float BarH = 6.0f;
+	const float BarX = BoxX + 16.0f;
+	const float BarY = PromptY + BoxH - 14.0f;
+	DrawRect(FLinearColor(0.15f, 0.2f, 0.25f, 0.9f), BarX, BarY, BarW, BarH);
+	const float ClampedProgress = FMath::Clamp(CurrentStepProgress, 0.0f, 1.0f);
+	DrawRect(FLinearColor(0.2f, 0.85f, 1.0f, 1.0f), BarX, BarY, BarW * ClampedProgress, BarH);
 }

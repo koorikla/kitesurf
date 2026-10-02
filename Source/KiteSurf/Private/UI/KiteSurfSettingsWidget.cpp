@@ -51,6 +51,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 		{
 			CurrentWindKnots = GI->PendingWindKnots;
 			CurrentVolume = GI->MasterVolume;
+			bSkipOnboarding = GI->bSkipOnboarding;
 		}
 		else
 		{
@@ -59,6 +60,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			{
 				CurrentWindKnots = SaveGame->WindStrengthKnots;
 				CurrentVolume = SaveGame->MasterVolume;
+				bSkipOnboarding = SaveGame->bSkipOnboarding;
 			}
 		}
 	}
@@ -568,6 +570,18 @@ void UKiteSurfSettingsWidget::SetQualityPreset(int32 InPresetIndex)
 	UpdateTextDisplays();
 }
 
+void UKiteSurfSettingsWidget::ToggleSkipOnboarding()
+{
+	bSkipOnboarding = !bSkipOnboarding;
+	UpdateTextDisplays();
+}
+
+void UKiteSurfSettingsWidget::SetSkipOnboarding(bool bInSkip)
+{
+	bSkipOnboarding = bInSkip;
+	UpdateTextDisplays();
+}
+
 void UKiteSurfSettingsWidget::ApplyVideoSettings()
 {
 	if (HasAnyFlags(RF_ClassDefaultObject) || !GEngine)
@@ -680,6 +694,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 		{
 			GI->SetPendingWindKnots(CurrentWindKnots);
 			GI->SetMasterVolume(CurrentVolume);
+			GI->SetSkipOnboarding(bSkipOnboarding);
 			GI->SaveSettingsToDisk();
 		}
 		else
@@ -689,6 +704,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			{
 				SaveGame->WindStrengthKnots = CurrentWindKnots;
 				SaveGame->MasterVolume = CurrentVolume;
+				SaveGame->bSkipOnboarding = bSkipOnboarding;
 				SaveGame->SaveSettings();
 			}
 		}

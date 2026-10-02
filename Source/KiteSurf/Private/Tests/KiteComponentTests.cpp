@@ -187,4 +187,63 @@ bool FKiteSurfKiteSteeringIncreasesAzimuth::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Test 5: SteerBothWays: steering the other way brings azimuth back through 0 deg within 3 s from the edge
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteSteerBothWays, "KiteSurf.Kite.SteerBothWays", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteSteerBothWays::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+	if (!World) return false;
+
+	AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+	TestNotNull(TEXT("Pawn spawned"), Pawn);
+	if (Pawn && Pawn->Kite)
+	{
+		UWindComponent* WindComp = Pawn->FindComponentByClass<UWindComponent>();
+		if (WindComp)
+		{
+			WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f);
+		}
+
+		const float Dt = 0.0333f;
+
+		// 1. From positive edge (+85 deg), steer left (-1.0) brings azimuth back through 0 within 3s
+		Pawn->Kite->SetAzimuthDeg(85.0f);
+		Pawn->Kite->SetElevationDeg(30.0f);
+		Pawn->SheetKite(0.8f);
+		Pawn->SteerKite(-1.0f);
+		bool bCrossedZeroFromRight = false;
+		for (int32 i = 0; i < 90; ++i) // 3 seconds
+		{
+			Pawn->Kite->UpdateKite(Dt);
+			if (Pawn->GetKiteAzimuthDeg() <= 0.0f)
+			{
+				bCrossedZeroFromRight = true;
+				break;
+			}
+		}
+		TestTrue(TEXT("Steering left brings azimuth through 0 deg within 3 s from right edge (+85 deg)"), bCrossedZeroFromRight);
+
+		// 2. From negative edge (-85 deg), steer right (+1.0) brings azimuth back through 0 within 3s
+		Pawn->Kite->SetAzimuthDeg(-85.0f);
+		Pawn->Kite->SetElevationDeg(30.0f);
+		Pawn->SteerKite(1.0f);
+		bool bCrossedZeroFromLeft = false;
+		for (int32 i = 0; i < 90; ++i) // 3 seconds
+		{
+			Pawn->Kite->UpdateKite(Dt);
+			if (Pawn->GetKiteAzimuthDeg() >= 0.0f)
+			{
+				bCrossedZeroFromLeft = true;
+				break;
+			}
+		}
+		TestTrue(TEXT("Steering right brings azimuth through 0 deg within 3 s from left edge (-85 deg)"), bCrossedZeroFromLeft);
+	}
+
+	World->DestroyWorld(false);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

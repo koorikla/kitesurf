@@ -58,83 +58,37 @@ def build_assets():
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
         imc.unmap_all()
 
+        # Helper to map key and optional modifiers in UE 5.8 (where map_key returns a struct copy)
+        def add_imc_mapping(action, key_str, negate=False):
+            k = unreal.Key()
+            k.import_text(key_str)
+            imc.map_key(action, k)
+            dkm = imc.get_editor_property('default_key_mappings')
+            mappings = list(dkm.get_editor_property('mappings'))
+            if negate:
+                neg = unreal.new_object(unreal.InputModifierNegate, outer=imc)
+                mappings[-1].set_editor_property('modifiers', [neg])
+            dkm.set_editor_property('mappings', mappings)
+            imc.set_editor_property('default_key_mappings', dkm)
+
         # Map Steer
-        # Key D (+1)
-        key_d = unreal.Key()
-        key_d.import_text('D')
-        imc.map_key(ia_steer, key_d)
-
-        # Key A (-1 via Negate)
-        key_a = unreal.Key()
-        key_a.import_text('A')
-        map_a = imc.map_key(ia_steer, key_a)
-        neg_a = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-        map_a.set_editor_property('modifiers', [neg_a])
-
-        # Key Right (+1)
-        key_right = unreal.Key()
-        key_right.import_text('Right')
-        imc.map_key(ia_steer, key_right)
-
-        # Key Left (-1 via Negate)
-        key_left = unreal.Key()
-        key_left.import_text('Left')
-        map_left = imc.map_key(ia_steer, key_left)
-        neg_left = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-        map_left.set_editor_property('modifiers', [neg_left])
-
-        # Gamepad Left Stick X
-        key_gp_x = unreal.Key()
-        key_gp_x.import_text('Gamepad_LeftX')
-        imc.map_key(ia_steer, key_gp_x)
+        add_imc_mapping(ia_steer, 'D', negate=False)
+        add_imc_mapping(ia_steer, 'A', negate=True)
+        add_imc_mapping(ia_steer, 'Right', negate=False)
+        add_imc_mapping(ia_steer, 'Left', negate=True)
+        add_imc_mapping(ia_steer, 'Gamepad_LeftX', negate=False)
 
         # Map Sheet
-        # Key W (+1)
-        key_w = unreal.Key()
-        key_w.import_text('W')
-        imc.map_key(ia_sheet, key_w)
-
-        # Key S (-1 via Negate)
-        key_s = unreal.Key()
-        key_s.import_text('S')
-        map_s = imc.map_key(ia_sheet, key_s)
-        neg_s = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-        map_s.set_editor_property('modifiers', [neg_s])
-
-        # Key Up (+1)
-        key_up = unreal.Key()
-        key_up.import_text('Up')
-        imc.map_key(ia_sheet, key_up)
-
-        # Key Down (-1 via Negate)
-        key_down = unreal.Key()
-        key_down.import_text('Down')
-        map_down = imc.map_key(ia_sheet, key_down)
-        neg_down = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-        map_down.set_editor_property('modifiers', [neg_down])
-
-        # Gamepad Right Trigger
-        key_rt = unreal.Key()
-        key_rt.import_text('Gamepad_RightTriggerAxis')
-        imc.map_key(ia_sheet, key_rt)
+        add_imc_mapping(ia_sheet, 'W', negate=False)
+        add_imc_mapping(ia_sheet, 'S', negate=True)
+        add_imc_mapping(ia_sheet, 'Up', negate=False)
+        add_imc_mapping(ia_sheet, 'Down', negate=True)
+        add_imc_mapping(ia_sheet, 'Gamepad_RightTriggerAxis', negate=False)
 
         # Map Edge
-        # Key E (+1)
-        key_e = unreal.Key()
-        key_e.import_text('E')
-        imc.map_key(ia_edge, key_e)
-
-        # Key Q (-1 via Negate)
-        key_q = unreal.Key()
-        key_q.import_text('Q')
-        map_q = imc.map_key(ia_edge, key_q)
-        neg_q = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-        map_q.set_editor_property('modifiers', [neg_q])
-
-        # Gamepad Left Stick Y
-        key_gp_y = unreal.Key()
-        key_gp_y.import_text('Gamepad_LeftY')
-        imc.map_key(ia_edge, key_gp_y)
+        add_imc_mapping(ia_edge, 'E', negate=False)
+        add_imc_mapping(ia_edge, 'Q', negate=True)
+        add_imc_mapping(ia_edge, 'Gamepad_LeftY', negate=False)
 
         # Map Jump
         # Key SpaceBar

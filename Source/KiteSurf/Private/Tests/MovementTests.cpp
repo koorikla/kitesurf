@@ -60,6 +60,19 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Steady-state board speed reaches at least 12 kn"), SpeedKnots >= 12.0f);
 			TestTrue(TEXT("Steady-state board speed does not exceed 25 kn under standard power"), SpeedKnots <= 25.0f);
 			TestTrue(TEXT("Speed does not exceed MaxBoardSpeed (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
+
+			// Sheet out (depower) and simulate for 10 s to verify decay below 10 kn
+			Pawn->SheetKite(0.0f);
+			for (int32 i = 0; i < 300; ++i) // 10 seconds of sheet-out decay
+			{
+				KiteComp->UpdateKite(DeltaTime);
+				Pawn->Tick(DeltaTime);
+				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+			}
+
+			const float DecayedSpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
+			UE_LOG(LogKiteSurf, Log, TEXT("SpeedEnvelope: Decayed Speed = %.2f kn (Expected < 10 kn)"), DecayedSpeedKnots);
+			TestTrue(TEXT("Sheet out decays below 10 kn within 10 s"), DecayedSpeedKnots < 10.0f);
 		}
 	}
 
@@ -216,6 +229,70 @@ bool FKiteSurfMovementNoNaNGuard::RunTest(const FString& Parameters)
 	}
 
 	World->DestroyWorld(false);
+	return true;
+}
+
+// Test 5: EdgeSymmetric: Q and E edging are symmetric and full edge for 20 s turns >= 90 deg
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfMovementEdgeSymmetric, "KiteSurf.Movement.EdgeSymmetric", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfMovementEdgeSymmetric::RunTest(const FString& Parameters)
+{
+	const float DeltaTime = 0.0333f;
+	const int32 Steps20s = 600; // 20 seconds
+
+	// Helper lambda to run an edge simulation starting from standard planing speed
+	auto RunEdgeSimulation = [&](float EdgeInput) -> float
+	{
+		UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+		if (!World) return 0.0f;
+
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		float TotalTurnDeg = 0.0f;
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->GetBoardMovement();
+			UKiteComponent* KiteComp = Pawn->GetKite();
+			UWindComponent* WindComp = Pawn->FindComponentByClass<UWindComponent>();
+			if (WindComp)
+			{
+				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+			}
+
+			if (BoardComp && KiteComp)
+			{
+				// Start with standard forward velocity along X
+				BoardComp->Velocity = FVector(900.0f, 0.0f, 0.0f);
+				Pawn->SetActorRotation(FRotator(0.0f, 0.0f, 0.0f));
+				Pawn->SheetKite(0.7f);
+				Pawn->EdgeBoard(EdgeInput);
+
+				const float StartYaw = Pawn->GetActorRotation().Yaw;
+				for (int32 i = 0; i < Steps20s; ++i)
+				{
+					KiteComp->UpdateKite(DeltaTime);
+					Pawn->Tick(DeltaTime);
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+				const float EndYaw = Pawn->GetActorRotation().Yaw;
+				TotalTurnDeg = FMath::Abs(FRotator::NormalizeAxis(EndYaw - StartYaw));
+			}
+		}
+
+		World->DestroyWorld(false);
+		return TotalTurnDeg;
+	};
+
+	const float RightTurnDeg = RunEdgeSimulation(1.0f);  // E
+	const float LeftTurnDeg = RunEdgeSimulation(-1.0f);  // Q
+
+	UE_LOG(LogKiteSurf, Log, TEXT("EdgeSymmetric: Right Turn = %.2f deg, Left Turn = %.2f deg"), RightTurnDeg, LeftTurnDeg);
+
+	TestTrue(TEXT("Full edge right for 20 s turns >= 90 deg"), RightTurnDeg >= 90.0f);
+	TestTrue(TEXT("Full edge left for 20 s turns >= 90 deg"), LeftTurnDeg >= 90.0f);
+
+	const float DiffPercent = FMath::Abs(RightTurnDeg - LeftTurnDeg) / FMath::Max(RightTurnDeg, LeftTurnDeg);
+	TestTrue(TEXT("Q and E turn angles within 20% of each other"), DiffPercent <= 0.20f);
+
 	return true;
 }
 

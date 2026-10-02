@@ -59,5 +59,5 @@ Physics simulation and component updates execute in the following sequential ord
 1. **Wind Simulation**: `UWindComponent` evaluates ambient wind vector and spatial gusts.
 2. **Kite Aerodynamics**: Kite azimuth, apparent wind, lift, and steering pull calculated.
 3. **Board Hydrodynamics**: Board hull planning forces, fin resistance, drag, and velocity updates. Z position clamped to water surface (Z=0).
-4. **Rider, camera & HUD**: rider faces and leans against the kite; the camera looks along the heading, turned towards the kite far enough to keep it in frame; HUD wind indicator, wind window and speedometer update.
+4. **Rider, camera & HUD**: rider stands square across the board and turns with it (feet in the straps), leaning against the kite's pull; the camera looks along the heading, turned towards the kite far enough to keep it in frame; HUD wind indicator, wind window and speedometer update.
 5. **Wake**: `UBoardWakeComponent` (post-physics) lays foam and throws spray from the board's new position.

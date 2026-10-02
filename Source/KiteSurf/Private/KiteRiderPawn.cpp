@@ -86,7 +86,8 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderMaxLeanDeg = 22.0f;
 	RiderFloatLeanDeg = 30.0f;
 
-	// The rider faces the kite and leans against it rather than turning with the board (see UpdateRiderPose).
+	// The rider stands across the board and turns with it, but stays upright and leans against the kite
+	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
 	RiderMesh->SetUsingAbsoluteRotation(true);
 	ControlBarMesh->SetUsingAbsoluteLocation(true);
 	ControlBarMesh->SetUsingAbsoluteRotation(true);
@@ -171,6 +172,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraYawDeg = 0.0f;
 	CameraLookPitchDeg = 0.0f;
 	RiderFacingYawDeg = 0.0f;
+	RiderStanceSide = 1.0f;
+	SeenBoardResetCount = 0;
+	StanceChoiceSecondsLeft = StanceChoiceWindowSeconds;
 	bViewInitialized = false;
 	LastPauseToggleFrame = MAX_uint64;
 	KiteAzimuthDeg = 0.0f;
@@ -501,34 +505,64 @@ bool AKiteRiderPawn::HasKitePosition() const
 	return FMath::IsNearlyEqual(KiteDistance, Kite->LineLengthCm, Kite->LineLengthCm * 0.5f);
 }
 
+float AKiteRiderPawn::ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg)
+{
+	// The rider stands across the board, so they face one rail or the other: +1 is the board's right.
+	const float OffRightDeg = FMath::Abs(FRotator::NormalizeAxis(PreferredFacingYawDeg - (BoardYawDeg + 90.0f)));
+	return OffRightDeg <= 90.0f ? 1.0f : -1.0f;
+}
+
 void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 {
-	// Face the kite, falling back to the board's heading before the kite has a position.
-	float TargetFacingYawDeg = GetActorRotation().Yaw;
-	float LeanDeg = 0.0f;
-	if (HasKitePosition())
+	const float BoardYawDeg = GetActorRotation().Yaw;
+	const bool bHasKite = HasKitePosition();
+	const FVector TowardsKite = bHasKite ? SmoothedKiteOffset.GetSafeNormal2D() : FVector::ZeroVector;
+
+	// The rider's feet are in the straps, so they turn with the board: through carves, and through
+	// every spin in the air. They pick which rail to face only when they get on (start, reset, or
+	// floating in the water), and then face the kite. After that the side that keeps them facing
+	// the way they were is kept, which also covers a twin-tip swapping ends under them.
+	// The choice uses where the kite is now, and stays open for a moment after a reset while the
+	// kite is being put back in place.
+	if (BoardMovement && BoardMovement->GetResetCount() != SeenBoardResetCount)
 	{
-		TargetFacingYawDeg = SmoothedKiteOffset.Rotation().Yaw;
-
-		// Lean back against the horizontal pull of the lines.
-		const float FullLeanForce = 60000.0f; // 600 N
-		LeanDeg = RiderMaxLeanDeg * FMath::Clamp(Kite->GetLineForce().Size2D() / FullLeanForce, 0.0f, 1.0f);
+		// Back on the board from scratch: face the kite again.
+		SeenBoardResetCount = BoardMovement->GetResetCount();
+		StanceChoiceSecondsLeft = StanceChoiceWindowSeconds;
 	}
-
-	RiderFacingYawDeg = bViewInitialized
-		? FMath::FixedTurn(RiderFacingYawDeg, TargetFacingYawDeg, 240.0f * DeltaTime)
-		: TargetFacingYawDeg;
-
-	// Floating, the rider lies back in the water with the board out in front.
-	if (BoardMovement && BoardMovement->FloatSubmersionCm > 0.0f)
+	else
 	{
-		LeanDeg += RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
+		StanceChoiceSecondsLeft = FMath::Max(StanceChoiceSecondsLeft - DeltaTime, 0.0f);
 	}
+	const bool bCanChooseSide = StanceChoiceSecondsLeft > 0.0f || (BoardMovement && BoardMovement->IsFloating());
+	if (bCanChooseSide && bHasKite)
+	{
+		const FVector KiteNow = (Kite->GetKiteWorldPosition() - GetActorLocation()).GetSafeNormal2D();
+		RiderStanceSide = ChooseStanceSide(BoardYawDeg, KiteNow.Rotation().Yaw);
+	}
+	else
+	{
+		RiderStanceSide = ChooseStanceSide(BoardYawDeg, RiderFacingYawDeg);
+	}
+	RiderFacingYawDeg = FRotator::NormalizeAxis(BoardYawDeg + 90.0f * RiderStanceSide);
 
 	const FVector Facing = FRotator(0.0f, RiderFacingYawDeg, 0.0f).Vector();
-	const float LeanRad = FMath::DegreesToRadians(LeanDeg);
-	const FVector BodyUp = FVector::UpVector * FMath::Cos(LeanRad) - Facing * FMath::Sin(LeanRad);
-	const FQuat BodyQuat = FRotationMatrix::MakeFromZX(BodyUp, Facing).ToQuat();
+
+	// Lean away from the horizontal pull of the lines, whichever way the rider is facing, and
+	// lie back in the water when floating with the board out in front.
+	FVector BodyUp = FVector::UpVector;
+	if (bHasKite)
+	{
+		const float FullLeanForce = 60000.0f; // 600 N
+		const float PullLeanDeg = RiderMaxLeanDeg * FMath::Clamp(Kite->GetLineForce().Size2D() / FullLeanForce, 0.0f, 1.0f);
+		BodyUp -= TowardsKite * FMath::Tan(FMath::DegreesToRadians(PullLeanDeg));
+	}
+	if (BoardMovement && BoardMovement->FloatSubmersionCm > 0.0f)
+	{
+		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
+		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
+	}
+	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
 
 	if (RiderMesh)
 	{
@@ -543,8 +577,10 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 
 	if (ControlBarMesh && Kite)
 	{
+		// The bar hangs from the lines, so it stays square to the kite while the rider turns.
 		const FVector BarCentre = (Kite->GetBarEndWorldPosition(true) + Kite->GetBarEndWorldPosition(false)) * 0.5f;
-		ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotator(0.0f, RiderFacingYawDeg, CurrentSteerInput * 25.0f));
+		const float BarYawDeg = bHasKite ? TowardsKite.Rotation().Yaw : RiderFacingYawDeg;
+		ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotator(0.0f, BarYawDeg, CurrentSteerInput * 25.0f));
 	}
 }
 

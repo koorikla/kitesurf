@@ -40,7 +40,7 @@ CROSSFADE_FRAMES=30
 
 # frame-from-start  command
 RIDE=(
-    "10 kitesurf.Wind 18"
+    "10 kitesurf.Wind 20"
     "100 kitesurf.HideUI"
     # Send the kite up, weight on the tail, pop.
     "400 kitesurf.Input -1 0 0 -1 0"

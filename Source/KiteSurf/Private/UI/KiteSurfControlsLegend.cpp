@@ -6,7 +6,7 @@
 
 namespace
 {
-	const FKiteSurfControlBinding Bindings[] =
+	const FKiteSurfControlBinding ControlBindings[] =
 	{
 		{ TEXT("Steer the kite round the window"), TEXT("Left / Right"),              TEXT("Right stick left / right") },
 		{ TEXT("Bar in / out (power)"),            TEXT("Down / Up"),                 TEXT("Right stick up / down, triggers") },
@@ -48,7 +48,7 @@ namespace
 
 TConstArrayView<FKiteSurfControlBinding> KiteSurfControlsLegend::GetBindings()
 {
-	return Bindings;
+	return ControlBindings;
 }
 
 TSharedRef<SWidget> KiteSurfControlsLegend::Build()
@@ -74,7 +74,7 @@ TSharedRef<SWidget> KiteSurfControlsLegend::Build()
 			MakeRow(TEXT(""), TEXT("KEYBOARD / MOUSE"), TEXT("GAMEPAD"), FCoreStyle::GetDefaultFontStyle("Bold", 11), ColumnColor, ColumnColor)
 		];
 
-	for (const FKiteSurfControlBinding& Binding : Bindings)
+	for (const FKiteSurfControlBinding& Binding : ControlBindings)
 	{
 		Table->AddSlot()
 		.AutoHeight()

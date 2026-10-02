@@ -70,6 +70,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 3.0f;
 	CameraBoom->bUsePawnControlRotation = false;
+	// Keep the horizon level: the board pitches with the swell and rolls with the edge, so the
+	// boom takes only the board's heading (applied in Tick) and keeps its own pitch.
+	CameraBoom->SetUsingAbsoluteRotation(true);
 
 	// FollowCamera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -309,6 +312,12 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	{
 		ControlBarMesh->SetRelativeRotation(FRotator(0.0f, CurrentSteerInput * 30.0f, 0.0f));
 	}
+
+	if (CameraBoom)
+	{
+		CameraBoom->SetWorldRotation(FRotator(CameraBoom->GetRelativeRotation().Pitch, GetActorRotation().Yaw, 0.0f));
+	}
+
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 

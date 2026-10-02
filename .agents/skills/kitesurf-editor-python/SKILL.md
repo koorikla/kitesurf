@@ -45,13 +45,13 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    ```
 3. **Save what you changed** (`unreal.EditorAssetLibrary.save_asset(path, False)`, or save
    the level) and print a clear line per asset so the log shows what happened.
-4. **Run it with the engine's Python commandlet.** Source `scripts/common.sh` for the
-   engine paths:
+4. **Run it with the engine's Python commandlet** through the wrapper; extra arguments are
+   passed to the editor:
    ```bash
-   source scripts/common.sh
-   "$UE_EDITOR_CMD" "$UPROJECT" -run=pythonscript \
-       -Script="$PROJECT_ROOT/scripts/editor/make_input_assets.py" \
-       -unattended -nosplash -stdout
+   scripts/run-python.sh scripts/editor/make_input_assets.py
+   # Levels with water need a renderer (see Pitfalls):
+   scripts/run-python.sh scripts/editor/make_open_water_level.py \
+       -AllowCommandletRendering -vulkan -RenderOffScreen
    ```
    `PythonScriptPlugin` and `EditorScriptingUtilities` are enabled for the editor in
    `KiteSurf.uproject`.
@@ -72,6 +72,15 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
   and for the lines you printed; do not rely on the exit code alone.
 - **The commandlet has no renderer.** Anything that needs a viewport (screenshots, ray
   tracing state) will not behave as it does in the game. Verify visuals in a `-game` run.
+- **Water bodies saved by a plain commandlet are invisible in game.** The Water plugin only
+  builds a water body's mesh when the process can render
+  (`UWaterBodyComponent::UpdateWaterBodyRenderData`), so `L_OpenWater` must be generated with
+  `-AllowCommandletRendering -vulkan -RenderOffScreen`. The script refuses to save otherwise,
+  and `KiteSurf.Level.OceanRendersAtSpawn` checks the saved level.
+- **Edit a Gerstner wave generator before assigning it.** `UGerstnerWaterWaves` caches the
+  generated wave list and only recomputes it when one of its own properties is set.
+- **An ocean has a hole around its own origin** (its "island"). Keep the `WaterBodyOcean`
+  actor far from the play area and the `WaterZone` over it.
 - **The Water plugin is experimental** in 5.8. Property names on water actors change
   between versions; confirm them against the engine source, not from memory.
 

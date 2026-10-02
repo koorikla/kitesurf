@@ -583,7 +583,7 @@ Orientation is set directly: pitch and roll follow the water normal plus up to 4
 - **HUD wind reads low.** It samples at water level, showing about 10.5 kn for a nominal 15 kn (`KiteSurfHUD.cpp:69`).
 - **Wind window follows gust drift.** The downwind axis is resampled every frame, so the kite shifts sideways with direction noise (`KiteComponent.cpp:135-136`).
 - **Line force is one frame late** (*inferred*): the movement component ticks before the pawn that feeds it.
-- **Camera rolls with the board** (*inferred*): the spring arm inherits up to 45° of edge roll.
+- **Camera rolls with the board** (fixed): the spring arm now takes only the board's heading; see `KiteSurf.Pawn.CameraStaysLevel`.
 - **CI can pass without running tests.** `scripts/parse_test_report.py:17-18` swallows exceptions, and `scripts/run-tests.sh:16-17` only warns when the report is missing.
 - **One test asserts nothing.** `KiteRiderPawnTests.cpp:24` is `TestTrue(true)`.
 - **Mixed units.** Kite aero is in SI and converted at the boundary; board coefficients are in unlabelled cm-based units. The knots constant is repeated in three places.

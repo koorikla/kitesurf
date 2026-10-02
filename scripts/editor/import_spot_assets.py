@@ -47,6 +47,11 @@ materials = {
     'PalmTrunk': make_flat('M_PalmTrunk', unreal.LinearColor(0.20, 0.13, 0.07, 1.0), 0.9),
     'PalmLeaf': make_flat('M_PalmLeaf', unreal.LinearColor(0.05, 0.22, 0.06, 1.0), 0.7),
     'Shark': make_flat('M_Shark', unreal.LinearColor(0.16, 0.19, 0.22, 1.0), 0.45),
+    'Dolphin': make_flat('M_Dolphin', unreal.LinearColor(0.40, 0.45, 0.50, 1.0), 0.4),
+    'Seagull': make_flat('M_Seagull', unreal.LinearColor(0.85, 0.85, 0.85, 1.0), 0.8),
+    'Beak': make_flat('M_Beak', unreal.LinearColor(0.8, 0.6, 0.1, 1.0), 0.6),
+    'Rock': make_flat('M_Rock', unreal.LinearColor(0.25, 0.25, 0.25, 1.0), 0.9),
+    'Coral': make_flat('M_Coral', unreal.LinearColor(0.7, 0.2, 0.2, 1.0), 0.7),
 }
 
 for asset_name, obj_path in obj_paths.items():

@@ -194,6 +194,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float CrashRespawnDelay;
 
+	/** Maximum time window (seconds) between kite zenith crossing and pop for optimal boost */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float MaxSendWindowSeconds;
+
+	/** Multiplier scaling edge hold loading tension into vertical pop impulse */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float EdgeLoadPopScalar;
+
+	/** Multiplier scaling kite angular sweep rate across zenith into vertical impulse */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float SendSweepRateScalar;
+
+	/** Target effective gravity acceleration (cm/s^2) during airborne hangtime: calibrated to 200-250 cm/s^2 (2.0-2.5 m/s^2) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float EffectiveGravityCmS2;
+
 	UFUNCTION(BlueprintPure, Category = "Tuning")
 	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeed <= 100.0f ? (MaxBoardSpeed * 51.44f) : MaxBoardSpeed; }
 

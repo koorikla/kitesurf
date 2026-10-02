@@ -41,8 +41,12 @@ UBoardMovementComponent::UBoardMovementComponent()
 	MaxJumpHeight = 1200.0f;    // 1200 cm = 12 m
 	MaxLandingAngle = 30.0f;    // 30 deg
 	CleanLandingSpeedRetention = 0.8f; // 80%
-	CrashDecelDuration = 0.5f;  // 0.5 s
-	CrashRespawnDelay = 1.5f;   // 1.5 s
+	CrashDecelDuration = 0.5f;
+	CrashRespawnDelay = 1.5f;
+	MaxSendWindowSeconds = 0.35f;
+	EdgeLoadPopScalar = 1.0f;
+	SendSweepRateScalar = 1.0f;
+	EffectiveGravityCmS2 = 220.0f; // Calibrated 2.20 m/s^2 effective downward acceleration for kite float
 
 	CurrentDragRegime = EBoardDragRegime::Displacement;
 	CurrentBoardState = EBoardState::Displacement;

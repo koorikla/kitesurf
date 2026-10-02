@@ -28,10 +28,10 @@ Known gaps from the phase-1 play-test (operator note): the running game currentl
 shows no visible water surface, rider, board, kite, or clouds — the simulation
 runs but has essentially no visuals. The first three items below address that.
 
-1. **Visible rider, board and kite meshes** — `BoardMesh` has no static mesh assigned; there is no kite mesh or line rendering (only `bDrawDebug` lines). Add placeholder meshes (board plank, kite canopy following `UKiteComponent::GetKiteWorldPosition`, line segments) and a simple rider capsule.
+1. [x] **Visible rider, board and kite meshes** (DONE, PR #10) — `BoardMesh` has no static mesh assigned; there is no kite mesh or line rendering (only `bDrawDebug` lines). Add placeholder meshes (board plank, kite canopy following `UKiteComponent::GetKiteWorldPosition`, line segments) and a simple rider capsule.
 2. **Water shader / foam / visible ocean** — verify `WaterBodyOcean` + `WaterZone` actually render in `-game` (material, Lumen/RT settings, `r.Water.*`), add foam/wake behind the board, surface ripples as wind cue.
 3. **Sky & volumetric clouds visibility** — confirm `VolumetricCloud` / `SkyAtmosphere` render in Shipping; tune sun angle and cloud coverage so the horizon reads as sea + sky.
-4. **Jumps + hangtime** — allow the board to leave the water when line tension spikes with the kite overhead; air control, landing impact, HUD airtime counter.
+4. [x] **Jumps + hangtime** (DONE, PR #11) — allow the board to leave the water when line tension spikes with the kite overhead; air control, landing impact, HUD airtime counter.
 5. **Rider animation** — skeletal rider with IK legs on the board, harness/bar pose driven by sheet input, lean driven by edge input.
 6. **Course / race mode** — buoy course on `L_OpenWater`, lap timer, checkpoints, best-time persistence; `AKiteSurfGameMode` state machine.
 7. **Audio** — wind loop scaled by apparent wind, water spray / planing hiss, kite flutter when depowered, UI ticks.

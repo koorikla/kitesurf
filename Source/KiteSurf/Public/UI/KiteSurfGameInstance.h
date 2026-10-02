@@ -24,6 +24,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float MasterVolume;
 
+	/** Whether onboarding prompts should be skipped */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSkipOnboarding;
+
+	/** Whether onboarding tutorial has been completed */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bOnboardingCompleted;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetSkipOnboarding(bool bInSkip);
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetOnboardingCompleted(bool bInCompleted);
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void LoadSettingsFromDisk();
 

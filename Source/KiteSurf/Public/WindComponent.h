@@ -15,6 +15,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	FVector GetWindAt(const FVector& WorldLocation) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Wind")
+	FVector GetBaseWind() const { return BaseWind; }
+
+	/** Reference base wind speed at 10 m elevation in knots (un-sheared baseline, 1 kn = 51.44 cm/s) */
+	UFUNCTION(BlueprintCallable, Category = "Wind")
+	float GetReferenceWindSpeedKnots() const { return BaseWind.Size() / 51.44f; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind")
 	FVector BaseWind;
 

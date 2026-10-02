@@ -5,6 +5,8 @@
 UKiteSurfGameInstance::UKiteSurfGameInstance()
 	: PendingWindKnots(15.0f)
 	, MasterVolume(1.0f)
+	, bSkipOnboarding(false)
+	, bOnboardingCompleted(false)
 {
 }
 
@@ -21,6 +23,8 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 	{
 		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 30.0f);
 		MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
+		bSkipOnboarding = SaveGame->bSkipOnboarding;
+		bOnboardingCompleted = SaveGame->bOnboardingCompleted;
 		FApp::SetVolumeMultiplier(MasterVolume);
 	}
 }
@@ -32,6 +36,8 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 	{
 		SaveGame->WindStrengthKnots = FMath::Clamp(PendingWindKnots, 8.0f, 30.0f);
 		SaveGame->MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
+		SaveGame->bSkipOnboarding = bSkipOnboarding;
+		SaveGame->bOnboardingCompleted = bOnboardingCompleted;
 		SaveGame->SaveSettings();
 	}
 }
@@ -45,4 +51,14 @@ void UKiteSurfGameInstance::SetMasterVolume(float InVolume)
 {
 	MasterVolume = FMath::Clamp(InVolume, 0.0f, 1.0f);
 	FApp::SetVolumeMultiplier(MasterVolume);
+}
+
+void UKiteSurfGameInstance::SetSkipOnboarding(bool bInSkip)
+{
+	bSkipOnboarding = bInSkip;
+}
+
+void UKiteSurfGameInstance::SetOnboardingCompleted(bool bInCompleted)
+{
+	bOnboardingCompleted = bInCompleted;
 }

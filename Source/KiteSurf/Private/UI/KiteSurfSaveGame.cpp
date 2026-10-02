@@ -7,6 +7,8 @@ const int32 UKiteSurfSaveGame::DefaultUserIndex = 0;
 UKiteSurfSaveGame::UKiteSurfSaveGame()
 	: WindStrengthKnots(15.0f)
 	, MasterVolume(1.0f)
+	, bSkipOnboarding(false)
+	, bOnboardingCompleted(false)
 {
 }
 
@@ -28,6 +30,8 @@ UKiteSurfSaveGame* UKiteSurfSaveGame::LoadOrCreateSettings(const FString& SlotNa
 	UKiteSurfSaveGame* NewSave = NewObject<UKiteSurfSaveGame>();
 	NewSave->WindStrengthKnots = 15.0f;
 	NewSave->MasterVolume = 1.0f;
+	NewSave->bSkipOnboarding = false;
+	NewSave->bOnboardingCompleted = false;
 	return NewSave;
 }
 

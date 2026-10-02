@@ -34,6 +34,8 @@ bool FKiteSurfSaveGameDefaultsAndClampingTest::RunTest(const FString& Parameters
     // Check default values
     TestEqual(TEXT("Default WindStrengthKnots is 15.0 kn"), SaveGame->WindStrengthKnots, 15.0f);
     TestEqual(TEXT("Default MasterVolume is 1.0 (100%)"), SaveGame->MasterVolume, 1.0f);
+    TestFalse(TEXT("Default bSkipOnboarding is false"), SaveGame->bSkipOnboarding);
+    TestFalse(TEXT("Default bOnboardingCompleted is false"), SaveGame->bOnboardingCompleted);
 
     // Test underflow clamping (min wind = 8.0, min volume = 0.0)
     SaveGame->WindStrengthKnots = 2.0f;
@@ -65,6 +67,12 @@ bool FKiteSurfGameInstanceSettingsTest::RunTest(const FString& Parameters)
 
     TestEqual(TEXT("Default PendingWindKnots is 15.0 kn"), GI->PendingWindKnots, 15.0f);
     TestEqual(TEXT("Default MasterVolume is 1.0"), GI->MasterVolume, 1.0f);
+    TestFalse(TEXT("Default bSkipOnboarding is false"), GI->bSkipOnboarding);
+    TestFalse(TEXT("Default bOnboardingCompleted is false"), GI->bOnboardingCompleted);
+    GI->SetSkipOnboarding(true);
+    TestTrue(TEXT("SetSkipOnboarding sets bSkipOnboarding"), GI->bSkipOnboarding);
+    GI->SetOnboardingCompleted(true);
+    TestTrue(TEXT("SetOnboardingCompleted sets bOnboardingCompleted"), GI->bOnboardingCompleted);
 
     // Test setters with out-of-range values
     GI->SetPendingWindKnots(4.0f);
@@ -106,6 +114,11 @@ bool FKiteSurfUIWidgetsInstantiationTest::RunTest(const FString& Parameters)
     TestNotNull(TEXT("UKiteSurfSettingsWidget can be instantiated"), SettingsWidget);
     TestEqual(TEXT("SettingsWidget default wind is 15 kn"), SettingsWidget->CurrentWindKnots, 15.0f);
     TestEqual(TEXT("SettingsWidget default volume is 1.0"), SettingsWidget->CurrentVolume, 1.0f);
+    TestFalse(TEXT("SettingsWidget default bSkipOnboarding is false"), SettingsWidget->bSkipOnboarding);
+    SettingsWidget->ToggleSkipOnboarding();
+    TestTrue(TEXT("ToggleSkipOnboarding toggles to true"), SettingsWidget->bSkipOnboarding);
+    SettingsWidget->ToggleSkipOnboarding();
+    TestFalse(TEXT("ToggleSkipOnboarding toggles back to false"), SettingsWidget->bSkipOnboarding);
 
     UKiteSurfMainMenuWidget* MainMenuWidget = NewObject<UKiteSurfMainMenuWidget>();
     TestNotNull(TEXT("UKiteSurfMainMenuWidget can be instantiated"), MainMenuWidget);

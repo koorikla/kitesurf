@@ -95,6 +95,15 @@ The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause 
 
 The board's size does not change how it looks yet.
 
+## The spot
+`AKiteSurfSpot` is what is in the water. The game mode spawns it when a ride starts and lays it out round the start position in wind coordinates (across the wind is the way a ride starts out; down is downwind), so the layout is the same whatever the wind direction. The gear screen's SPOT toggles (saved with the settings) switch sandbars, islands and sharks on and off, and applying them during a ride changes the spot where it is.
+
+- **Sand.** Sandbars and islands are the tops of flattened ellipsoids sunk a little below the water; `FSpotObstacle::GetSandHeightCm` gives the height of sand at a point from the same radii the meshes are built with (`generate_mesh_objs.py`). A sandbar's crest is 50 cm out of the water, 54 m long along the wind and 7 m across; an island stands 2.7 m high. There is no sand within `ClearStartRadiusCm` (150 m) of the start. A rider who is not above the sand where they are has run aground: a crash, and they are put back in the water on the side they came from.
+- **Sharks** patrol a 40 m circle at 3.5 m/s. A rider who is floating or has crashed within `SharkNoticeRadiusCm` (90 m) is hunted at 6.5 m/s. Any rider within `SharkBiteRadiusCm` (2.6 m) of a shark and less than `SharkClearHeightCm` (80 cm) above the water is a crash, after which that shark leaves them alone for 8 s.
+- The HUD shows what happened ("Ran aground", "Shark!") through `AKiteSurfHUD::ShowNotice`.
+
+The sand is not yet part of the water surface the board rides on, and the sharks do not avoid the sand.
+
 ## Sound
 Three loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`): wind in the ears from the apparent wind, water under the board from board speed (silent in the air), and the lines singing from line tension (silent when slack). The pop, landing (louder and deeper the harder it is), crash and reset are one-shots. All of it is synthesised by `scripts/editor/make_sound_wavs.py` and imported by `make_sound_assets.py`; the loops are set to keep playing while silent so they come back after being faded out.
 

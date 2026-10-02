@@ -51,6 +51,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Jump")
 	void ShowJumpRejection(EJumpRejectReason Reason);
 
+	/** Shows a short message in the same place for a couple of seconds ("Ran aground", "Shark!"). */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ShowNotice(const FString& Text);
+
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetJumpRejectionText() const { return JumpRejectionRemainingTime > 0.0f ? JumpRejectionText : FString(); }
 

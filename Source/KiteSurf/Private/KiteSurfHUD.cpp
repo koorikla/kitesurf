@@ -182,6 +182,12 @@ void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
 	}
 }
 
+void AKiteSurfHUD::ShowNotice(const FString& Text)
+{
+	JumpRejectionText = Text;
+	JumpRejectionRemainingTime = Text.IsEmpty() ? 0.0f : 2.5f;
+}
+
 void AKiteSurfHUD::DrawHUD()
 {
 	Super::DrawHUD();

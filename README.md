@@ -70,6 +70,12 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Reset | R | Right face button |
 | Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
 
+**The spot.** The gear screen also switches what is in the water. Sandbars lie across your
+reach, about 260 m out on the first run: jump them, because riding onto sand is a crash.
+Islands with palms sit further off to ride round. Sharks patrol in circles; they leave a rider
+who is up and riding alone unless you run one over, and come for you when you are down in the
+water. Anything you are above, you clear.
+
 **Steering and loops.** The bar works like a real one, with no extra key. Steer away from the
 side the kite is on and it flies up over the top to the other side; let go and it parks where it
 is. Keep the bar held towards the side the kite is already on and it turns down and round: a

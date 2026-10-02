@@ -152,6 +152,20 @@ def build_assets():
         if cam:
             cam.set_editor_property('field_of_view', 80.0)
 
+        rider_comp = cdo_rider.get_editor_property('rider_mesh')
+        anim_asset = editor_asset_lib.load_asset('/Game/Characters/Mannequins/Anims/MM_Idle')
+        if rider_comp and anim_asset:
+            try:
+                rider_comp.set_editor_property('animation_mode', unreal.AnimationMode.ANIMATION_SINGLE_NODE)
+                anim_data = rider_comp.get_editor_property('animation_data')
+                anim_data.set_editor_property('anim_to_play', anim_asset)
+                anim_data.set_editor_property('saved_playing', True)
+                anim_data.set_editor_property('saved_looping', True)
+                rider_comp.set_editor_property('animation_data', anim_data)
+                print('Set MM_Idle animation on rider_mesh')
+            except Exception as e:
+                print(f'Note on rider animation setting: {e}')
+
         editor_asset_lib.save_loaded_asset(bp_rider)
         editor_asset_lib.save_asset('/Game/Blueprints/BP_KiteRider', False)
         print(f'BP_KiteRider configured and saved: {bp_rider}')

@@ -5,6 +5,8 @@
 #include "KiteComponent.generated.h"
 
 class UWindComponent;
+class UStaticMeshComponent;
+class UCableComponent;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -47,7 +49,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetKiteVelocity() const;
 
-	// Configuration / Setters
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	FRotator GetKiteRotation() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetAzimuthDeg(float InAzimuthDeg);
 
@@ -57,11 +61,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetWindComponent(UWindComponent* InWindComponent);
 
-	// State
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|State", meta = (ClampMin = "-90.0", ClampMax = "90.0"))
+	// Visual Components
+	UStaticMeshComponent* GetKiteMesh() const { return KiteMesh; }
+	UCableComponent* GetLeftLine() const { return LeftLine; }
+	UCableComponent* GetRightLine() const { return RightLine; }
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "-90.0", ClampMax = "90.0"))
 	float AzimuthDeg;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|State", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float ElevationDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "100.0"))
@@ -92,10 +100,23 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UWindComponent> WindComponent;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> KiteMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCableComponent> LeftLine;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCableComponent> RightLine;
+
+	void SetupVisuals();
+	void UpdateVisuals();
+
 	FVector GetWindAt(const FVector& Location) const;
 	void ComputeKiteTransform(FVector& OutKitePos, FVector& OutLineDir) const;
 
 	FVector KiteWorldPosition;
+	FRotator KiteWorldRotation;
 	FVector LastKitePosition;
 	FVector KiteVelocity;
 	bool bHasLastPosition;

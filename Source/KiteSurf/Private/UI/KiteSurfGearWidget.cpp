@@ -1,4 +1,5 @@
 #include "UI/KiteSurfGearWidget.h"
+#include "KiteGear.h"
 #include "KiteSurfUnits.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfMenuStyle.h"
@@ -28,8 +29,8 @@
 
 namespace
 {
-	const float MinWindKnots = 8.0f;
-	const float MaxWindKnots = 40.0f;
+	const float MinWindKnots = KiteGear::MinWindKnots;
+	const float MaxWindKnots = KiteGear::MaxWindKnots;
 	const FLinearColor LabelColor(0.75f, 0.82f, 0.9f);
 	const FLinearColor HintColor(0.55f, 0.75f, 0.9f);
 	const FLinearColor TitleColor(1.0f, 0.85f, 0.2f);

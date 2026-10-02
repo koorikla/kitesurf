@@ -89,7 +89,9 @@ back and load the edge: the board grips harder against the lines, the pull build
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
-7 m in 15 kn, 15 m in 30 kn and 20 m in 40 kn. Steering the kite up without an edge just
+7 m in 15 kn, 15 m in 30 kn, 20 m in 40 kn and, in a 90 kn hurricane on a 2 m kite, 30 m up
+and 260 m downwind. The HUD shows the height and distance of a jump as it happens and when
+it ends. Steering the kite up without an edge just
 plucks you off the water. (Weight back on S still holds you down too.) A kite looped through the
 middle of the window pulls several times harder than a parked one.
 
@@ -117,10 +119,10 @@ speed); right in it pulls six or seven times as hard (1100 N, 22 kn). The ride s
 in.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
-Pick the wind (8 to 40 kn), then rig for it:
+Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:
 
-- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 5 to 17 m, or AUTO
-  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn). Small kites turn and loop faster; big ones pull harder and are a
+- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 2 to 17 m, or AUTO
+  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn, 2 m in 90 kn). Small kites turn and loop faster; big ones pull harder and are a
   handful when it blows.
 - *Kite*: the 3-strut loop kite turns tight and fast; the 5-strut boost kite has more lift and
   glide for height and hangtime, and turns slower.

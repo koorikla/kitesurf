@@ -1,5 +1,7 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "KiteSurfHUD.h"
+#include "KiteGear.h"
 #include "RiderRig.h"
 #include "KiteSurfSpot.h"
 #include "UI/KiteSurfGameInstance.h"
@@ -1289,29 +1291,46 @@ namespace
 		bool bPulledOffEdge = false;
 		bool bCrashed = false;
 		bool bKiteDown = false;
+		/** Board speed and line tension after the run-up, before the jump. */
+		float RideSpeedKnots = 0.0f;
+		float RideTensionN = 0.0f;
+		/** The fastest the rider went over the water or through the air. */
+		float MaxSpeedKnots = 0.0f;
+		/** Take-off to touchdown over the water, as the board measured it. */
+		float DistanceCm = 0.0f;
+		/** Whether the rider was back on the water when the run ended. */
+		bool bCameDown = false;
+		/** Nothing in the rider's position or speed went to NaN or infinity. */
+		bool bFinite = true;
+		/** HUD readout: what it showed at the top of the jump, and just after landing. */
+		FString ReadoutInAir;
+		FString ReadoutOnLanding;
 		/** Samples at TraceHz while the rider is in the air, when asked for. */
 		TArray<FJumpSample> Trace;
 		float RiderWeightN = 0.0f;
 	};
 
 	/**
-	 * Rides for a few seconds at 30 kn on the recommended kite, then jumps. With bSend the kite is
+	 * Rides for a few seconds (at 30 kn unless told otherwise) on the recommended kite, or the
+	 * size given, then jumps. A HUD passed in follows the jump with its readout. With bSend the kite is
 	 * steered hard up; with bHoldEdge the rider's weight is on the tail until ReleaseSeconds after
 	 * the kite starts to answer that (the bar reaches it after its steering dead time), when they
 	 * pull the bar in and pop. ReleaseSeconds < 0 means never pop.
 	 */
-	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop, float TraceHz = 0.0f)
+	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop, float TraceHz = 0.0f, float WindKnots = 30.0f, float KiteSizeM2 = 0.0f, AKiteSurfHUD* HUD = nullptr)
 	{
 		FJumpResult Result;
-		FRideFixture Ride(30.0f);
+		FRideFixture Ride(WindKnots);
 		if (!Ride.IsValid())
 		{
 			return Result;
 		}
 		Ride.Kite->SetKiteModel(Model);
-		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(30.0f));
+		Ride.Kite->SetKiteSize(KiteSizeM2 > 0.0f ? KiteSizeM2 : UKiteComponent::RecommendKiteSizeM2(WindKnots));
 		Result.RiderWeightN = Ride.Board->MassKg * KiteUnits::GravityMS2;
 		Ride.Simulate(8.0f);
+		Result.RideSpeedKnots = Ride.Board->Velocity.Size2D() / 51.44f;
+		Result.RideTensionN = Ride.Kite->GetLineTensionN();
 
 		float SendDeadTimeSeconds = 0.0f;
 		if (bSend)
@@ -1324,9 +1343,10 @@ namespace
 			Ride.Board->SetWeightShift(-1.0f);
 		}
 		bool bLeftWater = false;
-		for (float Elapsed = 0.0f; Elapsed < 20.0f; Elapsed += RideDeltaTime)
+		for (float Elapsed = 0.0f; Elapsed < 90.0f; Elapsed += RideDeltaTime)
 		{
 			Ride.Simulate(RideDeltaTime);
+			Result.MaxSpeedKnots = FMath::Max(Result.MaxSpeedKnots, static_cast<float>(Ride.Board->Velocity.Size2D()) / 51.44f);
 			const bool bAir = Ride.Board->GetBoardState() == EBoardState::Airborne;
 			if (bAir && !bLeftWater)
 			{
@@ -1378,15 +1398,30 @@ namespace
 					Result.SlackSecondsInAir += RideDeltaTime;
 				}
 			}
+			Result.bFinite &= !Ride.Board->Velocity.ContainsNaN() && !Ride.Pawn->GetActorLocation().ContainsNaN() && !Ride.Kite->GetKiteWorldPosition().ContainsNaN();
+			if (HUD)
+			{
+				HUD->UpdateJumpReadout(Ride.Board, RideDeltaTime);
+				if (bAir && Ride.Board->GetCurrentJumpHeight() >= Result.PeakCm && Ride.Board->GetCurrentJumpHeight() > 100.0f)
+				{
+					Result.ReadoutInAir = HUD->GetJumpReadoutText();
+				}
+			}
 			Result.PeakCm = FMath::Max(Result.PeakCm, Ride.Board->GetCurrentJumpHeight());
 			if (bLeftWater && !bAir && Result.AirSeconds > 0.3f)
 			{
+				Result.bCameDown = true;
+				if (HUD)
+				{
+					Result.ReadoutOnLanding = HUD->GetJumpReadoutText();
+				}
 				break;
 			}
 		}
 		Ride.Simulate(1.0f);
 		Result.bCrashed = Ride.Board->IsCrashing();
 		Result.bKiteDown = Ride.Kite->IsCrashed();
+		Result.DistanceCm = Ride.Board->GetLastJumpDistance();
 		return Result;
 	}
 }
@@ -1534,10 +1569,12 @@ bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
 	TestEqual(TEXT("20 kn: 9 m"), UKiteComponent::RecommendKiteSizeM2(20.0f), 9.0f);
 	TestEqual(TEXT("30 kn: 6 m"), UKiteComponent::RecommendKiteSizeM2(30.0f), 6.0f);
 	TestEqual(TEXT("40 kn: 5 m"), UKiteComponent::RecommendKiteSizeM2(40.0f), 5.0f);
+	TestEqual(TEXT("60 kn: 3 m"), UKiteComponent::RecommendKiteSizeM2(60.0f), 3.0f);
+	TestEqual(TEXT("90 kn: the smallest kite there is"), UKiteComponent::RecommendKiteSizeM2(90.0f), 2.0f);
 	TestEqual(TEXT("8 kn: the biggest kite there is"), UKiteComponent::RecommendKiteSizeM2(8.0f), 17.0f);
 	TestTrue(TEXT("A lighter rider takes a smaller kite"), UKiteComponent::RecommendKiteSizeM2(20.0f, 60.0f) < UKiteComponent::RecommendKiteSizeM2(20.0f, 85.0f));
 	float Previous = 100.0f;
-	for (float Knots = 8.0f; Knots <= 40.0f; Knots += 1.0f)
+	for (float Knots = KiteGear::MinWindKnots; Knots <= KiteGear::MaxWindKnots; Knots += 1.0f)
 	{
 		const float Size = UKiteComponent::RecommendKiteSizeM2(Knots);
 		TestTrue(FString::Printf(TEXT("%.0f kn: %.0f m is a size on offer and no bigger than for less wind"), Knots, Size), UKiteComponent::GetKiteSizesM2().Contains(Size) && Size <= Previous);
@@ -2168,3 +2205,106 @@ bool FKiteSurfRiderRig::RunTest(const FString& Parameters)
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS
+
+// The wind goes up to 90 kn. A storm is rideable on the small kite it calls for, jumps higher and
+// much further than a fresh breeze, and lets the rider down again: in the air nothing but the air
+// holds them back, so they are carried downwind until the wind they feel has dropped.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfStormIsRideable, "KiteSurf.Wind.StormIsRideable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfStormIsRideable::RunTest(const FString& Parameters)
+{
+	const FJumpResult Breeze = RunJump(true, true, 0.7f);
+	for (const float Knots : { 60.0f, 90.0f })
+	{
+		// In a storm the kite loads up at once: the moment to let go is 0.3 s after it answers.
+		const FJumpResult Storm = RunJump(true, true, 0.3f, EKiteModel::Loop, 0.0f, Knots);
+		const FString What = FString::Printf(TEXT("%.0f kn on a %.0f m kite: riding at %.0f kn, a jump of %.1f m and %.0f m in %.1f s, top speed %.0f kn"),
+			Knots, UKiteComponent::RecommendKiteSizeM2(Knots), Storm.RideSpeedKnots, Storm.PeakCm / 100.0f, Storm.DistanceCm / 100.0f, Storm.AirSeconds, Storm.MaxSpeedKnots);
+		AddInfo(What);
+		TestTrue(What + TEXT(": the numbers stay real"), Storm.bFinite);
+		TestTrue(What + TEXT(": the board planes, no faster than a board can go"), Storm.RideSpeedKnots > 20.0f && Storm.RideSpeedKnots <= 35.5f);
+		TestTrue(What + TEXT(": the jump is higher and much further than in 30 kn"), Storm.PeakCm > Breeze.PeakCm + 500.0f && Storm.DistanceCm > 2.0f * Breeze.DistanceCm);
+		TestTrue(What + TEXT(": the rider comes down again"), Storm.bCameDown && Storm.AirSeconds < 20.0f);
+		TestTrue(What + TEXT(": the kite stays in the air"), !Storm.bKiteDown);
+		TestTrue(What + TEXT(": carried downwind in the air faster than a board goes, held back by the air"), Storm.MaxSpeedKnots > 36.0f && Storm.MaxSpeedKnots < 1.5f * Knots);
+	}
+
+	// The ceiling is at the clouds, so it is the wind and the timing that set the height.
+	const float CeilingCm = GetDefault<UBoardMovementComponent>()->MaxJumpHeight;
+	TestTrue(TEXT("The ceiling is the cloud base, far above any jump"), CeilingCm >= 100000.0f);
+
+	// Far too much kite for the wind does not go higher; whatever it does, the numbers stay
+	// real and the rider comes down.
+	const FJumpResult Overpowered = RunJump(true, true, 0.3f, EKiteModel::Loop, 0.0f, 90.0f, 9.0f);
+	AddInfo(FString::Printf(TEXT("90 kn on a 9 m kite: %.0f m up, %.0f m downwind, %.1f s in the air, top speed %.0f kn"), Overpowered.PeakCm / 100.0f, Overpowered.DistanceCm / 100.0f, Overpowered.AirSeconds, Overpowered.MaxSpeedKnots));
+	TestTrue(TEXT("A 9 m kite in 90 kn: the numbers stay real and the rider comes down"), Overpowered.bFinite && Overpowered.bCameDown && Overpowered.PeakCm < CeilingCm);
+	return true;
+}
+
+// The HUD says how high and how far: live figures in the air, then the finished jump.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpHeightAndDistanceShown, "KiteSurf.HUD.JumpHeightAndDistance", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpHeightAndDistanceShown::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("A jump in progress reads height, distance and time"), AKiteSurfHUD::FormatJumpLive(1240.0f, 3520.0f, 2.13f), FString(TEXT("12.4 m high   35 m far   2.1 s")));
+	TestEqual(TEXT("A finished jump is labelled"), AKiteSurfHUD::FormatJumpResult(1480.0f, 6210.0f, 4.07f), FString(TEXT("JUMP  14.8 m high   62 m far   4.1 s")));
+
+	UWorld* HudWorld = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteSurfHUD* HUD = HudWorld ? HudWorld->SpawnActor<AKiteSurfHUD>() : nullptr;
+	TestNotNull(TEXT("HUD spawned"), HUD);
+	if (HUD)
+	{
+		TestTrue(TEXT("Nothing is shown before a jump"), HUD->GetJumpReadoutText().IsEmpty());
+
+		const FJumpResult Jump = RunJump(true, true, 0.7f, EKiteModel::Loop, 0.0f, 30.0f, 0.0f, HUD);
+		TestTrue(FString::Printf(TEXT("The jump went up and along (%.1f m, %.0f m)"), Jump.PeakCm / 100.0f, Jump.DistanceCm / 100.0f), Jump.PeakCm > 500.0f && Jump.DistanceCm > 2000.0f);
+		TestTrue(FString::Printf(TEXT("At the top the HUD shows the height so far ('%s')"), *Jump.ReadoutInAir),
+			Jump.ReadoutInAir.StartsWith(FString::Printf(TEXT("%.1f m high"), Jump.PeakCm / 100.0f)) && Jump.ReadoutInAir.Contains(TEXT("m far")));
+		TestEqual(TEXT("On landing it shows what the jump came to"), Jump.ReadoutOnLanding, AKiteSurfHUD::FormatJumpResult(Jump.PeakCm, Jump.DistanceCm, Jump.AirSeconds));
+
+		// The result stays up for a few seconds and then goes. The ride's world has gone, so
+		// another rider, sitting on the water, stands in for it.
+		FRideFixture Other(15.0f);
+		if (Other.IsValid())
+		{
+			for (int32 Step = 0; Step < 120; ++Step)
+			{
+				HUD->UpdateJumpReadout(Other.Board, RideDeltaTime);
+			}
+			TestEqual(TEXT("Two seconds later the result is still up"), HUD->GetJumpReadoutText(), Jump.ReadoutOnLanding);
+			for (int32 Step = 0; Step < 180; ++Step)
+			{
+				HUD->UpdateJumpReadout(Other.Board, RideDeltaTime);
+			}
+			TestTrue(TEXT("and after five it has gone"), HUD->GetJumpReadoutText().IsEmpty());
+		}
+	}
+	if (HudWorld)
+	{
+		HudWorld->DestroyWorld(false);
+	}
+
+	// A hop under a metre is not announced, and the result of a real jump clears after a few seconds.
+	FRideFixture Ride(20.0f);
+	UWorld* World = Ride.World;
+	AKiteSurfHUD* RideHUD = World ? World->SpawnActor<AKiteSurfHUD>() : nullptr;
+	if (Ride.IsValid() && RideHUD)
+	{
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.Simulate(6.0f);
+		Ride.Board->Jump();
+		FString Shown;
+		float HopPeakCm = 0.0f;
+		for (int32 Step = 0; Step < 240; ++Step)
+		{
+			Ride.Simulate(RideDeltaTime);
+			RideHUD->UpdateJumpReadout(Ride.Board, RideDeltaTime);
+			HopPeakCm = FMath::Max(HopPeakCm, Ride.Board->GetCurrentJumpHeight());
+			Shown += RideHUD->GetJumpReadoutText();
+		}
+		TestTrue(FString::Printf(TEXT("A plain pop is under a metre (%.0f cm)"), HopPeakCm), HopPeakCm > 10.0f && HopPeakCm < 100.0f);
+		TestEqual(TEXT("and it was counted as a jump"), Ride.Board->GetJumpCount(), 1);
+		TestTrue(TEXT("but the HUD kept quiet about it"), Shown.IsEmpty());
+	}
+	return true;
+}

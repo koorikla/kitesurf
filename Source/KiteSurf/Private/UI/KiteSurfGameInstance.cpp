@@ -1,4 +1,5 @@
 #include "UI/KiteSurfGameInstance.h"
+#include "KiteGear.h"
 #include "KiteComponent.h"
 #include "UI/KiteSurfSaveGame.h"
 #include "Misc/App.h"
@@ -34,7 +35,7 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 	UKiteSurfSaveGame* SaveGame = UKiteSurfSaveGame::LoadOrCreateSettings();
 	if (SaveGame)
 	{
-		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 40.0f);
+		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 		MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
 		MusicVolume = FMath::Clamp(SaveGame->MusicVolume, 0.0f, 1.0f);
 		AmbientVolume = FMath::Clamp(SaveGame->AmbientVolume, 0.0f, 1.0f);
@@ -57,7 +58,7 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 	UKiteSurfSaveGame* SaveGame = UKiteSurfSaveGame::LoadOrCreateSettings();
 	if (SaveGame)
 	{
-		SaveGame->WindStrengthKnots = FMath::Clamp(PendingWindKnots, 8.0f, 40.0f);
+		SaveGame->WindStrengthKnots = FMath::Clamp(PendingWindKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 		SaveGame->MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
 		SaveGame->MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
 		SaveGame->AmbientVolume = FMath::Clamp(AmbientVolume, 0.0f, 1.0f);
@@ -79,7 +80,7 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 
 void UKiteSurfGameInstance::SetPendingWindKnots(float InKnots)
 {
-	PendingWindKnots = FMath::Clamp(InKnots, 8.0f, 40.0f);
+	PendingWindKnots = FMath::Clamp(InKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 }
 
 void UKiteSurfGameInstance::SetMasterVolume(float InVolume)

@@ -1,4 +1,5 @@
 #include "UI/KiteSurfSaveGame.h"
+#include "KiteGear.h"
 #include "Kismet/GameplayStatics.h"
 
 const FString UKiteSurfSaveGame::DefaultSaveSlot = TEXT("Settings");
@@ -32,7 +33,7 @@ UKiteSurfSaveGame* UKiteSurfSaveGame::LoadOrCreateSettings(const FString& SlotNa
 		{
 			if (UKiteSurfSaveGame* SaveGame = Cast<UKiteSurfSaveGame>(Loaded))
 			{
-				SaveGame->WindStrengthKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 40.0f);
+				SaveGame->WindStrengthKnots = FMath::Clamp(SaveGame->WindStrengthKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 				SaveGame->MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
 				return SaveGame;
 			}
@@ -49,7 +50,7 @@ UKiteSurfSaveGame* UKiteSurfSaveGame::LoadOrCreateSettings(const FString& SlotNa
 
 bool UKiteSurfSaveGame::SaveSettings(const FString& SlotName, int32 UserIndex)
 {
-	WindStrengthKnots = FMath::Clamp(WindStrengthKnots, 8.0f, 40.0f);
+	WindStrengthKnots = FMath::Clamp(WindStrengthKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 	MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
 	return UGameplayStatics::SaveGameToSlot(this, SlotName, UserIndex);
 }

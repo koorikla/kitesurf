@@ -402,6 +402,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				TestTrue(TEXT("Best jump height recorded"), BoardComp->GetBestJumpHeight() >= 30.0f);
 
 				// Test hard ceiling clamp at MaxJumpHeight
+				BoardComp->MaxJumpHeight = 3000.0f;
 				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
 				BoardComp->Velocity = FVector(0.0f, 0.0f, 10000.0f);
 				BoardComp->SetBoardState(EBoardState::Airborne);

@@ -69,7 +69,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	EdgeReleaseSeconds = 0.22f;     // s: the release of the edge; after that the lines keep pulling as a force
 	JumpMinSpeedKnots = 8.0f;   // 8 kn
 	JumpMinEdgeInput = 0.4f;    // 0.4
-	MaxJumpHeight = 4000.0f;    // 4000 cm = 40 m
+	MaxJumpHeight = 500000.0f;  // 5 km: the base of the level's clouds
 	MaxLandingAngle = 30.0f;    // 30 deg
 	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
@@ -225,6 +225,8 @@ void UBoardMovementComponent::BeginAirborne()
 	CurrentJumpAirtime = 0.0f;
 	CurrentJumpHeight = 0.0f;
 	CurrentJumpApexHeight = 0.0f;
+	CurrentJumpDistance = 0.0f;
+	JumpStartLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	LandingStateTimer = 0.0f;
 }
 
@@ -385,8 +387,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			{
 				CurrentJumpApexHeight = CurrentJumpHeight;
 			}
+			CurrentJumpDistance = FVector::Dist2D(Location, JumpStartLocation);
 
-			// Clamp apex at MaxJumpHeight (default 40 m = 4000 cm)
+			// Clamp apex at MaxJumpHeight (the cloud base)
 			if (Location.Z >= WaterHeight + MaxJumpHeight)
 			{
 				FVector ClampedLocation = Location;
@@ -544,9 +547,11 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			LastStepDebug.LeewayDeg = FMath::RadiansToDegrees(FMath::Atan2(LateralSpeed, FMath::Abs(ForwardSpeed)));
 		}
 
-		// Velocity clamping at MaxBoardSpeed
+		// A board on the water goes no faster than MaxBoardSpeed. In the air only the air drags on
+		// the rider: the kite carries them downwind until the wind they feel has dropped, which is
+		// what brings a rider lofted in a storm back down.
 		const float MaxSpeedCmS = GetMaxBoardSpeedCmS();
-		if (Velocity.Size2D() > MaxSpeedCmS)
+		if (!bIsAirborne && Velocity.Size2D() > MaxSpeedCmS)
 		{
 			const FVector Clamped2D = Velocity.GetSafeNormal2D() * MaxSpeedCmS;
 			Velocity.X = Clamped2D.X;
@@ -691,10 +696,13 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 				LastJumpApexHeight = CurrentJumpApexHeight;
 				LastJumpAirtime = CurrentJumpAirtime;
+				LastJumpDistance = CurrentJumpDistance;
+				++JumpCount;
 				if (CurrentJumpApexHeight > BestJumpHeight)
 				{
 					BestJumpHeight = CurrentJumpApexHeight;
 				}
+				BestJumpDistance = FMath::Max(BestJumpDistance, LastJumpDistance);
 
 				if (LandingAngleDeg <= MaxLandingAngle)
 				{

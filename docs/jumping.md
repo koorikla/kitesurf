@@ -32,14 +32,16 @@ The legs give about 2.5 m/s (3.7 m/s with the weight on the tail), a hop of unde
 - The kite lifts the rider off the water by itself when its upward pull passes `LiftoffWeightFactor` (1.5) times their weight.
 - A rider who is edging (turn input, weight on the tail, or a loaded crouch) holds more: up to `LiftoffWeightFactor + EdgedLiftoffWeightBonus` (4.5) times their weight at full edge. That is what lets the pull build while the kite is steered up.
 - Releasing the edge with a pop while the lines are loaded is the big jump. Releasing early gives less; holding on until the kite pulls the rider off the edge loses the pop and the timing, and is far lower.
-- The kite answers the send after its steering dead time (0.24 s at the start's 70% sheet), so the release is timed from when the kite starts to move. With the recommended kite (loop model), sending the kite hard and popping at the best moment (release swept in 0.1 s steps): about 7 m in 15 kn, 9 m in 20 kn, 15 m in 30 kn (best 0.8 s after the kite answers) and 20 m in 40 kn. The test's 0.7 s release at 30 kn goes 13.1 m with 3.7 s in the air; a pop with the kite parked is 1.5 m, sending the kite without an edge 6.2 m, letting go at 0.3 s 3.9 m, and holding on to 3 s gets the rider pulled off at 5.6 m (`KiteSurf.Jump.TimedReleaseBeatsPop`).
+- The kite answers the send after its steering dead time (0.24 s at the start's 70% sheet), so the release is timed from when the kite starts to move. With the recommended kite (loop model), sending the kite hard and popping at the best moment (release swept in 0.1 s steps): about 7 m in 15 kn, 9 m in 20 kn, 15 m in 30 kn (best 0.8 s after the kite answers) and 20 m in 40 kn. In a storm the kite loads up at once, so the best moment is 0.3 s after it answers: about 28 m and 170 m downwind in 60 kn on the 3 m kite, 30 m and 260 m in 90 kn on the 2 m (`KiteSurf.Wind.StormIsRideable`). A kite far too big for a storm does not go higher: it barely jumps. The test's 0.7 s release at 30 kn goes 13.1 m with 3.7 s in the air; a pop with the kite parked is 1.5 m, sending the kite without an edge 6.2 m, letting go at 0.3 s 3.9 m, and holding on to 3 s gets the rider pulled off at 5.6 m (`KiteSurf.Jump.TimedReleaseBeatsPop`).
 
 ### Airborne Dynamics & Apex Envelope
 - The line force continues to act on the rider. A kite kept overhead carries part of their weight on the way down.
 - The air drags on the rider and board, $0.5 \rho C_D A |v_a| v_a$ with `RiderDragAreaM2` (0.7 m^2) and $v_a$ the wind at chest height (`UKiteComponent::RiderWindHeightCm`) minus their velocity, sampled at the board's simulation time.
 - A little slack in the lines does not drop the kite: the canopy keeps flying and takes the slack back up. Only with more than `SlackCollapseCm` of slack is it a loose sheet that falls.
 - While airborne (> 10 cm above water surface), water buoyancy and water drag forces are disabled.
-- The trajectory is clamped at `MaxJumpHeight` (4000 cm = 40 m), with upward velocity zeroed if the ceiling is reached.
+- `MaxBoardSpeedCmS` holds only on the water. In the air the kite carries the rider downwind until the wind they feel, and with it the kite's lift, has dropped: that is what brings a rider lofted in a storm back down.
+- The only ceiling is `MaxJumpHeight`, at the cloud base (500000 cm = 5 km); upward velocity is zeroed there. No jump measured comes near it: the highest is about 30 m.
+- Distance is measured over the water from take-off (`GetCurrentJumpDistance`, `GetLastJumpDistance`, `GetBestJumpDistance`); `GetJumpCount` goes up when a jump's figures are final.
 
 ### Hang time
 Effective gravity $8h/t^2$ tells how much of the rider the kite carries: real jumps give 1.5 to 3.5 m/s^2 (the kite carrying 65 to 85% of the rider). The timed jump at 30 kn gives 7.8 m/s^2, 13.1 m in 3.67 s (`KiteSurf.Physics.HangTime`, which logs the jump at 20 Hz). The rider climbs level with the kite and on the way down it is low and to the side, about 19 deg above them, lifting about 80 N of their 830 N. The assist steers by the wind the rider feels, which in the air is dominated by their own climb and fall, so the kite does not get back over the top. This is a known gap; see `docs/physics/CHANGELOG.md`.
@@ -69,7 +71,7 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 | `RiderDragAreaM2` | `0.7` | Drag area of the rider and board in the air (m^2). |
 | `AirSpinRate` | `200` | Board spin in the air at full carve (deg/s). |
 | `AirWeightShiftPitchDeg` | `30` | Board pitch at full weight shift in the air (deg). |
-| `MaxJumpHeight` | `4000` | Maximum jump apex height clamp in cm (40 m). |
+| `MaxJumpHeight` | `500000` | Maximum jump apex height clamp in cm (5 km, the cloud base). |
 | `MaxLandingAngle` | `30` | Maximum deviation angle in degrees between velocity and board heading for clean landing. |
 | `LoadRatePerSec` / `LoadReleaseRatePerSec` | `2.5` / `6.0` | How fast the crouch builds while the jump button is held, and lets go (1/s). |
 | `LoadGripBonus` | `1.5` | Extra lateral grip at full load, as a fraction. |
@@ -81,4 +83,5 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 ## HUD Telemetry
 `AKiteSurfHUD` renders:
 - Current board state: `Displacement`, `Planing`, `Airborne (<height>m)`, or `Landing (Clean/Crash!)`.
-- Jump stats: `Best <height>m` and `Apex <height>m`.
+- Jump stats in the telemetry: best height and distance, and the last jump's.
+- The jump readout, top centre: `12.4 m high   35 m far   2.1 s` while the rider is more than a metre up, then `JUMP  14.8 m high   62 m far   4.1 s` for four seconds after it ends, in gold with NEW BEST when it beat the session's best height (`UpdateJumpReadout`). Hops under a metre are not announced.

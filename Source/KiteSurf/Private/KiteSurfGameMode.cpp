@@ -13,7 +13,7 @@ AKiteSurfGameMode::AKiteSurfGameMode()
 	HUDClass = AKiteSurfHUD::StaticClass();
 }
 
-void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec)
+void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec, float TackSide)
 {
 	if (!RiderPawn)
 	{
@@ -37,7 +37,8 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 	// so the session opens with the rider planing instead of drifting downwind under a parked kite.
 	UKiteComponent* Kite = RiderPawn->GetKite();
 	const FVector DownwindDir = Kite ? Kite->GetDownwindDir() : FVector::ForwardVector;
-	const FVector Heading = FVector::CrossProduct(FVector::UpVector, DownwindDir); // to the right, looking downwind
+	const float Side = TackSide >= 0.0f ? 1.0f : -1.0f;
+	const FVector Heading = FVector::CrossProduct(FVector::UpVector, DownwindDir) * Side; // +1: to the right, looking downwind
 	RiderPawn->SetActorRotation(Heading.Rotation());
 
 	if (UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
@@ -48,7 +49,7 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 
 	if (Kite)
 	{
-		Kite->SetWindowPosition(StartKiteClockDeg, StartKiteDepthDeg);
+		Kite->SetWindowPosition(StartKiteClockDeg * Side, StartKiteDepthDeg);
 	}
 	RiderPawn->SheetKite(StartSheet);
 }

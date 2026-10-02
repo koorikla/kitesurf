@@ -136,6 +136,9 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 				const float DeltaTime = 0.0333f;
 				const FVector LateralForce(0.0f, 15000.0f, 0.0f); // 150 N sideways
 
+				// This measures grip alone, so stop the stationary board pivoting to face the force.
+				BoardComp->LowSpeedPivotRate = 0.0f;
+
 				// Run 1: No Edge
 				Pawn->SetActorLocation(FVector::ZeroVector);
 				Pawn->SetActorRotation(FRotator::ZeroRotator);

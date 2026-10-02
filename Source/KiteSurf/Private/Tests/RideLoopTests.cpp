@@ -26,7 +26,7 @@ namespace
 		UKiteComponent* Kite = nullptr;
 		UBoardMovementComponent* Board = nullptr;
 
-		explicit FRideFixture(float WindKnots = 15.0f)
+		explicit FRideFixture(float WindKnots = 15.0f, float TackSide = 1.0f)
 		{
 			World = UWorld::CreateWorld(EWorldType::Game, false);
 			Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
@@ -40,7 +40,7 @@ namespace
 					Wind->GustStrength = 0.0f;
 					Wind->DirectionDriftDeg = 0.0f;
 				}
-				AKiteSurfGameMode::InitializeRide(Pawn, 12.0f * KnotCmS);
+				AKiteSurfGameMode::InitializeRide(Pawn, 12.0f * KnotCmS, TackSide);
 			}
 		}
 
@@ -68,7 +68,7 @@ namespace
 		float SpeedKnots() const { return Board->Velocity.Size2D() / KnotCmS; }
 
 		/** Hold the bar left until the kite is past the given clock position on the left side, then centre it. Returns the seconds taken. */
-		float SteerKiteToLeftSide(float ClockDeg = -35.0f, float TimeoutSeconds = 10.0f)
+		float SteerKiteToLeftSide(float ClockDeg = -60.0f, float TimeoutSeconds = 10.0f)
 		{
 			Pawn->SteerKite(-1.0f);
 			float Seconds = 0.0f;
@@ -351,8 +351,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideSpeedScalesWithWind, "KiteSurf.Rid
 
 bool FKiteSurfRideSpeedScalesWithWind::RunTest(const FString& Parameters)
 {
-	struct FWindCase { float WindKnots; float MinKnots; float MaxKnots; };
-	const FWindCase Cases[] = { { 12.0f, 8.0f, 16.0f }, { 20.0f, 15.0f, 27.0f }, { 28.0f, 20.0f, 35.0f } };
+	// In 28 kn a 12 m kite at the default bar position lifts the rider off the water, so that
+	// case rides sheeted out, as a rider would.
+	struct FWindCase { float WindKnots; float Sheet; float MinKnots; float MaxKnots; };
+	const FWindCase Cases[] = { { 12.0f, 0.7f, 9.0f, 18.0f }, { 20.0f, 0.7f, 16.0f, 28.0f }, { 28.0f, 0.3f, 18.0f, 34.0f } };
 
 	for (const FWindCase& Case : Cases)
 	{
@@ -362,6 +364,7 @@ bool FKiteSurfRideSpeedScalesWithWind::RunTest(const FString& Parameters)
 		{
 			return false;
 		}
+		Ride.Pawn->SheetKite(Case.Sheet);
 		Ride.Simulate(30.0f);
 		UE_LOG(LogKiteSurf, Log, TEXT("SpeedScalesWithWind: wind %.0f kn -> board %.1f kn, tension %.0f N, planing %d"),
 			Case.WindKnots, Ride.SpeedKnots(), Ride.Kite->GetLineTensionN(), Ride.Board->IsPlaning());
@@ -462,6 +465,105 @@ bool FKiteSurfWakeTrailsWhilePlaning::RunTest(const FString& Parameters)
 
 	Wake->EmitSplash(1.0f);
 	TestTrue(TEXT("A landing throws a splash"), Wake->GetNumSprayDrops() >= 10);
+	return true;
+}
+
+// Carving is the same on both tacks: A on one mirrors D on the other.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideCarveIsSymmetric, "KiteSurf.Ride.CarveIsSymmetric", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideCarveIsSymmetric::RunTest(const FString& Parameters)
+{
+	auto CarveDownwind = [](float TackSide) -> float
+	{
+		FRideFixture Ride(15.0f, TackSide);
+		if (!Ride.IsValid())
+		{
+			return 0.0f;
+		}
+		Ride.Simulate(3.0f);
+		const float StartYaw = Ride.Pawn->GetActorRotation().Yaw;
+		// Turn towards downwind: left on the right-hand tack, right on the left-hand tack.
+		Ride.Pawn->EdgeBoard(-TackSide);
+		Ride.Simulate(1.5f);
+		return FRotator::NormalizeAxis(Ride.Pawn->GetActorRotation().Yaw - StartYaw);
+	};
+
+	const float RightTackTurnDeg = CarveDownwind(1.0f);
+	const float LeftTackTurnDeg = CarveDownwind(-1.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("CarveIsSymmetric: right tack turned %.1f deg, left tack turned %.1f deg"), RightTackTurnDeg, LeftTackTurnDeg);
+
+	TestTrue(FString::Printf(TEXT("A full carve for 1.5 s turns the board at least 40 deg (%.1f)"), RightTackTurnDeg), RightTackTurnDeg <= -40.0f);
+	TestNearlyEqual(TEXT("The mirrored carve on the other tack turns the same amount the other way"), LeftTackTurnDeg, -RightTackTurnDeg, 1.0f);
+	return true;
+}
+
+// Edge pressure trades grip for speed: pressed in, the board slips less; flattened, it slides off downwind.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideEdgePressureChangesLeeway, "KiteSurf.Ride.EdgePressureChangesLeeway", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideEdgePressureChangesLeeway::RunTest(const FString& Parameters)
+{
+	auto LeewayDeg = [](float EdgePressure) -> float
+	{
+		FRideFixture Ride;
+		if (!Ride.IsValid())
+		{
+			return 0.0f;
+		}
+		Ride.Board->SetEdgePressure(EdgePressure);
+		Ride.Simulate(15.0f);
+		return FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Ride.Board->GetLateralSpeed()), Ride.Board->GetForwardSpeed()));
+	};
+
+	const float Flat = LeewayDeg(-1.0f);
+	const float Neutral = LeewayDeg(0.0f);
+	const float Edged = LeewayDeg(1.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("EdgePressureChangesLeeway: flat %.1f deg, neutral %.1f deg, edged %.1f deg"), Flat, Neutral, Edged);
+
+	TestTrue(FString::Printf(TEXT("Edging hard slips less than neutral (%.1f < %.1f deg)"), Edged, Neutral), Edged < Neutral);
+	TestTrue(FString::Printf(TEXT("A flat board slips more than neutral (%.1f > %.1f deg)"), Flat, Neutral), Flat > Neutral);
+	return true;
+}
+
+// Sending the kite overhead with the bar in lifts the rider off the water, and they come down riding.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideKiteLiftsRiderOff, "KiteSurf.Ride.KiteLiftsRiderOff", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideKiteLiftsRiderOff::RunTest(const FString& Parameters)
+{
+	FRideFixture Ride(22.0f);
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+
+	Ride.Simulate(5.0f);
+	TestTrue(TEXT("On the water before the kite is sent"), Ride.Board->GetBoardState() == EBoardState::Planing);
+
+	// Send it: bar in, kite steered up towards the zenith.
+	Ride.Pawn->SheetKite(1.0f);
+	Ride.Pawn->SteerKite(-1.0f);
+	bool bLiftedOff = false;
+	float PeakHeightCm = 0.0f;
+	for (float Elapsed = 0.0f; Elapsed < 6.0f; Elapsed += RideDeltaTime)
+	{
+		Ride.Simulate(RideDeltaTime);
+		if (Ride.Kite->GetClockDeg() < 0.0f)
+		{
+			Ride.Pawn->SteerKite(0.0f); // keep the kite overhead
+		}
+		bLiftedOff |= Ride.Board->GetBoardState() == EBoardState::Airborne;
+		PeakHeightCm = FMath::Max(PeakHeightCm, Ride.Board->GetCurrentJumpHeight());
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("KiteLiftsRiderOff: lifted %d, peak height %.0f cm, state %d, crashing %d"), bLiftedOff, PeakHeightCm, (int32)Ride.Board->GetBoardState(), Ride.Board->IsCrashing());
+
+	TestTrue(TEXT("The kite lifted the rider off the water without a pop"), bLiftedOff);
+	TestTrue(FString::Printf(TEXT("The jump reached at least 1 m (%.0f cm)"), PeakHeightCm), PeakHeightCm >= 100.0f);
+
+	// Sheet out and come down.
+	Ride.Pawn->SheetKite(0.2f);
+	Ride.Simulate(8.0f);
+	TestTrue(TEXT("Back on the water"), Ride.Board->GetBoardState() != EBoardState::Airborne);
+	TestTrue(TEXT("The landing was clean"), Ride.Board->WasLastLandingClean() && !Ride.Board->IsCrashing());
 	return true;
 }
 

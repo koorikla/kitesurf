@@ -23,6 +23,9 @@
 | `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | While held, steering turns the kite at a rate set by its airspeed, so holding the bar over flies a loop. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |
 | `UBoardMovementComponent` | `void SetWeightShift(float Value)` | Rider weight along the board in `[-1.0, 1.0]`: +1 on the nose, -1 on the tail. |
+| `UKiteComponent` | `bool AreLinesTaut() const` | False while the lines are slack: the kite is not flying and the rider feels no pull. |
+| `UKiteComponent` | `float GetAngleOfAttackDeg() const` | Airflow angle to the canopy including bar trim; above `StallAngleDeg` the kite is stalled. |
+| `UWindComponent` | `float GetGustFactorAt(const FVector&) const` | Current wind over base wind: above 1 in a gust, below 1 in a lull. |
 | `UKiteComponent` | `bool IsCrashed() const` | True while the kite lies on the water; `OnKiteCrashed` / `OnKiteRelaunched` fire on the way in and out. |
 | `AKiteRiderPawn` | `void SetRiderCharacter(ERiderCharacter)` | Shows Santa, the wetsuit rider or the robot; the choice is stored by `UKiteSurfGameInstance`. |
 | `AKiteRiderPawn` | `void SheetKite(float Amount)` | Sets the bar position, which persists; `Amount` clamped to `[0.0, 1.0]`. |

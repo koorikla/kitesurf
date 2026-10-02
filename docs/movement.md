@@ -28,13 +28,20 @@ This document outlines the board movement, edging, planing transition, and physi
 - **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
 
 ### How the kite drives the board
-- The kite is a point flying on the sphere of its lines (`UKiteComponent`). It has a heading; it flies along it at an airspeed of glide ratio times the wind blowing along the lines, and drifts with the wind blowing across them. Nose-out of the window the two cancel, and the kite parks at the window edge.
-- **Steering** asks for a direction of travel round the window; the kite stops where the bar is centred. With the **loop** input held, steering turns the kite directly at airspeed / `MinTurnRadiusCm`, so holding the bar over flies a loop.
-- **Going down**: with the loop input held the kite can be flown into the water, and with too little air flowing over it (`StallFlowSpeedCmS`: no wind, or a rider outrunning it) it stalls and falls. On the water the lines are slack; it relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
-- **Line tension** follows the kite's airspeed squared: about 450 N parked in 15 kn, close to 3000 N (the `MaxLineTensionN` cap) for a kite looping through the middle of the window.
-- The wind the kite feels is the true wind minus the rider's velocity, so the parked position falls back as the board speeds up. That is what limits board speed and upwind angle.
+The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 240 Hz or faster in SI units.
+
+- **Forces on it**: lift and drag from the air flowing over it (true wind minus its own velocity), a side force that resists sliding sideways, gravity, and the pull of the lines.
+- **Angle of attack** is the angle of that airflow to the canopy plus the trim from the bar (`TrimSheetedOutDeg` to `TrimSheetedInDeg`). Lift rises to `MaxLiftCoefficient` at `StallAngleDeg`; past that the kite is stalled and makes mostly drag. Air on the wrong side of the canopy (overflying the window, or a fully depowered kite flown fast) luffs it.
+- **The lines only pull.** They hold the kite at line length while the forces on it point away from the rider; the tension is whatever that takes, so it rises with the square of the kite's airspeed and falls to nothing in a lull. When it reaches zero the lines are slack: the kite stops flying and falls like a sheet (`SlackDragCoefficient`) until the lines snatch tight again or it reaches the water.
+- **Parking** is not scripted: with its nose out of the window the kite settles where lift, drag and line tension balance, about 10 degrees inside the window edge, and further back the faster the rider goes. That is what limits board speed and upwind angle.
+- **Steering** turns the nose at airspeed / `MinTurnRadiusCm`, wound in at `TurnResponse`. Normally an assist flies the bar: bar over means travel round the window that way, bar centred means hold this clock position (it leans the nose against gravity and gusts), and it turns the nose up before the kite reaches the water. With the **loop** input held the rider's bar goes straight to the kite, so holding it flies a loop, and a loop taken too low goes into the water.
+- **In the water** the lines are slack; the kite relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
+- The pull passed to the rider is capped at `MaxLineTensionN`.
 - The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
-- A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 18 kn; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
+- A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn with about 500 N in the lines; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
+
+### Wind
+`UWindComponent` adds gusts, direction drift and shear to the base wind. Gusts are a slow swell over `GustPeriodSeconds` with quicker puffs on top (`GustPuffRate`, `GustPuffShare`), reaching most of `GustStrength` either way. `GetGustFactorAt` gives the current wind over the base wind; the HUD calls out GUST and LULL from it.
 
 ## Default Tunable Properties
 

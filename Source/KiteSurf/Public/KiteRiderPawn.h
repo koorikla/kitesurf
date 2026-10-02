@@ -13,6 +13,7 @@ class UCameraComponent;
 class UWindComponent;
 class UBoardMovementComponent;
 class UBoardWakeComponent;
+class UWindStreakComponent;
 class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
@@ -71,6 +72,7 @@ public:
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
 	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
+	UWindStreakComponent* GetWindStreaks() const { return WindStreaks.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
@@ -234,6 +236,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardWakeComponent> Wake;
+
+	/** Wind lines on the water round the rider: how the wind's direction is read off the sea. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UWindStreakComponent> WindStreaks;
 
 	// Sound: loops that play all the time and are faded and pitched by UpdateAudioModulation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")

@@ -34,7 +34,7 @@ enum class EJumpRejectReason : uint8
 	NotEdged   UMETA(DisplayName = "Not Edged")
 };
 
-/** What the water did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
+/** What the water and the air did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
 struct FBoardStepDebug
 {
 	/** Sideways force the fins and rail put on the board (what the grip took out of the sideways speed). */
@@ -45,6 +45,8 @@ struct FBoardStepDebug
 	FVector DragForceN = FVector::ZeroVector;
 	/** Angle between the board's velocity over the water and its axis, either end first (deg); positive sliding to its right. */
 	float LeewayDeg = 0.0f;
+	/** Air drag on the rider and board, along the wind they feel; only in the air. */
+	FVector AirDragN = FVector::ZeroVector;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
@@ -188,8 +190,12 @@ public:
 	/** Gets the active water surface interface */
 	TSharedPtr<IKiteWaterSurface> GetWaterSurface() const;
 
-	/** The water's forces on the board in the last fixed step: grip, drive, drag and leeway. Zero in the air. */
+	/** The forces on the board in the last fixed step: the water's grip, drive, drag and leeway (zero in the air) and the air's drag (only in the air). */
 	const FBoardStepDebug& GetLastStepDebug() const { return LastStepDebug; }
+
+	/** Time the board's simulation has advanced (s); the wind on the rider in the air is sampled at this time. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	float GetSimTimeSeconds() const { return SimTimeSeconds; }
 
 public:
 	// Tunables (Spec)
@@ -337,6 +343,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float AutoHeelFullLoadN;
 
+	/**
+	 * Drag area (drag coefficient times frontal area, m^2) of the rider and board in the air. While
+	 * airborne the air pushes on them with 0.5 * rho * CdA * |v_a| * v_a, v_a the wind they feel (the
+	 * true wind at the kite's RiderWindHeightCm above them, minus their velocity); nothing on the
+	 * water. Research: 0.5 to 1.0 m^2 (docs/physics/research.md 3.5).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
+	float RiderDragAreaM2;
+
 	/** Vertical impulse from the legs on a pop (kg*cm/s): about 2.5 m/s for 85 kg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float PopImpulseKgCmPerS;
@@ -403,6 +418,12 @@ private:
 	float EffectiveMassForBuoyancy() const;
 	FVector AccumulatedExternalForce;
 	FBoardStepDebug LastStepDebug;
+
+	/** Time the board's simulation has advanced (s). */
+	float SimTimeSeconds = 0.0f;
+
+	/** Air drag on the rider and board at this place and velocity (kg*cm/s^2), from the wind at the board's simulation time. */
+	FVector ComputeAirDragForce(const FVector& Location, const FVector& InVelocity) const;
 
 	float CurrentJumpHeight;
 	float CurrentJumpAirtime;

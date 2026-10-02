@@ -595,8 +595,8 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 		Kite->GetLineTensionN(), bTaut ? TEXT("taut") : TEXT("SLACK"), Kite->GetClockDeg(), Kite->GetWindowDepthDeg(), LastFrameSimSteps);
 	DrawDebugString(World, KiteAt + FVector(0.0f, 0.0f, DebugKiteTextHeightCm), KiteText, nullptr, FColor::White, 0.0f, true);
 
-	// At the rider: the wind they feel at chest height, the pull of the lines on the harness, and
-	// what the water did to the board in the last step.
+	// At the rider: the wind they feel at chest height, the pull of the lines on the harness, what
+	// the water did to the board in the last step, and the air's drag on them in the air.
 	const FVector RiderAt = GetActorLocation();
 	const FVector Chest = RiderAt + FVector(0.0f, 0.0f, Kite->RiderWindHeightCm);
 	const FVector BoardVelocityNow = BoardMovement->Velocity;
@@ -609,6 +609,7 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 	DrawDebugVector(World, BoardAt, BoardStep.GripForceN, DebugCmPerN, FColor::Orange);
 	DrawDebugVector(World, BoardAt, BoardStep.DriveForceN, DebugCmPerN, FColor::Green);
 	DrawDebugVector(World, BoardAt, BoardStep.DragForceN, DebugCmPerN, FColor::Red);
+	DrawDebugVector(World, Chest, BoardStep.AirDragN, DebugCmPerN, FColor::Silver); // in the air only
 
 	float HeadingDeg = FRotator::NormalizeAxis(GetActorRotation().Yaw);
 	HeadingDeg = HeadingDeg < 0.0f ? HeadingDeg + 360.0f : HeadingDeg;

@@ -2,6 +2,7 @@
 #include "KiteSurf.h"
 #include "KiteComponent.h"
 #include "KiteWaterSurface.h"
+#include "WindComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -55,6 +56,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	TailWeightPopBonus = 0.5f;
 	AutoHeelDeg = 12.0f;
 	AutoHeelFullLoadN = 500.0f;
+	RiderDragAreaM2 = 0.7f;
 
 	// Jump tunables (Spec defaults)
 	PopImpulseKgCmPerS = 21000.0f; // kg*cm/s: about 2.5 m/s from the legs alone; height comes from the kite
@@ -306,6 +308,7 @@ void UBoardMovementComponent::Simulate(float DeltaTime)
 void UBoardMovementComponent::StepBoard(float StepSeconds)
 {
 	const float DeltaTime = StepSeconds;
+	SimTimeSeconds += FMath::Max(StepSeconds, 0.0f);
 	LastStepDebug = FBoardStepDebug();
 	if (!ShouldSkipUpdate(DeltaTime) && UpdatedComponent)
 	{
@@ -406,6 +409,15 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const float GravityZ = -KiteUnits::GravityCmS2; // the same g the kite uses, whatever the world settings say
 		const float GravityForceZ = MassKg * GravityZ; // negative in kg*cm/s^2
 		TotalForce.Z += GravityForceZ;
+
+		// In the air the rider and board are a body in the wind: it drags them along with it. On
+		// the water the hull's drag and grip dwarf it, and are the model there.
+		if (bIsAirborne)
+		{
+			const FVector AirDragForce = ComputeAirDragForce(Location, Velocity);
+			TotalForce += AirDragForce;
+			LastStepDebug.AirDragN = AirDragForce / KiteUnits::UnrealForcePerN;
+		}
 
 		// The kite lifts the rider off when it pulls up harder than they weigh: sending the kite
 		// overhead or looping it does this without a pop.
@@ -759,6 +771,30 @@ float UBoardMovementComponent::DecayWithLinearAndQuadraticDrag(float Speed, floa
 	}
 	const float Growth = FMath::Exp(LinearRatePerS * Seconds);
 	return LinearRatePerS * Speed / ((LinearRatePerS + QuadraticRatePerCm * Speed) * Growth - QuadraticRatePerCm * Speed);
+}
+
+FVector UBoardMovementComponent::ComputeAirDragForce(const FVector& Location, const FVector& InVelocity) const
+{
+	if (RiderDragAreaM2 <= 0.0f)
+	{
+		return FVector::ZeroVector;
+	}
+	// The wind the rider feels: at the height the kite samples it for them, at the board's own
+	// simulation time. Without a wind component the air is still.
+	FVector WindCmS = FVector::ZeroVector;
+	if (const AActor* OwnerActor = GetOwner())
+	{
+		if (const UWindComponent* Wind = OwnerActor->FindComponentByClass<UWindComponent>())
+		{
+			const UKiteComponent* Kite = OwnerActor->FindComponentByClass<UKiteComponent>();
+			const float WindHeightCm = Kite ? Kite->RiderWindHeightCm : 0.0f;
+			WindCmS = Wind->GetWindAtTime(Location + FVector(0.0f, 0.0f, WindHeightCm), SimTimeSeconds);
+		}
+	}
+	// In SI: the air moving past the rider, and the drag along it.
+	const FVector ApparentWindMS = (WindCmS - InVelocity) / KiteUnits::CmPerM;
+	const FVector DragN = 0.5f * KiteUnits::AirDensityKgM3 * RiderDragAreaM2 * ApparentWindMS.Size() * ApparentWindMS;
+	return DragN * KiteUnits::UnrealForcePerN;
 }
 
 float UBoardMovementComponent::EffectiveMassForBuoyancy() const

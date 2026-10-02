@@ -60,6 +60,19 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Steady-state board speed reaches at least 12 kn"), SpeedKnots >= 12.0f);
 			TestTrue(TEXT("Steady-state board speed does not exceed 25 kn under standard power"), SpeedKnots <= 25.0f);
 			TestTrue(TEXT("Speed does not exceed MaxBoardSpeed (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
+
+			// Sheet out (depower) and simulate for 10 s to verify decay below 10 kn
+			Pawn->SheetKite(0.0f);
+			for (int32 i = 0; i < 300; ++i) // 10 seconds of sheet-out decay
+			{
+				KiteComp->UpdateKite(DeltaTime);
+				Pawn->Tick(DeltaTime);
+				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+			}
+
+			const float DecayedSpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
+			UE_LOG(LogKiteSurf, Log, TEXT("SpeedEnvelope: Decayed Speed = %.2f kn (Expected < 10 kn)"), DecayedSpeedKnots);
+			TestTrue(TEXT("Sheet out decays below 10 kn within 10 s"), DecayedSpeedKnots < 10.0f);
 		}
 	}
 

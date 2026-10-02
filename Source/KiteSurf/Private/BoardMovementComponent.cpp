@@ -30,7 +30,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	BuoyancySpringStiffness = 3000.0f;
 	BuoyancyDamping = 800.0f;
 	PlaningLiftCoef = 50.0f;
-	CarveTurnRate = 90.0f;
+	CarveTurnRate = 120.0f;
 
 	// Jump tunables (Spec defaults)
 	BaseJumpImpulse = 35000.0f; // kg*cm/s

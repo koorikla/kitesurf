@@ -23,15 +23,16 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 		return;
 	}
 
-	// Synchronize WindComponent with GameInstance PendingWindKnots if set
+	// The wind strength chosen on the gear screen. This is the one place a ride's wind is set from
+	// the game instance; the wind keeps its direction.
 	if (UWorld* World = RiderPawn->GetWorld())
 	{
 		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
 		{
 			if (UWindComponent* WindComp = RiderPawn->GetWind())
 			{
-				const float BaseKnots = GI->PendingWindKnots;
-				WindComp->BaseWind = FVector(KiteUnits::KnotsToCmS(BaseKnots), 0.0f, 0.0f);
+				const FVector Direction = WindComp->BaseWind.IsNearlyZero() ? FVector::ForwardVector : WindComp->BaseWind.GetSafeNormal();
+				WindComp->BaseWind = Direction * KiteUnits::KnotsToCmS(GI->PendingWindKnots);
 			}
 			// Rig the chosen kite, or the one a rider would pick for this wind.
 			if (UKiteComponent* KiteComp = RiderPawn->GetKite())

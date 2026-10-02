@@ -12,12 +12,15 @@
 
 | Class | Method / Property | Description |
 |---|---|---|
-| `UWindComponent` | `FVector GetWindAt(const FVector& WorldLocation) const` | Returns the wind vector at a given 3D position (including gusts, drift, shear). |
-| `UWindComponent` | `FVector BaseWind` | Default baseline wind vector (default: `(772, 0, 0)` cm/s). |
-| `UWindComponent` | `float GustStrength` | Fraction of base speed variation for gusts (0..1, default: 0.3). |
-| `UWindComponent` | `float GustPeriodSeconds` | Gust fluctuation period in seconds (default: 8.0s). |
-| `UWindComponent` | `float DirectionDriftDeg` | Maximum wind direction drift in degrees (default: 10.0°). |
-| `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
+| `UWindComponent` | `FVector GetWindAtTime(const FVector& WorldLocation, float TimeSeconds) const` | The wind (cm/s) at a place and time: a pure function of position, time, the parameters and `Seed` (profile, travelling gusts, direction drift). The kite samples it at its own simulation time. |
+| `UWindComponent` | `FVector GetWindAt(const FVector& WorldLocation) const` | The same at the current time (world time, or `TimeOverride` without a world). |
+| `UWindComponent` | `FVector BaseWind` | Mean wind at `ReferenceHeightCm` (default: `(772, 0, 0)` cm/s, 15 kn along +X); its direction is the mean direction. Set from the gear screen's wind by `AKiteSurfGameMode::InitializeRide` only. |
+| `UWindComponent` | `float ReferenceHeightCm` / `float ShearExponent` / `float MinSampleHeightCm` | Power-law profile: wind at z is `(max(z, MinSampleHeightCm) / ReferenceHeightCm) ^ ShearExponent` of `BaseWind` (defaults 1000 cm, 0.11, 100 cm: 0.78 at 1 m, 0.81 at 1.5 m, 1.11 at 25 m). |
+| `UWindComponent` | `float GustStrength` | The strongest gusts reach `1 + GustStrength` times the mean and the deepest lulls `1 - GustStrength`, and never go past (default 0.3). The gust noise is normalised so its 99th percentile is `1 + GustStrength`. |
+| `UWindComponent` | `float GustCellLengthCm` / `GustPuffRate` / `GustPuffShare` / `GustEvolveSeconds` | Gusts are two octaves of seeded gradient noise carried downwind at the mean speed: cells 60 m along the wind and half that across, puffs 3.5 times finer with 40% of the variation, the pattern changing over 180 s (correlation 0.5 after about 80 s), so a gust seen upwind arrives `distance / U` later. |
+| `UWindComponent` | `float DirectionDriftDeg` | Standard deviation of the wind direction about the mean (default 5 deg); never more than twice that. |
+| `UWindComponent` | `int32 Seed` | The same seed and parameters give the same wind everywhere at every time; another seed gives other gusts. |
+| `UKiteComponent` | `float RiderWindHeightCm` | Where the rider feels the wind (default 150 cm above the feet): the window axis, the downwind direction and the wind in the rider's ears are sampled there. The HUD quotes the wind at `ReferenceHeightCm`. |
 | `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
 | `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering. Towards the other side of the window: the kite is flown there over the top (right = clockwise looking downwind). Towards the kite's own side: the bar turns it directly, which loops it. Centred: the kite drifts up the window edge to the zenith and sits there (`UKiteComponent::ZenithDriftGain`, `ZenithDriftMaxHeadingDeg`), or with `UKiteComponent::bParkHoldAssist` stays at the clock position it had when the bar was centred. |
 | `AKiteRiderPawn` | `static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)` | Volume and pitch for the wind, water and line loops. The pawn eases its three looping audio components towards it every tick. |
@@ -35,7 +38,7 @@
 | `UBoardMovementComponent` | `bool IsFloating() const` / `float GetFloatDepthCm() const` | Whether the rider is in the water rather than up on the board, and how deep the board sits. |
 | `UKiteComponent` | `bool AreLinesTaut() const` | False while the lines are slack: the kite is not flying and the rider feels no pull. |
 | `UKiteComponent` | `float GetAngleOfAttackDeg() const` | Airflow angle to the canopy including bar trim; above `StallAngleDeg` the kite is stalled. |
-| `UWindComponent` | `float GetGustFactorAt(const FVector&) const` | Current wind over base wind: above 1 in a gust, below 1 in a lull. |
+| `UWindComponent` | `float GetGustFactorAt(const FVector&) const` / `GetGustFactorAtTime(const FVector&, float)` | Wind over base wind at the reference height above that place, now or at a given time: above 1 in a gust, below 1 in a lull. |
 | `UKiteComponent` | `bool IsCrashed() const` | True while the kite lies on the water; `OnKiteCrashed` / `OnKiteRelaunched` fire on the way in and out. |
 | `AKiteRiderPawn` | `void SetRiderCharacter(ERiderCharacter)` | Shows Santa, the wetsuit rider or the robot; the choice is stored by `UKiteSurfGameInstance`. |
 | `AKiteRiderPawn` | `void SheetKite(float Amount)` | Sets the bar position, which persists; `Amount` clamped to `[0.0, 1.0]`. |

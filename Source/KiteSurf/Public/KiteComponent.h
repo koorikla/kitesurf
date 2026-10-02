@@ -207,13 +207,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetWindowDepthDeg() const;
 
-	/** Horizontal unit vector the true wind blows towards, sampled at the rider. */
+	/** Horizontal unit vector the true wind blows towards, sampled at the rider (RiderWindHeightCm above their feet). */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetDownwindDir() const;
 
 	/** Horizontal unit vector the apparent wind (true wind minus rider velocity) blows towards: the axis of the window the rider feels. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetWindowAxis() const;
+
+	/** Where the rider feels the wind: this far above their feet (cm), about chest height. The window axis and the downwind direction are sampled here. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "0.0"))
+	float RiderWindHeightCm;
 
 	/** Where each line meets the bar, in front of the rider on the kite's side. */
 	FVector GetBarEndWorldPosition(bool bLeft) const;

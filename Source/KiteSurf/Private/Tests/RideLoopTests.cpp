@@ -1327,11 +1327,12 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: parked pull loop %.0f N, boost %.0f N; turned in 3 s loop %.0f deg, boost %.0f deg"), ParkedTensionN[0], ParkedTensionN[1], LoopTurnDeg[0], LoopTurnDeg[1]);
 	TestTrue(FString::Printf(TEXT("The boost kite pulls at least as hard parked (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] >= ParkedTensionN[0]);
 
-	// Where the boost kite earns its name: each kite released at its own best moment (the boost
-	// kite turns slower, so its send takes a little longer to load up), it goes higher and
+	// Where the boost kite earns its name: each kite released a little before its send would pull
+	// the rider off the edge (a release at 0.77 s is too late for the loop kite; the boost kite
+	// turns slower, so its send loads up later and 0.80 s is too late for it), it goes higher and
 	// stays up longer.
-	const FJumpResult LoopJump = RunJump(true, true, 0.7f, EKiteModel::Loop);
-	const FJumpResult BoostJump = RunJump(true, true, 0.8f, EKiteModel::Boost);
+	const FJumpResult LoopJump = RunJump(true, true, 0.64f, EKiteModel::Loop);
+	const FJumpResult BoostJump = RunJump(true, true, 0.74f, EKiteModel::Boost);
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: best timed jump, loop kite %.1f m / %.1f s, boost kite %.1f m / %.1f s (pulled off %d %d)"), LoopJump.PeakCm / 100.0f, LoopJump.AirSeconds, BoostJump.PeakCm / 100.0f, BoostJump.AirSeconds, LoopJump.bPulledOffEdge, BoostJump.bPulledOffEdge);
 	TestFalse(TEXT("Neither rider was pulled off their edge"), LoopJump.bPulledOffEdge || BoostJump.bPulledOffEdge);
 	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > 1.1f * LoopJump.PeakCm);

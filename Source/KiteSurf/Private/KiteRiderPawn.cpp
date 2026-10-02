@@ -826,7 +826,9 @@ FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float Boa
 void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 {
 	const FVector Vel = GetBoardVelocity();
-	const FVector TrueWind = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector::ZeroVector;
+	// The wind in the rider's ears: at chest height, where the kite says the rider feels it.
+	const FVector EarLocation = GetActorLocation() + FVector(0.0f, 0.0f, Kite ? Kite->RiderWindHeightCm : 0.0f);
+	const FVector TrueWind = Wind ? Wind->GetWindAt(EarLocation) : FVector::ZeroVector;
 	const float ApparentWindKnots = KiteUnits::CmSToKnots((TrueWind - Vel).Size());
 	const bool bOnWater = BoardMovement && BoardMovement->GetBoardState() != EBoardState::Airborne;
 	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;

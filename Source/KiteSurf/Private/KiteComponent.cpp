@@ -52,6 +52,7 @@ UKiteComponent::UKiteComponent()
 	AzimuthDeg = 0.0f;
 	ElevationDeg = 45.0f;
 	LineLengthCm = 2400.0f; // 24 m
+	RiderWindHeightCm = 150.0f;
 	AreaM2 = 12.0f;
 	MassKg = 3.0f;
 	Sheet = 0.0f;
@@ -366,13 +367,13 @@ float UKiteComponent::GetWindowDepthDeg() const
 
 FVector UKiteComponent::GetDownwindDir() const
 {
-	const FVector DownwindDir = GetWindAt(GetRiderPosition()).GetSafeNormal2D();
+	const FVector DownwindDir = GetWindAt(GetRiderPosition() + FVector(0.0f, 0.0f, RiderWindHeightCm)).GetSafeNormal2D();
 	return DownwindDir.IsNearlyZero() ? FVector::ForwardVector : DownwindDir;
 }
 
 FVector UKiteComponent::GetWindowAxis() const
 {
-	const FVector TrueWind = GetWindAt(GetRiderPosition());
+	const FVector TrueWind = GetWindAt(GetRiderPosition() + FVector(0.0f, 0.0f, RiderWindHeightCm));
 	const FVector ApparentWind = UKiteWindMath::ApparentWind(TrueWind, GetRiderVelocity());
 	const FVector Axis = ApparentWind.GetSafeNormal2D();
 	return Axis.IsNearlyZero() ? GetDownwindDir() : Axis;

@@ -26,7 +26,7 @@ The legs give about 2.5 m/s, a hop of under a metre. The second term is the edge
 - The kite lifts the rider off the water by itself when its upward pull passes `LiftoffWeightFactor` (1.5) times their weight.
 - A rider who is edging (turn input, or weight on the tail) holds more: up to `LiftoffWeightFactor + EdgedLiftoffWeightBonus` (4.5) times their weight at full edge. That is what lets the pull build while the kite is steered up.
 - Releasing the edge with a pop while the lines are loaded is the big jump. Releasing early gives less; holding on until the kite pulls the rider off the edge loses the pop and the timing, and is far lower.
-- Measured with the recommended kite, sending the kite hard and popping at the best moment: about 5 m in 15 kn, 15 m in 30 kn, 25 m in 40 kn. A pop with the kite parked is about 1 m; sending the kite without an edge is about 6 m in 30 kn (`KiteSurf.Jump.TimedReleaseBeatsPop`).
+- Measured with the recommended kite, sending the kite hard and popping at the best moment: about 5 m in 15 kn, 18 m in 30 kn, 25 m in 40 kn. A pop with the kite parked is about 1.5 m; sending the kite without an edge is about 7 m in 30 kn (`KiteSurf.Jump.TimedReleaseBeatsPop`; the 15 and 40 kn figures were measured before the wind profile gave the kite about 10% more wind aloft).
 
 ### Airborne Dynamics & Apex Envelope
 - The line force continues to act on the rider. A kite kept overhead carries part of their weight on the way down.

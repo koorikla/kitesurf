@@ -463,6 +463,69 @@ bool FKiteSurfKiteForceFollowsProjectedArea::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The assist judges where "out of the window" is from the wind the rider feels across the water: the
+// true wind less their horizontal velocity. A rider going straight up or down at 5 m/s (as in a
+// jump) gets the same command from it as one standing still; before phase 2 the climb and the fall
+// swung the assist's frame and flipped its command from side to side (docs/physics/plan-2.md item 2,
+// A1). Each case is one zero-length step from the same placed kite, so only the rider's motion
+// differs. The kites are high enough that the floor rule, which does use the real vertical speeds,
+// does not come in.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsAssistFrameIsHorizontal, "KiteSurf.Physics.AssistFrameIsHorizontal", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsAssistFrameIsHorizontal::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 15.0f;
+	const float KiteAreaM2 = 12.0f;
+	const float VerticalSpeedCmS = 500.0f;
+	const float SameCommand = 1.0e-4f;
+	struct FCase
+	{
+		float ClockDeg;
+		float Bar;
+		bool bParkHold;
+	};
+	const FCase Cases[] = {
+		{ 0.0f, 0.0f, false },   // bar centred at the zenith
+		{ 45.0f, 0.0f, false },  // bar centred, drifting to 12
+		{ -30.0f, 0.0f, false },
+		{ 45.0f, 0.0f, true },   // bar centred, held where it is
+		{ 45.0f, -0.4f, false }, // bar part way over: travel
+		{ -30.0f, 0.3f, false },
+	};
+	const float VerticalSpeeds[3] = { 0.0f, VerticalSpeedCmS, -VerticalSpeedCmS };
+	int32 Unsaturated = 0;
+	for (const FCase& Case : Cases)
+	{
+		float Command[3] = { 0.0f, 0.0f, 0.0f };
+		for (int32 Motion = 0; Motion < 3; ++Motion)
+		{
+			FStandingKite Standing(WindKnots, KiteAreaM2);
+			TestTrue(TEXT("Rider and kite created"), Standing.IsValid());
+			if (!Standing.IsValid())
+			{
+				return false;
+			}
+			UKiteComponent* Kite = Standing.Kite;
+			Kite->bParkHoldAssist = Case.bParkHold;
+			Kite->SetWindowPosition(Case.ClockDeg, 10.0f);
+			Kite->SheetKite(0.7f);
+			Kite->UpdateKite(0.0f); // placed, with the rider at rest
+			Standing.Board->Velocity = FVector(0.0f, 0.0f, VerticalSpeeds[Motion]);
+			Kite->SteerKite(Case.Bar);
+			Kite->UpdateKite(0.0f);
+			Command[Motion] = Kite->GetAppliedSteer();
+		}
+		UE_LOG(LogKiteSurf, Log, TEXT("AssistFrameIsHorizontal: clock %.0f, bar %.1f, park-hold %d: command standing %.4f, climbing at %.0f m/s %.4f, falling %.4f"),
+			Case.ClockDeg, Case.Bar, Case.bParkHold, Command[0], VerticalSpeedCmS / 100.0f, Command[1], Command[2]);
+		const FString What = FString::Printf(TEXT("Clock %.0f, bar %.1f, park-hold %d"), Case.ClockDeg, Case.Bar, Case.bParkHold);
+		TestNearlyEqual(FString::Printf(TEXT("%s: climbing, the assist's command is the standing one"), *What), Command[1], Command[0], SameCommand);
+		TestNearlyEqual(FString::Printf(TEXT("%s: falling, the assist's command is the standing one"), *What), Command[2], Command[0], SameCommand);
+		Unsaturated += FMath::Abs(Command[0]) < 0.99f ? 1 : 0;
+	}
+	TestTrue(FString::Printf(TEXT("Most cases are inside the assist's range, where a different frame would show (%d)"), Unsaturated), Unsaturated >= 4);
+	return true;
+}
+
 // A gust arriving mid-ride: the pull and the speed go up with it, and nothing breaks.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsGustHitsMidRide, "KiteSurf.Physics.GustHitsMidRide", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 

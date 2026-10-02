@@ -633,8 +633,12 @@ float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector&
 		TurnDeg = 0.0f;
 	}
 
-	// Otherwise an assist flies the kite towards a heading. "Out" is into the wind blowing across the lines.
-	const FVector WindFelt = Wind - RiderVelocity;
+	// Otherwise an assist flies the kite towards a heading. "Out" is into the wind blowing across the
+	// lines, as the rider feels it: the true wind less their horizontal velocity. In the air the
+	// rider's climb and fall are as fast as the wind; counting them would swing the assist's idea of
+	// "out" with every jump and flip its command from side to side. (The kite's own aerodynamics keep
+	// the full airflow, and the floor rule below keeps the real vertical speeds.)
+	const FVector WindFelt = Wind - FVector(RiderVelocity.X, RiderVelocity.Y, 0.0f);
 	const FVector CrossLineWind = WindFelt - FVector::DotProduct(WindFelt, KiteDir) * KiteDir;
 	const float MinCrossWindCmS = 50.0f; // too little cross wind to say which way is out
 	if (CrossLineWind.SizeSquared() < FMath::Square(MinCrossWindCmS))

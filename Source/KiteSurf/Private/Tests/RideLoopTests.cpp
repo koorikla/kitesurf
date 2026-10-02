@@ -1443,20 +1443,18 @@ bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
 // gravity 8 h / t^2 (h the apex, t the time in the air). Real jumps give 1.5 to 3.5 m/s^2 (WOO
 // height and airtime pairs, docs/physics/research.md 3.3): the kite carries 65 to 85% of the rider.
 //
-// Known gap: the model gives about 7.8 m/s^2, the kite carrying about a fifth of the rider, and this
-// test pins that value until the jump is reworked. The 20 Hz trace it logs shows why. The rider
-// leaves the water at 10 m/s, 5.7 m/s of it from the edge-release impulse (EdgeReleaseSeconds
-// times the kite's 2.2 kN of upward pull) and 3.7 m/s from the pop, and climbs level with the
-// kite: at the apex the kite is under 20 deg above the rider, out to the side. With the bar still
-// held over for the send, the assist steers by the wind the rider feels, which in the air is
-// dominated by the rider's own climb and fall, so the kite never gets back over the top. On the
-// way down it is low and slow (about 19 deg above the rider, 8 m/s of air, alpha 14 to 17 deg,
-// stalling past 18 near the water) and its lines hold up about 80 N of the rider's 830. One kite
-// tunable at a time (stall angle, camber, trim, travel heading, steering drag) leaves 8h/t^2
-// between 7.0 and 7.8 m/s^2; undoing all of the steering terms gives 6.5. What is missing is the
-// kite flying to and holding the zenith of the airborne rider's window: an assist that steers by
-// the horizontal wind in the air, and a send that keeps the kite climbing ahead of the rider rather
-// than a launch impulse.
+// Known gap: the model gives about 5.6 m/s^2, the kite carrying under half of the rider, and this
+// test pins that value until the jump is reworked (docs/physics/plan-2.md item 2). The 20 Hz trace
+// it logs shows why. The rider leaves the water at 10 m/s, most of it from the edge-release impulse
+// (EdgeReleaseSeconds times the kite's upward pull) and the rest from the pop, and climbs level
+// with the kite: near the apex the kite is about 25 deg above the rider, out to the side at clock
+// -44 after the send carried it over the top, and it only climbs back over the rider late in the
+// descent (above 60 deg after 2.9 s of 4.3). Before the assist judged the window by the horizontal
+// wind (plan-2 A1) it steered by the wind the rider feels, which in the air is dominated by the
+// rider's own climb and fall, flipped its command from side to side and stalled the kite all the
+// way down: 7.4 m/s^2, the lines holding up 27% of the rider on the way down against 56% now. What
+// is still missing is the kite flying to and holding the zenith of the airborne rider's window, and
+// a send that keeps the kite climbing ahead of the rider rather than a launch impulse.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHangTime, "KiteSurf.Physics.HangTime", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
@@ -1464,7 +1462,7 @@ bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
 	const float TraceHz = 20.0f;
 	const float RealEffectiveGravityMin = 1.5f;     // m/s^2, research
 	const float RealEffectiveGravityMax = 3.5f;
-	const float ModelEffectiveGravity = 7.8f;       // m/s^2, what the model gives today (see the known gap above)
+	const float ModelEffectiveGravity = 5.6f;       // m/s^2, what the model gives today (see the known gap above)
 	const float ModelTolerance = 0.1f;
 	const FJumpResult Timed = RunJump(true, true, TimedReleaseSeconds, EKiteModel::Loop, TraceHz);
 	const float HeightM = Timed.PeakCm / 100.0f;

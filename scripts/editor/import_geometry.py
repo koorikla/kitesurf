@@ -1,4 +1,5 @@
-"""Generates and imports the kite, board, control bar and rider meshes, and the kite canopy texture.
+"""Generates and imports the kite, board and control bar meshes, and the kite canopy texture.
+The riders are imported by import_rider_parts.py.
 
     scripts/run-python.sh scripts/editor/import_geometry.py
     scripts/run-python.sh scripts/editor/create_materials.py     # then assign materials

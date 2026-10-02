@@ -55,12 +55,24 @@ AKiteRiderPawn::AKiteRiderPawn()
 		RiderMesh->Play(true);
 	}
 
-	// Posed riders stand on the board; which one is shown is set by SetRiderCharacter.
-	RiderStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderStaticMesh"));
-	RiderStaticMesh->SetupAttachment(RootComponent);
-	RiderStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 2.0f));
-	RiderStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	RiderStaticMesh->SetUsingAbsoluteRotation(true);
+	// The jointed riders: a torso and eight limb parts placed in world space every frame by
+	// UpdateRiderPose. Which rider's parts they show is set by SetRiderCharacter.
+	auto MakeRiderPart = [this](const TCHAR* Name) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* Part = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		Part->SetupAttachment(RootComponent);
+		Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Part->SetUsingAbsoluteLocation(true);
+		Part->SetUsingAbsoluteRotation(true);
+		Part->SetUsingAbsoluteScale(true);
+		return Part;
+	};
+	RiderTorso = MakeRiderPart(TEXT("RiderTorso"));
+	static const TCHAR* LimbNames[] = { TEXT("RiderLeftThigh"), TEXT("RiderLeftShin"), TEXT("RiderLeftUpperArm"), TEXT("RiderLeftForearm"), TEXT("RiderRightThigh"), TEXT("RiderRightShin"), TEXT("RiderRightUpperArm"), TEXT("RiderRightForearm") };
+	for (const TCHAR* LimbName : LimbNames)
+	{
+		RiderLimbs.Add(MakeRiderPart(LimbName));
+	}
 
 	// ControlBarMesh attached to BoardMesh, positioned in front of rider chest height
 	ControlBarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlBarMesh"));
@@ -88,10 +100,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderFloatLeanDeg = 30.0f;
 	RiderAirHangLeanDeg = 38.0f;
 	RiderLoadLeanDeg = 20.0f;
-	RiderLoadCrouch = 0.22f;
 	RiderSwitchDelaySeconds = 0.4f;
 	RiderSwitchTurnRateDeg = 540.0f;
-	HarnessHookOffsetCm = FVector(16.0f, 0.0f, 100.0f);
+	HarnessHookOffsetCm = FVector(22.0f, 0.0f, 16.0f);
 
 	// The rider stands across the board and turns with it, but stays upright and leans against the kite
 	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
@@ -639,17 +650,29 @@ void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
 	{
 		RiderMesh->SetVisibility(bRobot);
 	}
-	if (RiderStaticMesh)
+	// The jointed riders share a rig; each has its own torso and limb parts.
+	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : TEXT("Santa");
+	auto SetPart = [RiderName, bRobot](UStaticMeshComponent* Component, const TCHAR* PartName)
 	{
+		if (!Component)
+		{
+			return;
+		}
 		if (!bRobot)
 		{
-			const TCHAR* MeshPath = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("/Game/Meshes/SM_RiderWetsuit") : TEXT("/Game/Meshes/SM_RiderSanta");
-			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath))
+			const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
+			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
 			{
-				RiderStaticMesh->SetStaticMesh(Mesh);
+				Component->SetStaticMesh(Mesh);
 			}
 		}
-		RiderStaticMesh->SetVisibility(!bRobot);
+		Component->SetVisibility(!bRobot);
+	};
+	SetPart(RiderTorso, TEXT("Torso"));
+	static const TCHAR* LimbPartNames[] = { TEXT("Thigh"), TEXT("Shin"), TEXT("UpperArm"), TEXT("Forearm") };
+	for (int32 Index = 0; Index < RiderLimbs.Num(); ++Index)
+	{
+		SetPart(RiderLimbs[Index], LimbPartNames[Index % 4]);
 	}
 }
 
@@ -752,25 +775,26 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
 	}
 	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
-	// The riders are rigid poses, so the crouch is the body drawn shorter.
-	const FVector CrouchScale(1.0f, 1.0f, 1.0f - RiderLoadCrouch * Load);
+
+	// The jointed rider: feet in the straps wherever the board goes, pelvis over them along the
+	// body's lean and lower in a crouch, knees bending to fit.
+	FRiderRigInput RigInput;
+	RigInput.Board = GetActorTransform();
+	RigInput.Facing = Facing;
+	RigInput.BodyUp = BodyUp.GetSafeNormal();
+	RigInput.Crouch = Load;
+	RiderPose = RiderRig::SolveBody(RigInput);
 
 	if (RiderMesh)
 	{
 		// The mannequin's front is +Y in mesh space.
 		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
 	}
-	if (RiderStaticMesh)
-	{
-		// The posed riders are built facing +X.
-		RiderStaticMesh->SetWorldRotation(BodyQuat);
-		RiderStaticMesh->SetRelativeScale3D(CrouchScale);
-	}
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them
 	// just beyond the hook, further out the more it is sheeted out, and always in front of the
 	// body: when the kite is behind a spinning rider the lines come over their shoulder.
-	HarnessHookPosition = GetActorLocation() + BodyQuat.RotateVector(HarnessHookOffsetCm);
+	HarnessHookPosition = RiderPose.Pelvis + RiderPose.Torso.RotateVector(HarnessHookOffsetCm);
 	if (Kite)
 	{
 		FVector LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : Facing;
@@ -780,7 +804,24 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		{
 			LineDir = (LineDir + Facing * (MinForward - Forward)).GetSafeNormal();
 		}
-		const float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
+		// The bar is never further up the lines than the rider's arms reach: leaning back with the
+		// kite low, it comes in closer to the hook.
+		const float HandSpacingCm = 14.0f;
+		const float ArmReachCm = (RiderRig::UpperArmLengthCm + RiderRig::ForearmLengthCm) * 0.97f;
+		float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
+		const float MinBarReachCm = 14.0f;
+		for (int32 Try = 0; Try < 16 && BarReachCm > MinBarReachCm; ++Try)
+		{
+			const FVector Candidate = HarnessHookPosition + LineDir * BarReachCm;
+			// The hands are either side of the bar's middle; to judge reach, level with the shoulders is near enough.
+			const FVector Across = RiderPose.Torso.GetAxisY() * HandSpacingCm;
+			const float Furthest = FMath::Max(FVector::Dist(RiderPose.Arms[0].Root, Candidate - Across), FVector::Dist(RiderPose.Arms[1].Root, Candidate + Across));
+			if (Furthest <= ArmReachCm)
+			{
+				break;
+			}
+			BarReachCm = FMath::Max(BarReachCm - 4.0f, MinBarReachCm);
+		}
 		const FVector BarCentre = HarnessHookPosition + LineDir * BarReachCm;
 
 		// The bar is held square to the lines across the rider's body, and tilts with the steering.
@@ -797,6 +838,38 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		if (ControlBarMesh)
 		{
 			ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotationMatrix::MakeFromXY(LineDir, TiltedSpan).ToQuat());
+		}
+
+		// Hands on the bar, either side of its middle; the elbows bend to reach.
+		RiderRig::SolveArms(RiderPose, BarCentre - TiltedSpan * HandSpacingCm, BarCentre + TiltedSpan * HandSpacingCm);
+	}
+
+	// Draw the parts where the rig put them.
+	if (RiderTorso)
+	{
+		RiderTorso->SetWorldLocationAndRotation(RiderPose.Pelvis, RiderPose.Torso);
+	}
+	if (RiderLimbs.Num() == 8)
+	{
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const FRiderLimbPose& Leg = RiderPose.Legs[Side];
+			const FRiderLimbPose& Arm = RiderPose.Arms[Side];
+			const FTransform Parts[4] =
+			{
+				RiderRig::SegmentTransform(Leg.Root, Leg.Joint, Leg.Pole),
+				// The foot points the way the knee does.
+				RiderRig::SegmentTransform(Leg.Joint, Leg.End, Leg.Pole),
+				RiderRig::SegmentTransform(Arm.Root, Arm.Joint, Arm.Pole),
+				RiderRig::SegmentTransform(Arm.Joint, Arm.End, Arm.Pole),
+			};
+			for (int32 Part = 0; Part < 4; ++Part)
+			{
+				if (UStaticMeshComponent* Component = RiderLimbs[Side * 4 + Part])
+				{
+					Component->SetWorldLocationAndRotation(Parts[Part].GetLocation(), Parts[Part].GetRotation());
+				}
+			}
 		}
 	}
 }

@@ -89,6 +89,14 @@ The lines pull on the harness hook at the front of the rider's waist (`HarnessHo
 
 The lean is away from the kite's pull. On the water that is leaning out against it; in the air the rider hangs from the harness, so the lower the kite, the further back the shoulders go (up to `RiderAirHangLeanDeg`). Board-off tricks, where the feet leave the straps, are not modelled yet.
 
+### Jointed body
+Santa and the wetsuit rider are jointed figures: a torso and eight limb parts, posed every frame by `RiderRig` (`RiderRig.h`). The robot is still the skeletal mannequin.
+- **Feet** are in the straps, 30 cm either side of the middle of the board along its length, and go wherever the board goes, tilt included.
+- **Pelvis** is over the feet along the body's lean, 80 cm up standing and 40% lower in a full loaded crouch, and never further from a strap than the leg reaches.
+- **Knees and elbows** come from a two-bone solve (`SolveTwoBone`) that keeps each bone its length: knees forwards and a little apart, elbows down and out.
+- **Hands** are on the bar 14 cm either side of its middle, so the arms follow the bar as it is sheeted and steered. The bar is kept within the arms' reach of the shoulders, so leaning back brings it in towards the hook.
+- The parts' lengths and joint positions are shared with `generate_mesh_objs.py` (`RIDER_*`), which builds the meshes; `import_rider_parts.py` imports them.
+
 ## Gear
 The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause menu) sets the wind, the kite size and model, the board and the rider. The choices live in `UKiteSurfGameInstance`, are saved with the settings, and are applied when a ride starts (`AKiteSurfGameMode::InitializeRide`) or when the screen is confirmed during one.
 

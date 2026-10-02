@@ -65,7 +65,8 @@ make_flat('M_KiteLines', unreal.LinearColor(0.95, 0.95, 0.95, 1.0))
 
 # Meshes whose slots are named after the materials above; the board and bar have a single unnamed slot.
 SINGLE_SLOT = {'SM_KiteBoard': 'KiteBoard', 'SM_ControlBar': 'ControlBar'}
-for mesh_name in ['SM_Kite', 'SM_KiteBoard', 'SM_ControlBar', 'SM_RiderSanta', 'SM_RiderWetsuit']:
+# The riders' parts get these materials from import_rider_parts.py.
+for mesh_name in ['SM_Kite', 'SM_KiteBoard', 'SM_ControlBar']:
     mesh = unreal.EditorAssetLibrary.load_asset(f'/Game/Meshes/{mesh_name}')
     if not mesh:
         raise RuntimeError(f'{mesh_name} is missing: run import_geometry.py first')

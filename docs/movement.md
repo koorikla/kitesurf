@@ -41,7 +41,7 @@ The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 
 - **In the water** the lines are slack; the kite relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
 - The pull passed to the rider is capped at `MaxLineTensionN`.
 - **Size**: `SetKiteSize` rigs a kite of a given area and scales its mass, the air it has to push and its turning radius with it (12 m^2: 3 kg, 4.2 m radius). `RecommendKiteSizeM2` gives the size a rider would rig for the wind, about 2.2 x rider kg / knots, from the sizes on offer (5 to 17 m^2). The game rigs that size unless one is chosen in Settings; the HUD shows it next to the wind.
-- The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
+- The bar position is persistent: sheet input moves it at `SheetRatePerSec` (2.5 per second: the whole throw in 0.4 s) and it stays there. It sets the kite's trim between `TrimSheetedOutDeg` (-22) and `TrimSheetedInDeg` (+2). On the 9 m in 20 kn that is 150 N and 8 kn with the bar out, 340 N and 13 kn half way, 1100 N and 22 kn with it in (`KiteSurf.Ride.BarIsTheThrottle`).
 - A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn with about 500 N in the lines; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
 
 ### Wind

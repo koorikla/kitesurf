@@ -69,8 +69,8 @@ UKiteComponent::UKiteComponent()
 	SideForceCoefficient = 1.2f;
 	SlackDragCoefficient = 0.7f;
 	SlackCollapseCm = 150.0f;
-	TrimSheetedOutDeg = -13.0f;
-	TrimSheetedInDeg = -1.0f;
+	TrimSheetedOutDeg = -22.0f; // bar right out: the kite flags and barely pulls
+	TrimSheetedInDeg = 2.0f;    // bar right in: full power, a few degrees short of the stall
 
 	MinTurnRadiusCm = 420.0f;
 	TurnResponse = 9.0f;

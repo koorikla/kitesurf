@@ -4,7 +4,7 @@
 #include "Misc/App.h"
 
 UKiteSurfGameInstance::UKiteSurfGameInstance()
-	: PendingWindKnots(15.0f)
+	: PendingWindKnots(20.0f)
 	, MasterVolume(1.0f)
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
@@ -14,7 +14,7 @@ UKiteSurfGameInstance::UKiteSurfGameInstance()
 	, bSpotSharks(true)
 	, KiteModel(EKiteModel::Loop)
 	, BoardSize(EBoardSize::Medium)
-	, KiteSizeM2(0.0f)
+	, KiteSizeM2(9.0f)
 {
 }
 

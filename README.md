@@ -61,7 +61,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Sheet in / out (the bar holds its position) | Up / Down | Right stick up / down, triggers |
+| Bar in / out: power (the bar holds its position) | Up / Down | Right stick up / down, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
@@ -89,11 +89,16 @@ rips you off your edge, which is a much lower jump. Timed well, that is 5 m in 1
 30 kn and 25 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
 water. A kite looped through the middle of the window pulls several times harder than a parked one.
 
+**Power.** The bar is the throttle, and it moves through its whole throw in under half a
+second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board
+speed); right in it pulls about seven times as hard (1100 N, 22 kn). The ride starts with it 70%
+in.
+
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 40 kn), then rig for it:
 
-- *Kite size*: AUTO is what a rider would rig for that wind (12 m in 15 kn, 6 m in 30 kn), or
-  choose from 5 to 17 m. Small kites turn and loop faster; big ones pull harder and are a
+- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 5 to 17 m, or AUTO
+  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn). Small kites turn and loop faster; big ones pull harder and are a
   handful when it blows.
 - *Kite*: the 3-strut loop kite turns tight and fast; the 5-strut boost kite has more lift and
   glide for height and hangtime, and turns slower.

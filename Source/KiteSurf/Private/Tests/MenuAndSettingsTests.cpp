@@ -39,7 +39,8 @@ bool FKiteSurfSaveGameDefaultsAndClampingTest::RunTest(const FString& Parameters
     TestNotNull(TEXT("SaveGame object created"), SaveGame);
 
     // Check default values
-    TestEqual(TEXT("Default WindStrengthKnots is 15.0 kn"), SaveGame->WindStrengthKnots, 15.0f);
+    TestEqual(TEXT("Default WindStrengthKnots is 20 kn"), SaveGame->WindStrengthKnots, 20.0f);
+    TestEqual(TEXT("Default kite is the 9 m"), SaveGame->KiteSizeM2, 9.0f);
     TestEqual(TEXT("Default MasterVolume is 1.0 (100%)"), SaveGame->MasterVolume, 1.0f);
     TestFalse(TEXT("Default bSkipOnboarding is false"), SaveGame->bSkipOnboarding);
     TestFalse(TEXT("Default bOnboardingCompleted is false"), SaveGame->bOnboardingCompleted);
@@ -82,7 +83,9 @@ bool FKiteSurfGameInstanceSettingsTest::RunTest(const FString& Parameters)
     UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
     TestNotNull(TEXT("GameInstance created"), GI);
 
-    TestEqual(TEXT("Default PendingWindKnots is 15.0 kn"), GI->PendingWindKnots, 15.0f);
+    TestEqual(TEXT("Default PendingWindKnots is 20 kn"), GI->PendingWindKnots, 20.0f);
+    TestEqual(TEXT("Default kite is the 9 m, which is the recommended size for that wind"), GI->GetEffectiveKiteSizeM2(), 9.0f);
+    TestEqual(TEXT("The recommended kite for the default wind is the default kite"), UKiteComponent::RecommendKiteSizeM2(GI->PendingWindKnots), 9.0f);
     TestEqual(TEXT("Default MasterVolume is 1.0"), GI->MasterVolume, 1.0f);
     TestFalse(TEXT("Default bSkipOnboarding is false"), GI->bSkipOnboarding);
     TestFalse(TEXT("Default bOnboardingCompleted is false"), GI->bOnboardingCompleted);
@@ -129,7 +132,7 @@ bool FKiteSurfUIWidgetsInstantiationTest::RunTest(const FString& Parameters)
 {
     UKiteSurfSettingsWidget* SettingsWidget = NewObject<UKiteSurfSettingsWidget>();
     TestNotNull(TEXT("UKiteSurfSettingsWidget can be instantiated"), SettingsWidget);
-    TestEqual(TEXT("SettingsWidget default wind is 15 kn"), SettingsWidget->CurrentWindKnots, 15.0f);
+    TestEqual(TEXT("SettingsWidget default wind is 20 kn"), SettingsWidget->CurrentWindKnots, 20.0f);
     TestEqual(TEXT("SettingsWidget default volume is 1.0"), SettingsWidget->CurrentVolume, 1.0f);
     TestFalse(TEXT("SettingsWidget default bSkipOnboarding is false"), SettingsWidget->bSkipOnboarding);
     SettingsWidget->ToggleSkipOnboarding();
@@ -418,7 +421,13 @@ bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
     TestNotNull(TEXT("Gear widget created"), Gear);
     if (Gear)
     {
-        // Wind drives the recommended kite.
+        // It opens on the 9 m in 20 kn, which is the kite that wind calls for.
+        TestEqual(TEXT("The default kite is the 9 m"), Gear->CurrentKiteSizeM2, 9.0f);
+        TestEqual(TEXT("in 20 kn"), Gear->CurrentWindKnots, 20.0f);
+        TestTrue(TEXT("which the gear screen calls well powered"), Gear->GetPowerText().Contains(TEXT("Well powered")));
+
+        // With no size chosen, wind drives the recommended kite.
+        Gear->SetKiteSizeM2(0.0f);
         Gear->SetWindKnots(15.0f);
         TestEqual(TEXT("No size chosen: the kite is the recommended one"), Gear->GetEffectiveKiteSizeM2(), UKiteComponent::RecommendKiteSizeM2(15.0f));
         TestTrue(TEXT("and the row says so"), Gear->GetKiteSizeText().StartsWith(TEXT("AUTO")));

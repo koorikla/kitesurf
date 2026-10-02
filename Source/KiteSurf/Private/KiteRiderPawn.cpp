@@ -72,7 +72,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 		ControlBarMesh->SetStaticMesh(BarMeshFinder.Object);
 	}
 
-	SheetRatePerSec = 0.8f;
+	SheetRatePerSec = 2.5f; // the whole throw in 0.4 s, as fast as arms move a bar
 	MouseSteerSensitivity = 0.02f;
 	MouseSheetSensitivity = 0.01f;
 	CameraArmLengthCm = 1000.0f;

@@ -18,7 +18,7 @@ public:
 
 	virtual void Init() override;
 
-	/** Chosen wind strength in knots passed between menus and gameplay levels (default 15.0 kn) */
+	/** Chosen wind strength in knots passed between menus and gameplay levels (default 20 kn, which suits the default 9 m kite) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float PendingWindKnots;
 
@@ -68,7 +68,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetBoardSize(EBoardSize InSize);
 
-	/** Chosen kite size in m^2; 0 means the size recommended for the wind. */
+	/** Chosen kite size in m^2 (default 9, the middle of the range); 0 means the size recommended for the wind. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float KiteSizeM2;
 

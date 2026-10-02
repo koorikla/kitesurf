@@ -97,6 +97,32 @@ public:
 	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
 	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
 
+	/** Brief controller vibration on the pop, landings, crashes, the kite hitting the water and a hard yank on the lines. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Haptics")
+	void SetHapticsEnabled(bool bEnabled) { bHapticsEnabled = bEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Input|Haptics")
+	bool AreHapticsEnabled() const { return bHapticsEnabled; }
+
+	/** One short buzz: strength 0..1, for this long, on the heavy motors (a thump) or the light ones (a tick). Does nothing when haptics are off. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Haptics")
+	void PlayHaptic(float Intensity, float DurationSeconds, bool bHeavy);
+
+	/** How hard and how long a landing of this many g buzzes. */
+	static void GetLandingHaptic(float LandingG, float& OutIntensity, float& OutDurationSeconds);
+
+	/** Watches the line tension for a sudden hard pull (a loop's yank) and buzzes once for it. Tick calls this. */
+	void UpdateTensionHaptic(float LineTensionN, float DeltaTime);
+
+	/** How many buzzes have been asked for, and the last one, for tests. */
+	int32 GetHapticCount() const { return HapticCount; }
+	float GetLastHapticIntensity() const { return LastHapticIntensity; }
+	float GetLastHapticDuration() const { return LastHapticDuration; }
+
+	/** Line tension above which the lines' pull is felt as a yank (N). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Haptics")
+	float HapticYankTensionN = 2200.0f;
+
 	/**
 	 * Uses the controller's motion sensors as the bar: tilt it like a bar to steer, tip its top
 	 * towards you to pull the bar in. While it is on and a controller with sensors is found, the
@@ -360,6 +386,15 @@ private:
 	bool bMotionBarEnabled = false;
 	bool bMotionBarActive = false;
 	bool bMotionRecentrePending = false;
+
+	UFUNCTION()
+	void HandleKiteCrashedHaptic(FVector Location);
+	bool bHapticsEnabled = true;
+	int32 HapticCount = 0;
+	float LastHapticIntensity = 0.0f;
+	float LastHapticDuration = 0.0f;
+	float YankCooldownSeconds = 0.0f;
+	bool bAboveYankTension = false;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);
 

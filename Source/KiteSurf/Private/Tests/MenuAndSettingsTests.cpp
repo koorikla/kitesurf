@@ -627,7 +627,7 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
     if (Settings)
     {
         FKiteMenuNavigator& Navigator = Settings->GetNavigator();
-        TestEqual(TEXT("Settings has seven items"), Navigator.Num(), 7);
+        TestEqual(TEXT("Settings has eight items"), Navigator.Num(), 8);
         TestEqual(TEXT("and opens on the first"), Navigator.GetSelected(), 0);
 
         Settings->OnVolumeSliderChanged(1.0f);
@@ -646,7 +646,12 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("and so does right"), Settings->bMotionBar, bMotionBefore);
 
-        Navigator.Select(5);
+        Navigator.Select(4);
+        const bool bHapticsBefore = Settings->bHaptics;
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotEqual(TEXT("Accept on VIBRATION switches it"), Settings->bHaptics, bHapticsBefore);
+
+        Navigator.Select(6);
         Settings->SetQualityPreset(1);
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("Right on QUALITY steps it up"), Settings->CurrentQualityPreset, 2);

@@ -197,6 +197,7 @@ void AKiteRiderPawn::BeginPlay()
 		{
 			SetRiderCharacter(GI->RiderCharacter);
 			SetMotionBarEnabled(GI->bMotionBar);
+			SetHapticsEnabled(GI->bHaptics);
 		}
 	}
 
@@ -205,6 +206,10 @@ void AKiteRiderPawn::BeginPlay()
 		BoardMovement->OnBoardCrash.AddDynamic(this, &AKiteRiderPawn::HandleBoardCrash);
 		BoardMovement->OnBoardReset.AddDynamic(this, &AKiteRiderPawn::HandleBoardReset);
 		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
+	}
+	if (Kite)
+	{
+		Kite->OnKiteCrashed.AddDynamic(this, &AKiteRiderPawn::HandleKiteCrashedHaptic);
 	}
 
 	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get() })
@@ -276,6 +281,48 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
 	PlayerInputComponent->BindKey(EKeys::Gamepad_FaceButton_Right, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
 	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Left, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
+}
+
+void AKiteRiderPawn::PlayHaptic(float Intensity, float DurationSeconds, bool bHeavy)
+{
+	if (!bHapticsEnabled || Intensity <= 0.0f || DurationSeconds <= 0.0f)
+	{
+		return;
+	}
+	++HapticCount;
+	LastHapticIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+	LastHapticDuration = DurationSeconds;
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		// A thump on the big motors, a tick on the small ones.
+		PC->PlayDynamicForceFeedback(LastHapticIntensity, DurationSeconds, bHeavy, !bHeavy, bHeavy, !bHeavy);
+	}
+}
+
+void AKiteRiderPawn::GetLandingHaptic(float LandingG, float& OutIntensity, float& OutDurationSeconds)
+{
+	// A soft touchdown is a light tap; five g and more is a full thump that lasts.
+	const float Hardness = FMath::Clamp((LandingG - 1.0f) / 4.0f, 0.0f, 1.0f);
+	OutIntensity = 0.3f + 0.7f * Hardness;
+	OutDurationSeconds = 0.12f + 0.2f * Hardness;
+}
+
+void AKiteRiderPawn::UpdateTensionHaptic(float LineTensionN, float DeltaTime)
+{
+	YankCooldownSeconds = FMath::Max(YankCooldownSeconds - DeltaTime, 0.0f);
+	const bool bAbove = LineTensionN >= HapticYankTensionN;
+	// Once as the pull comes on, not for as long as it lasts.
+	if (bAbove && !bAboveYankTension && YankCooldownSeconds <= 0.0f)
+	{
+		PlayHaptic(FMath::Clamp(0.35f + 0.5f * (LineTensionN - HapticYankTensionN) / 3000.0f, 0.35f, 0.85f), 0.12f, true);
+		YankCooldownSeconds = 0.8f;
+	}
+	bAboveYankTension = bAbove;
+}
+
+void AKiteRiderPawn::HandleKiteCrashedHaptic(FVector Location)
+{
+	PlayHaptic(0.6f, 0.25f, true);
 }
 
 void AKiteRiderPawn::SetMotionBarEnabled(bool bEnabled)
@@ -455,6 +502,7 @@ bool AKiteRiderPawn::Jump()
 		{
 			UGameplayStatics::PlaySound2D(this, PopSound, 0.8f);
 		}
+		PlayHaptic(0.5f, 0.1f, false);
 		return true;
 	}
 	return false;
@@ -546,6 +594,7 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 
 	UpdateAudioModulation(DeltaTime);
+	UpdateTensionHaptic(Kite ? Kite->GetLineTensionN() : 0.0f, DeltaTime);
 }
 
 void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
@@ -774,6 +823,7 @@ void AKiteRiderPawn::HandleBoardCrash(float Intensity)
 	{
 		UGameplayStatics::PlaySound2D(this, CrashSound, FMath::Clamp(Intensity, 0.4f, 1.2f));
 	}
+	PlayHaptic(1.0f, 0.45f, true);
 }
 
 void AKiteRiderPawn::HandleBoardReset()
@@ -792,6 +842,10 @@ void AKiteRiderPawn::HandleBoardLanding(float LandingG)
 		const float Hardness = FMath::Clamp((LandingG - 1.0f) / 5.0f, 0.0f, 1.0f);
 		UGameplayStatics::PlaySound2D(this, LandingSound, 0.45f + 0.65f * Hardness, 1.1f - 0.3f * Hardness);
 	}
+	float HapticIntensity = 0.0f;
+	float HapticDuration = 0.0f;
+	GetLandingHaptic(LandingG, HapticIntensity, HapticDuration);
+	PlayHaptic(HapticIntensity, HapticDuration, true);
 }
 
 FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)

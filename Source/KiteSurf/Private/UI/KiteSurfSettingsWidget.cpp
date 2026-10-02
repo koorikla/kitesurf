@@ -61,6 +61,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			CurrentRiderCharacter = GI->RiderCharacter;
 			CurrentKiteSizeM2 = GI->KiteSizeM2;
 			bMotionBar = GI->bMotionBar;
+			bHaptics = GI->bHaptics;
 		}
 		else
 		{
@@ -417,6 +418,43 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.ColorAndOpacity(FLinearColor(0.55f, 0.75f, 0.9f))
 					.AutoWrapText(true)
 				]
+				// Vibration row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("VIBRATION:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateHapticsButton, SButton)
+						.IsFocusable(false)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleHaptics();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateHapticsText, STextBlock)
+							.Text(FText::FromString(bHaptics ? TEXT("ON") : TEXT("OFF")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
 				// VSync row
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -577,6 +615,22 @@ void UKiteSurfSettingsWidget::SetResolutionByIndex(int32 Index)
 	{
 		SetResolution(SupportedResolutions[Index]);
 	}
+}
+
+void UKiteSurfSettingsWidget::ToggleHaptics()
+{
+	bHaptics = !bHaptics;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetHapticsEnabled(bHaptics);
+			// A buzz to say it is on.
+			Rider->PlayHaptic(0.5f, 0.15f, true);
+		}
+	}
+	UpdateTextDisplays();
 }
 
 void UKiteSurfSettingsWidget::ToggleMotionBar()
@@ -771,6 +825,10 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 		SlateRiderText->SetText(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)));
 	}
 
+	if (SlateHapticsText.IsValid())
+	{
+		SlateHapticsText->SetText(FText::FromString(bHaptics ? TEXT("ON") : TEXT("OFF")));
+	}
 	if (SlateMotionBarText.IsValid())
 	{
 		SlateMotionBarText->SetText(FText::FromString(bMotionBar ? TEXT("ON") : TEXT("OFF")));
@@ -810,6 +868,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			GI->SetRiderCharacter(CurrentRiderCharacter);
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
 			GI->SetMotionBar(bMotionBar);
+			GI->SetHaptics(bHaptics);
 			GI->SaveSettingsToDisk();
 
 			// A ride that is already under way gets the new wind and kite straight away.
@@ -883,6 +942,7 @@ void UKiteSurfSettingsWidget::BuildNavigation()
 		SetResolutionByIndex(FMath::Clamp(Next, 0, FMath::Max(SupportedResolutions.Num() - 1, 0)));
 	});
 	Navigator.AddButton(SlateMotionBarButton, [this]() { ToggleMotionBar(); }, true);
+	Navigator.AddButton(SlateHapticsButton, [this]() { ToggleHaptics(); }, true);
 	Navigator.AddButton(SlateVSyncButton, [this]() { ToggleVSync(); }, true);
 	Navigator.AddText(SlateQualityText, [this](int32 Direction) { SetQualityPreset(CurrentQualityPreset + Direction); });
 	Navigator.AddButton(SlateBackButton, [this]() { OnBackClicked(); });

@@ -99,6 +99,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleMotionBar();
 
+	/** Controller vibration. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bHaptics = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleHaptics();
+
 	/** What the motion bar row's note says: what it does, or which controller it found. */
 	UFUNCTION(BlueprintPure, Category = "Settings")
 	FString GetMotionBarNote() const;
@@ -202,6 +209,9 @@ private:
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;
+
+	TSharedPtr<SButton> SlateHapticsButton;
+	TSharedPtr<STextBlock> SlateHapticsText;
 
 	TSharedPtr<SButton> SlateMotionBarButton;
 	TSharedPtr<STextBlock> SlateMotionBarText;

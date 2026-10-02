@@ -43,7 +43,7 @@ public:
 	/** Tilt to the right, as turning a bar to steer right: right hand down is positive (deg). */
 	float GetRollDeg() const;
 
-	/** Tilt of the top of the pad towards the player, as pulling a bar in: towards is positive (deg). */
+	/** Tilt of the pad as a bar pulled in towards the player: pulled in is positive (deg). */
 	float GetPitchDeg() const;
 
 	/** How long the accelerometer takes to pull the estimate back to true (s). */

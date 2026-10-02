@@ -92,11 +92,15 @@ water. A kite looped through the middle of the window pulls several times harder
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
 motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full
-steering), and tip its top towards you to pull the bar in. However you are holding it when the
+steering), and pull it in towards you like a bar for power. However you are holding it when the
 ride starts is level; reset (R) re-centres. The right stick, triggers and bar keys then leave the
 bar alone. It needs a controller with motion sensors (PlayStation DualSense or DualShock 4,
 Switch Pro); Xbox controllers have none, and with no sensors found the right stick carries on
 working. Linux only for now.
+
+**Vibration.** The controller buzzes briefly on the pop, on landing (harder for a harder
+landing), on a crash, when the kite hits the water, and once when the lines yank hard, as in a
+loop. Settings has a VIBRATION switch (on by default).
 
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
 second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board

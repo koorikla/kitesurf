@@ -30,7 +30,8 @@ The board only carries the rider at speed. Below `FloatUntilSpeedFraction` of th
 ### Weight shift, liftoff and the air
 - **Weight shift** (W / S, left stick Y): +1 is weight on the nose, -1 on the tail. Weight back sinks the tail: lateral grip is scaled by `TailWeightGripScale`, drag rises by `TailWeightDrag`, the board heels further, the nose lifts, and the pop gains `TailWeightPopBonus`. Weight forward flattens the board: grip drops by the same factor, planing drag falls by `NoseWeightDragSaving`, and the nose dips. In the air it tips the board by up to `AirWeightShiftPitchDeg`.
 - **Off the plane** the board pivots towards a beam reach on the kite's side at up to `LowSpeedPivotRate`, so a stalled rider is lined up for the kite to pull them back onto the plane.
-- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight, or up to `EdgedLiftoffWeightBonus` more when the rider is edging. Holding the edge while the kite is sent, then popping, is how a jump is loaded; see `docs/jumping.md`.
+- **Load** (the jump button held): the rider crouches with their weight over the back of the board. The load builds inside the step at `LoadRatePerSec` and lets go at `LoadReleaseRatePerSec`; it multiplies the sideways grip by up to `1 + LoadGripBonus` and holds the board down like a full edge. Letting go pops; see `docs/jumping.md`.
+- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight, or up to `EdgedLiftoffWeightBonus` more when the rider is edging or loading. Holding the edge (or the load) while the kite is sent, then popping, is how a jump is loaded; see `docs/jumping.md`.
 - **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. The air drags on the rider and board, $0.5 \rho C_D A |v_a| v_a$ with `RiderDragAreaM2` (0.7 m^2) and $v_a$ the wind at chest height minus their velocity: 97 N at 15 m/s in still air (`KiteSurf.Jump.BodyDragInTheAir`). Nothing like it acts on the water, where the hull's drag and grip are the model. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
 
 ### How the kite drives the board
@@ -49,6 +50,8 @@ The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped by 
 
 ### Wind
 `UWindComponent` is a pure function of position, time and `Seed` (`GetWindAtTime`), so the kite, the rider, the HUD and the sound all sample the same wind and a ride can be replayed. The kite samples it at its own simulation time, and so does the board for the rider's drag in the air, so the ride does not depend on the frame rate. The base wind is the wind at `ReferenceHeightCm` (10 m, as forecasts quote it); with height it follows a power law with `ShearExponent` 0.11, sampled no lower than `MinSampleHeightCm`, so the rider at chest height (`UKiteComponent::RiderWindHeightCm`, 1.5 m) feels about 0.81 of it and the kite at 25 m about 1.11. Gusts are two octaves of seeded noise over the water (`GustCellLengthCm` 60 m along the wind and half that across, puffs `GustPuffRate` times finer with `GustPuffShare` of the variation) carried downwind at the mean wind speed and changing over `GustEvolveSeconds`, so a gust seen upwind arrives a little later, and a cell takes about 8 s to pass in 15 kn. They reach `1 + GustStrength` and `1 - GustStrength` and never go past. The direction wanders by `DirectionDriftDeg` (standard deviation, 5 degrees) and never more than twice that. `GetGustFactorAt` gives the current wind over the base wind at the reference height; the HUD calls out GUST and LULL from it.
+
+The wind's direction is shown two ways. `UWindStreakComponent` keeps a field of long thin foam streaks on the water round the rider, lying along the wind and drifting down it at `DriftFraction` of its speed; they fade in from `MinWindKnots` and are not there in a calm. They read the wind at the water, which the profile gives at `MinSampleHeightCm` (about 0.78 of the base wind). The HUD's WIND dial (`AKiteSurfHUD::DrawWindFlag`) is a flag seen from above with the top of the dial the way the camera looks (`GetWindOnScreen`), and says in words where the wind comes from; it quotes the wind at `ReferenceHeightCm`, as the telemetry does.
 
 ## Default Tunable Properties
 
@@ -96,6 +99,14 @@ The lines pull on the harness hook at the front of the rider's waist (`HarnessHo
 
 The lean is away from the kite's pull. On the water that is leaning out against it; in the air the rider hangs from the harness, so the lower the kite, the further back the shoulders go (up to `RiderAirHangLeanDeg`). Board-off tricks, where the feet leave the straps, are not modelled yet.
 
+### Jointed body
+Santa and the wetsuit rider are jointed figures: a torso and eight limb parts, posed every frame by `RiderRig` (`RiderRig.h`). The robot is still the skeletal mannequin.
+- **Feet** are in the straps, 30 cm either side of the middle of the board along its length, and go wherever the board goes, tilt included.
+- **Pelvis** is over the feet along the body's lean, 80 cm up standing and 40% lower in a full loaded crouch, and never further from a strap than the leg reaches.
+- **Knees and elbows** come from a two-bone solve (`SolveTwoBone`) that keeps each bone its length: knees forwards and a little apart, elbows down and out.
+- **Hands** are on the bar 14 cm either side of its middle, so the arms follow the bar as it is sheeted and steered. The bar is kept within the arms' reach of the shoulders, so leaning back brings it in towards the hook.
+- The parts' lengths and joint positions are shared with `generate_mesh_objs.py` (`RIDER_*`), which builds the meshes; `import_rider_parts.py` imports them.
+
 ## Gear
 The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause menu) sets the wind, the kite size and model, the board and the rider. The choices live in `UKiteSurfGameInstance`, are saved with the settings, and are applied when a ride starts (`AKiteSurfGameMode::InitializeRide`) or when the screen is confirmed during one.
 
@@ -114,9 +125,39 @@ The board's size does not change how it looks yet.
 The sand is not yet part of the water surface the board rides on, and the sharks do not avoid the sand.
 
 ## Sound
-Three loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`): wind in the ears from the apparent wind, water under the board from board speed (silent in the air), and the lines singing from line tension (silent when slack). The pop, landing (louder and deeper the harder it is), crash and reset are one-shots. All of it is synthesised by `scripts/editor/make_sound_wavs.py` and imported by `make_sound_assets.py`; the loops are set to keep playing while silent so they come back after being faded out.
+Six loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`, from an `FRideAudioState`):
+
+| Loop | Follows | Silent when |
+| --- | --- | --- |
+| Wind in the ears | apparent wind | there is none |
+| Water under the board | board speed | the board is in the air |
+| Spray | edge or load crouch, times board speed | in the air, standing still, riding flat |
+| Lines singing | line tension | the lines are slack |
+| Kite through the air | the kite's airspeed above about 16 m/s, so a turn or a loop roars | the kite is parked or down |
+| Canopy flutter | a kite with no load in it: slack lines, a stall, or the bar right out | the kite is loaded, or there is no wind |
+
+One-shots, each played with a few per cent of random pitch so that no two are alike: the pop, the landing (louder and deeper the harder it is), the crash, the kite hitting the water, the relaunch, the board running aground, a shark, and the reset. Running aground and a shark replace the splash of the crash they cause. The menus tick on moving, chime on choosing and fall on going back (`KiteSurfMenuStyle::PlayMenuSound`, driven by `FKiteMenuNavigator::OnAction`).
+
+**Music.** The menus play `MU_Menu`. The ride plays two loops of exactly the same length, started on the same frame and never pitched, so they stay in step: `MU_RideBase` all the time, and `MU_RideAir` (the tune and a busier top end) faded in within half a second of leaving the water and out over about two seconds after landing. Music plays through a pause. 
+
+**Volume settings.** Settings has four sliders, all saved and all heard as they are moved: MASTER VOLUME over everything, MUSIC VOLUME (default 60 %), AMBIENT VOLUME for the six loops above, and EFFECTS VOLUME for the one-shots and the menus' sounds. `ComputeAudioMix` is what the ride calls for; the ambient volume scales what the loops then play.
+
+The effects are synthesised by `scripts/editor/make_sound_wavs.py` and the music is written out as notes and synthesised by `scripts/editor/make_music_wavs.py`; both are standard-library Python, and `make_sound_assets.py` imports the lot. The loops are set to keep playing while silent so they come back, in step, after being faded out.
 
 To hear what a scripted run sounds like without speakers, record it: `kitesurf.AudioRecordStart`, then `kitesurf.AudioRecordStop <name>` writes `Saved/BouncedWavFiles/<name>.wav`. An offscreen run is muted as an unfocused window unless it is started with `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`.
+
+## Motion bar
+Behind the MOTION BAR setting (`UKiteSurfGameInstance::bMotionBar`, off by default), `AKiteRiderPawn` takes the bar from a controller's motion sensors instead of the right stick.
+
+- **Reading.** `IKiteMotionSource` gives accelerometer (g) and gyro (rad/s) readings in the controller's axes. On Linux `KiteMotionBar::CreatePlatformSource` reads them through the SDL instance the engine already runs (it opens the pads but does not pass motion on); the module includes SDL's headers and uses the symbols `ApplicationCore` exports, without linking a second copy. Other platforms return no source.
+- **Attitude.** `FMotionBarFilter` keeps an estimate of which way is up in the controller's axes: the gyro turns it at once, and the accelerometer pulls it back to true over `AccelTimeConstantSeconds` whenever it reads within `AccelTrustBandG` of 1 g. Roll is right side down; pitch is the pad pulled in like a bar (the edge nearest the player rising, which on a DualSense is "up" gaining a part along the controller's +Z), measured so that it does not change with roll.
+- **Bar.** `FMotionBarMapping`: roll beyond a 3 degree deadzone steers, full at 35 degrees; pitch moves the bar through its throw over 50 degrees. Switching on, a reset, or the controller reconnecting calibrates: the way it is held then is level, with the bar where it was.
+- **Hand-over.** While a reading is available the stick, triggers and keys do not move the bar's position and the right stick is taken out of the steering (the steering keys and the mouse still add). If the controller goes away the bar is handed back level.
+
+The right stick is left unused while the motion bar is active. `kitesurf.MotionBar <0|1>` switches it from the console and logs what is being read.
+
+## Vibration
+`AKiteRiderPawn::PlayHaptic` asks the player's controller for one short buzz (`PlayDynamicForceFeedback`), behind the VIBRATION setting (`UKiteSurfGameInstance::bHaptics`, on by default). It is used for: the pop (a light tick, 0.1 s); a landing (`GetLandingHaptic`: 0.3 strength for a soft one up to full at 5 g, 0.12 to 0.32 s); a crash of any kind (full, 0.45 s); the kite hitting the water (0.6, 0.25 s); and a yank on the lines, once as the tension rises through `HapticYankTensionN` (2200 N) and not again for 0.8 s.
 
 ## Bar display
 The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite, and while looping they match once the bar has had its dead time to reach the kite.

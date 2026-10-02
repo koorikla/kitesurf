@@ -6,17 +6,18 @@
 
 namespace
 {
-	const FKiteSurfControlBinding Bindings[] =
+	const FKiteSurfControlBinding ControlBindings[] =
 	{
 		{ TEXT("Steer the kite round the window"), TEXT("Left / Right"),              TEXT("Right stick left / right") },
-		{ TEXT("Sheet in / out (power)"),          TEXT("Up / Down"),                 TEXT("Right stick up / down, triggers") },
+		{ TEXT("Bar in / out (power)"),            TEXT("Down / Up"),                 TEXT("Right stick up / down, triggers") },
 		{ TEXT("Loop the kite"),                   TEXT("Keep steering towards the kite's own side"), TEXT("Keep the stick towards the kite's own side") },
 		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet"), TEXT("") },
 		{ TEXT("Turn the board; spin in the air"), TEXT("A / D"),                     TEXT("Left stick left / right") },
 		{ TEXT("Weight on the nose / the tail"),   TEXT("W / S"),                     TEXT("Left stick up / down") },
-		{ TEXT("Pop (hold S + send the kite first)"), TEXT("Space"),                     TEXT("Bottom face button") },
+		{ TEXT("Hold to load the edge, let go to pop"), TEXT("Space"),                    TEXT("Bottom face button") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
 		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },
+		{ TEXT("In menus: move, change, select"),  TEXT("Arrows, Enter; Esc goes back"), TEXT("D-pad or left stick, bottom face button") },
 	};
 
 	const float ActionColumnWidth = 290.0f;
@@ -48,7 +49,7 @@ namespace
 
 TConstArrayView<FKiteSurfControlBinding> KiteSurfControlsLegend::GetBindings()
 {
-	return Bindings;
+	return ControlBindings;
 }
 
 TSharedRef<SWidget> KiteSurfControlsLegend::Build()
@@ -74,7 +75,7 @@ TSharedRef<SWidget> KiteSurfControlsLegend::Build()
 			MakeRow(TEXT(""), TEXT("KEYBOARD / MOUSE"), TEXT("GAMEPAD"), FCoreStyle::GetDefaultFontStyle("Bold", 11), ColumnColor, ColumnColor)
 		];
 
-	for (const FKiteSurfControlBinding& Binding : Bindings)
+	for (const FKiteSurfControlBinding& Binding : ControlBindings)
 	{
 		Table->AddSlot()
 		.AutoHeight()

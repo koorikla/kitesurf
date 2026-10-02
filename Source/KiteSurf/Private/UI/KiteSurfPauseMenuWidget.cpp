@@ -1,4 +1,5 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
@@ -91,6 +92,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f)
 				[
 					SAssignNew(SlateResumeButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -111,6 +113,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f)
 				[
 					SAssignNew(SlateRestartButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -131,6 +134,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f)
 				[
 					SAssignNew(SlateGearButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -151,6 +155,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f)
 				[
 					SAssignNew(SlateSettingsButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -171,6 +176,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f)
 				[
 					SAssignNew(SlateMainMenuButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -191,6 +197,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.Padding(25.0f, 6.0f, 25.0f, 25.0f)
 				[
 					SAssignNew(SlateQuitButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -337,19 +344,48 @@ void UKiteSurfPauseMenuWidget::OnQuitClicked()
 
 void UKiteSurfPauseMenuWidget::FocusFirst()
 {
-	if (ResumeButton)
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		ResumeButton->SetKeyboardFocus();
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
-	else if (SlateResumeButton.IsValid())
+}
+
+FKiteMenuNavigator& UKiteSurfPauseMenuWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
 	{
-		FSlateApplication::Get().SetKeyboardFocus(SlateResumeButton);
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
 	}
+	return Navigator;
+}
+
+void UKiteSurfPauseMenuWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
+	Navigator.AddButton(SlateResumeButton, [this]() { OnResumeClicked(); });
+	Navigator.AddButton(SlateRestartButton, [this]() { OnRestartClicked(); });
+	Navigator.AddButton(SlateGearButton, [this]() { OnGearClicked(); });
+	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
+	Navigator.AddButton(SlateMainMenuButton, [this]() { OnMainMenuClicked(); });
+	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });
 }
 
 FReply UKiteSurfPauseMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right)
 	{
 		OnResumeClicked();

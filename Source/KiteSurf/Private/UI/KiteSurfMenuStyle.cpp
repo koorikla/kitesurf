@@ -1,5 +1,11 @@
 #include "UI/KiteSurfMenuStyle.h"
+#include "Engine/GameInstance.h"
+#include "UI/KiteSurfMenuVideo.h"
 #include "Engine/Texture2D.h"
+#include "Kismet/GameplayStatics.h"
+#include "UI/KiteSurfGameInstance.h"
+#include "Engine/World.h"
+#include "Sound/SoundBase.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -23,6 +29,31 @@ void KiteSurfMenuStyle::SetupBackgroundBrush(FSlateBrush& Brush, UTexture2D* Tex
 
 TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, const TSharedRef<SWidget>& Content)
 {
+	return BuildBackdrop(BackgroundBrush, bHasTexture, TAttribute<const FSlateBrush*>(), Content);
+}
+
+TAttribute<const FSlateBrush*> KiteSurfMenuStyle::MenuLoopBrush(UGameInstance* GameInstance)
+{
+	TWeakObjectPtr<UKiteSurfMenuVideoSubsystem> Videos = GameInstance ? GameInstance->GetSubsystem<UKiteSurfMenuVideoSubsystem>() : nullptr;
+	if (!Videos.IsValid())
+	{
+		return TAttribute<const FSlateBrush*>();
+	}
+	return TAttribute<const FSlateBrush*>::CreateLambda([Videos]() -> const FSlateBrush*
+	{
+		// Waits for the intro: the loop starts when it is over.
+		UKiteSurfMenuVideoSubsystem* Subsystem = Videos.Get();
+		if (!Subsystem || !Subsystem->HasPlayedIntro())
+		{
+			return nullptr;
+		}
+		const UKiteSurfVideoPlayer* Loop = Subsystem->GetLoop();
+		return Loop ? Loop->GetBrush() : nullptr;
+	});
+}
+
+TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, TAttribute<const FSlateBrush*> VideoBrush, const TSharedRef<SWidget>& Content)
+{
 	TSharedRef<SOverlay> Overlay = SNew(SOverlay);
 
 	// A solid colour underneath in any case, so nothing behind the menu shows through.
@@ -42,6 +73,16 @@ TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* Backgrou
 			SNew(SImage).Image(BackgroundBrush)
 		];
 	}
+	if (VideoBrush.IsBound() || VideoBrush.Get(nullptr))
+	{
+		// Transparent until its first frame, so the still above shows through while it starts.
+		Overlay->AddSlot()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
+		[
+			SNew(SImage).Image(VideoBrush)
+		];
+	}
 	Overlay->AddSlot()
 	[
 		Content
@@ -58,4 +99,28 @@ TSharedRef<SWidget> KiteSurfMenuStyle::BuildPanel(const TSharedRef<SWidget>& Con
 		[
 			Content
 		];
+}
+
+USoundBase* KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound Sound)
+{
+	switch (Sound)
+	{
+	case EKiteMenuSound::Move:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UIMove"));
+	case EKiteMenuSound::Back:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UIBack"));
+	default:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UISelect"));
+	}
+}
+
+void KiteSurfMenuStyle::PlayMenuSound(const UObject* WorldContext, EKiteMenuSound Sound)
+{
+	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	const UKiteSurfGameInstance* GI = World ? Cast<UKiteSurfGameInstance>(World->GetGameInstance()) : nullptr;
+	const float Volume = 0.7f * (GI ? GI->EffectsVolume : 1.0f);
+	if (USoundBase* Asset = World && Volume > 0.0f ? GetMenuSound(Sound) : nullptr)
+	{
+		UGameplayStatics::PlaySound2D(WorldContext, Asset, Volume);
+	}
 }

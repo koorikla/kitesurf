@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "RiderCharacter.h"
 #include "KiteSurfSettingsWidget.generated.h"
@@ -70,6 +71,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void OnVolumeSliderChanged(float Value);
 
+	/** Music volume, 0..1. Whatever music is playing follows it at once. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentMusicVolume = 0.6f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnMusicSliderChanged(float Value);
+
+	/** Ambient volume, 0..1: wind, water, spray, lines and the kite. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentAmbientVolume = 1.0f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnAmbientSliderChanged(float Value);
+
+	/** Effects volume, 0..1: the pop, landings, crashes and the menus' sounds. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentEffectsVolume = 1.0f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnEffectsSliderChanged(float Value);
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void OnBackClicked();
 
@@ -90,6 +112,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleVSync();
+
+	/** Controller motion sensors as the bar, instead of the right stick. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bMotionBar = false;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleMotionBar();
+
+	/** Controller vibration. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bHaptics = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleHaptics();
+
+	/** What the motion bar row's note says: what it does, or which controller it found. */
+	UFUNCTION(BlueprintPure, Category = "Settings")
+	FString GetMotionBarNote() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetVSyncEnabled(bool bInVSync);
@@ -155,7 +195,14 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator Navigator;
+
 	void InitializeSettings();
 	void UpdateTextDisplays();
 
@@ -183,6 +230,23 @@ private:
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;
+
+	TSharedPtr<SSlider> SlateMusicSlider;
+	TSharedPtr<STextBlock> SlateMusicText;
+	TSharedPtr<SSlider> SlateAmbientSlider;
+	TSharedPtr<STextBlock> SlateAmbientText;
+	TSharedPtr<SSlider> SlateEffectsSlider;
+	TSharedPtr<STextBlock> SlateEffectsText;
+
+	/** Shows a volume on its slider and percentage, when the keys moved it rather than the mouse. */
+	static void ShowVolume(const TSharedPtr<SSlider>& Slider, const TSharedPtr<STextBlock>& Text, float Volume);
+
+	TSharedPtr<SButton> SlateHapticsButton;
+	TSharedPtr<STextBlock> SlateHapticsText;
+
+	TSharedPtr<SButton> SlateMotionBarButton;
+	TSharedPtr<STextBlock> SlateMotionBarText;
+	TSharedPtr<STextBlock> SlateMotionBarNote;
 
 	TSharedPtr<SButton> SlateVSyncButton;
 	TSharedPtr<STextBlock> SlateVSyncText;

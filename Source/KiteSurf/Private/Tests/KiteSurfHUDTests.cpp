@@ -88,7 +88,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestTrue(TEXT("IMC_Default maps IA_Jump"), bHasJumpMapping);
 		TestTrue(TEXT("IMC_Default maps IA_Pause"), bHasPauseMapping);
 
-		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Down, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis };
+		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis };
 		TSet<FKey> FoundNegativeKeys;
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
@@ -109,6 +109,16 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			}
 		}
 		TestEqual(TEXT("All 5 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+
+		// Down pulls the bar in (power), so it is the positive direction of IA_Sheet.
+		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+		{
+			if (Mapping.Key == EKeys::Down)
+			{
+				const bool bNegated = Mapping.Modifiers.ContainsByPredicate([](const TObjectPtr<UInputModifier>& Mod) { return Mod && Mod->IsA<UInputModifierNegate>(); });
+				TestFalse(TEXT("Down is sheet-in: not negated"), bNegated);
+			}
+		}
 
 		// The bar is on the arrows and the right stick, the board on WASD and the left stick.
 		struct FExpectedMapping { FKey Key; const TCHAR* ActionName; };
@@ -204,7 +214,7 @@ bool FKiteSurfHUDJumpRejection::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Initially rejection text is empty"), HUD->GetJumpRejectionText().IsEmpty());
 
 			HUD->ShowJumpRejection(EJumpRejectReason::NotPlaning);
-			TestEqual(TEXT("Shows Not planing"), HUD->GetJumpRejectionText(), TEXT("Not planing"));
+			TestEqual(TEXT("Shows why there is no pop"), HUD->GetJumpRejectionText(), FString(TEXT("Get up on the board first")));
 			TestTrue(TEXT("Remaining time > 0"), HUD->GetJumpRejectionRemainingTime() > 0.0f);
 
 			HUD->ShowJumpRejection(EJumpRejectReason::TooSlow);

@@ -61,14 +61,15 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power (the bar holds its position) | Up / Down | Right stick up / down, triggers |
+| Bar in / out: power (the bar holds its position) | Down / Up | Right stick up / down, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
-| Pop (hold S and send the kite first for a real jump) | Space | Bottom face button |
+| Hold to crouch and load the edge; let go to pop | Space | Bottom face button |
 | Reset | R | Right face button |
-| Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
+| Pause menu (resume, restart, gear, settings, main menu, quit) | Esc or P | Start |
+| In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |
 
 **The spot.** The gear screen also switches what is in the water. Sandbars lie across your
 reach, about 260 m out on the first run: jump them, because riding onto sand is a crash.
@@ -82,12 +83,33 @@ is. Keep the bar held towards the side the kite is already on and it turns down 
 loop, for as long as you hold it. So holding the bar through a change of direction ends in a
 loop on the new side; let go as the kite gets there if you do not want one.
 
-**Jumping.** A pop on its own is a hop of about a metre: the height comes from the kite. Hold
-your weight back (S) to dig the edge in, steer the kite up hard, and as the pull builds pull the
-bar in and pop. Let go too early and the kite has not loaded up yet; hold on too long and it
-rips you off your edge, which is a much lower jump. Timed well, that is about 7 m in 15 kn, 15 m
-in 30 kn and 20 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
-water. A kite looped through the middle of the window pulls several times harder than a parked one.
+**Jumping.** You can always pop while you are up on the board: tap the jump button for a hop
+of about a metre. The height comes from the kite. Hold the jump button to crouch with your weight
+back and load the edge: the board grips harder against the lines, the pull builds, and you are
+held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
+the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
+on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
+7 m in 15 kn, 15 m in 30 kn and 20 m in 40 kn. Steering the kite up without an edge just
+plucks you off the water. (Weight back on S still holds you down too.) A kite looped through the
+middle of the window pulls several times harder than a parked one.
+
+**Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
+motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full
+steering), and pull it in towards you like a bar for power. However you are holding it when the
+ride starts is level; reset (R) re-centres. The right stick, triggers and bar keys then leave the
+bar alone. It needs a controller with motion sensors (PlayStation DualSense or DualShock 4,
+Switch Pro); Xbox controllers have none, and with no sensors found the right stick carries on
+working. Linux only for now.
+
+**Vibration.** The controller buzzes briefly on the pop, on landing (harder for a harder
+landing), on a crash, when the kite hits the water, and once when the lines yank hard, as in a
+loop. Settings has a VIBRATION switch (on by default).
+
+**Sound and music.** The ride has wind, water, spray, line, kite and canopy sounds that follow
+what the rider is doing, and music with a second layer that comes in while you are in the air.
+Settings has separate MASTER, MUSIC, AMBIENT (wind, water, lines, kite) and EFFECTS (pop,
+landings, crashes, menu sounds) volume sliders. Everything is synthesised by scripts in
+`scripts/editor/`; see the Sound section of `docs/movement.md`.
 
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
 second. Right out, the kite flags and barely pulls (about 170 N on the 9 m in 20 kn, 9 kn of board
@@ -110,6 +132,11 @@ Without enough speed the board does not carry you: you float chest-deep until th
 back up onto the plane. The BAR panel at the bottom right shows what your hands are doing: the bar
 slides down as you pull it in and tilts as you steer, with a marker for the steering that actually
 reaches the kite.
+
+**Reading the wind.** White streaks on the water lie along the wind and drift down it. The WIND
+dial at the top right is a flag seen from above, with the top of the dial the way you are
+looking: the flag streams the way the wind blows, and the line under it says where the wind is
+coming from ("from the right", "from behind left").
 
 The wind gusts and drops (the HUD calls out GUST and LULL). The kite only pulls while its lines
 are tight: in a hole in the wind, or if you outrun the wind, the lines go slack and the kite

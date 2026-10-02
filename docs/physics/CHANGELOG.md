@@ -58,9 +58,18 @@ automation tests named next to it (`scripts/run-tests.sh -nullrhi`); none of it 
     the timed jump at 20 Hz: 13.1 m in 3.67 s, `8h/t^2` 7.77 m/s^2. The kite is low and to the
     side of the airborne rider on the way down and lifts 10% of their weight; no one or two
     tunables fix it. 88 tests.
-15. This commit: **docs(physics)**, this changelog and the tunable tables, fixed step, wind and
+15. `8f9a52f` **docs(physics)**, this changelog and the tunable tables, fixed step, wind and
     bar-centred behaviour in `docs/movement.md`, `docs/jumping.md`, `docs/ARCHITECTURE.md`, and
     the jump heights in `README.md`.
+16. **merge: origin/main into physics/rework.** Main's #34 to #44 on top of the fixed step. The pop
+    any time on the water and the loaded crouch (#41) live in the board: the load builds and lets
+    go inside `StepBoard`, adds grip there and holds the board down like a full edge, and the pop
+    keeps `PopImpulseKgCmPerS` and `EdgeReleaseSeconds`. The jointed rider (#43), motion bar and
+    vibration (#37, #40), audio (#44) and gear preview (#42) run in the pawn's per-frame part and
+    see the drawn transform. The wind streaks (#36) read the field at the water and the HUD's wind
+    flag at `ReferenceHeightCm`. Loaded on the 9 m in 20 kn, slip 90 -> 39 cm/s and tension 585 ->
+    677 N, take-off 4.6 m/s against 3.1 from a tap (`KiteSurf.Jump.LoadAndRelease`); every number
+    above is unchanged. 104 tests.
 
 ### Where the numbers stand
 

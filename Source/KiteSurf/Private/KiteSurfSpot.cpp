@@ -234,6 +234,8 @@ void AKiteSurfSpot::CrashRider(const FString& Event, const FVector& PutBackAt)
 	{
 		return;
 	}
+	// Its own sound first: the crash that follows then keeps its splash to itself.
+	Rider->PlayRideSound(Event == TEXT("Shark!") ? ERideSound::Shark : ERideSound::Aground);
 	if (UBoardMovementComponent* Board = Rider->GetBoardMovement())
 	{
 		Board->TriggerCrash(1.0f);

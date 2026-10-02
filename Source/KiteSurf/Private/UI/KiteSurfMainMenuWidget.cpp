@@ -2,6 +2,9 @@
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfMenuStyle.h"
+#include "UI/KiteSurfMenuVideo.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/SOverlay.h"
 #include "Engine/Texture2D.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfGameInstance.h"
@@ -50,7 +53,80 @@ void UKiteSurfMainMenuWidget::NativeConstruct()
 		PC->SetInputMode(Mode);
 	}
 
+	// The intro plays once, the first time the menu opens; then the loop runs behind the menus.
+	if (UKiteSurfMenuVideoSubsystem* Videos = GetVideos())
+	{
+		IntroPlayer = Videos->ShouldPlayIntro() ? Videos->StartIntro() : nullptr;
+		if (IntroPlayer)
+		{
+			bIntroPlaying = true;
+			IntroStartTime = FPlatformTime::Seconds();
+			IntroPlayer->OnFinished.AddUObject(this, &UKiteSurfMainMenuWidget::SkipIntro);
+		}
+		else
+		{
+			Videos->FinishIntro();
+		}
+	}
+
 	FocusFirst();
+}
+
+void UKiteSurfMainMenuWidget::NativeDestruct()
+{
+	if (IntroPlayer)
+	{
+		IntroPlayer->OnFinished.RemoveAll(this);
+	}
+	Super::NativeDestruct();
+}
+
+UKiteSurfMenuVideoSubsystem* UKiteSurfMainMenuWidget::GetVideos() const
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetSubsystem<UKiteSurfMenuVideoSubsystem>() : nullptr;
+}
+
+void UKiteSurfMainMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// A video that never starts (no decoder, a broken file) must not hold the menu back.
+	if (bIntroPlaying && IntroPlayer && !IntroPlayer->HasFrames() && FPlatformTime::Seconds() - IntroStartTime > IntroStartTimeoutSeconds)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("The intro video did not start; showing the menu"));
+		SkipIntro();
+	}
+}
+
+void UKiteSurfMainMenuWidget::SkipIntro()
+{
+	if (!bIntroPlaying)
+	{
+		return;
+	}
+	bIntroPlaying = false;
+	// The intro ends on white: fade that off the menu, but only if the intro was seen at all.
+	FlashStartTime = IntroPlayer && IntroPlayer->HasFrames() ? FPlatformTime::Seconds() : 0.0;
+	if (IntroPlayer)
+	{
+		IntroPlayer->OnFinished.RemoveAll(this);
+	}
+	if (UKiteSurfMenuVideoSubsystem* Videos = GetVideos())
+	{
+		Videos->FinishIntro();
+	}
+	FocusFirst();
+}
+
+FReply UKiteSurfMainMenuWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (bIntroPlaying)
+	{
+		SkipIntro();
+		return FReply::Handled();
+	}
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
 TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
@@ -109,6 +185,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f)
 				[
 					SAssignNew(SlatePlayButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -129,6 +206,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f)
 				[
 					SAssignNew(SlateSettingsButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -149,6 +227,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f, 30.0f, 30.0f)
 				[
 					SAssignNew(SlateQuitButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -174,7 +253,56 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 			]
 		];
 
-	return KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, MenuContent);
+	const TSharedRef<SWidget> Backdrop = KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr,
+		KiteSurfMenuStyle::MenuLoopBrush(GetGameInstance()), MenuContent);
+
+	static constexpr double FlashSeconds = 0.7;
+	return SNew(SOverlay)
+		+ SOverlay::Slot()
+		[
+			Backdrop
+		]
+		// The intro, over everything until it ends or is skipped.
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor::Black)
+			.Padding(0.0f)
+			.Visibility_Lambda([this]() { return bIntroPlaying ? EVisibility::Visible : EVisibility::Collapsed; })
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SImage).Image_Lambda([this]() -> const FSlateBrush* { return IntroPlayer ? IntroPlayer->GetBrush() : nullptr; })
+				]
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Right)
+				.VAlign(VAlign_Bottom)
+				.Padding(FMargin(0.0f, 0.0f, 40.0f, 30.0f))
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(TEXT("Press any key")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
+					.ColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 0.6f))
+					.ShadowOffset(FVector2D(1.0f, 1.0f))
+					.ShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.5f))
+				]
+			]
+		]
+		// The white the intro ends on, fading off the menu.
+		+ SOverlay::Slot()
+		[
+			SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+			.Visibility(EVisibility::HitTestInvisible)
+			.BorderBackgroundColor_Lambda([this]()
+			{
+				const double Elapsed = FlashStartTime > 0.0 ? FPlatformTime::Seconds() - FlashStartTime : FlashSeconds;
+				const float Alpha = FMath::Clamp(1.0f - static_cast<float>(Elapsed / FlashSeconds), 0.0f, 1.0f);
+				return FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, Alpha * Alpha));
+			})
+		];
 }
 
 void UKiteSurfMainMenuWidget::OnPlayClicked()
@@ -203,6 +331,10 @@ void UKiteSurfMainMenuWidget::OnPlayClicked()
 void UKiteSurfMainMenuWidget::StartRide()
 {
 	ActiveGearWidget = nullptr;
+	if (UKiteSurfMenuVideoSubsystem* Videos = GetVideos())
+	{
+		Videos->PrepareLoadingScreen();
+	}
 	if (UWorld* World = GetWorld())
 	{
 		UGameplayStatics::OpenLevel(World, FName(TEXT("L_OpenWater")));
@@ -257,19 +389,51 @@ void UKiteSurfMainMenuWidget::OnQuitClicked()
 
 void UKiteSurfMainMenuWidget::FocusFirst()
 {
-	if (PlayButton)
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		PlayButton->SetKeyboardFocus();
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
-	else if (SlatePlayButton.IsValid())
+}
+
+FKiteMenuNavigator& UKiteSurfMainMenuWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
 	{
-		FSlateApplication::Get().SetKeyboardFocus(SlatePlayButton);
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
 	}
+	return Navigator;
+}
+
+void UKiteSurfMainMenuWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
+	Navigator.AddButton(SlatePlayButton, [this]() { OnPlayClicked(); });
+	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
+	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });
 }
 
 FReply UKiteSurfMainMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (bIntroPlaying)
+	{
+		SkipIntro();
+		return FReply::Handled();
+	}
+
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right)
 	{
 		OnQuitClicked();

@@ -20,6 +20,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float MasterVolume;
 
+	/** Music volume (0.0 to 1.0, default 0.6) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float MusicVolume;
+
+	/** Ambient volume (0.0 to 1.0, default 1.0) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float AmbientVolume;
+
+	/** Effects volume (0.0 to 1.0, default 1.0) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float EffectsVolume;
+
 	/** Whether onboarding prompts should be skipped */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSkipOnboarding;
@@ -43,6 +55,14 @@ public:
 	/** Chosen board, as an EBoardSize index (default 1, the 138) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 BoardSizeIndex;
+
+	/** Use the controller's motion sensors as the bar (off by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bMotionBar;
+
+	/** Controller vibration (on by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bHaptics;
 
 	/** What is in the water at the spot (all on by default) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")

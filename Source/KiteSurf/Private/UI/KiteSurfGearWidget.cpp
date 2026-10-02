@@ -3,6 +3,11 @@
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfSaveGame.h"
+#include "UI/KiteSurfGearPreview.h"
+#include "KiteSurf.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
+#include "Widgets/Images/SImage.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
@@ -63,8 +68,193 @@ void UKiteSurfGearWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	LoadChoices();
+	SpawnPreview();
 	UpdateTexts();
 	FocusFirst();
+}
+
+void UKiteSurfGearWidget::NativeDestruct()
+{
+	if (Preview)
+	{
+		Preview->Destroy();
+		Preview = nullptr;
+	}
+	PreviewBrush.SetResourceObject(nullptr);
+	Super::NativeDestruct();
+}
+
+void UKiteSurfGearWidget::SpawnPreview()
+{
+	UWorld* World = GetWorld();
+	if (Preview || !World)
+	{
+		return;
+	}
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Preview = World->SpawnActor<AKiteSurfGearPreview>(AKiteSurfGearPreview::GetStageLocation(), FRotator::ZeroRotator, Params);
+	UE_LOG(LogKiteSurf, Log, TEXT("Gear preview %s in %s, picture %s"), Preview ? TEXT("spawned") : TEXT("NOT spawned"), *World->GetMapName(),
+		Preview && Preview->GetRenderTarget() ? TEXT("ready") : TEXT("missing"));
+	if (Preview && Preview->GetRenderTarget())
+	{
+		PreviewBrush.SetResourceObject(Preview->GetRenderTarget());
+		PreviewBrush.ImageSize = FVector2D(AKiteSurfGearPreview::ImageWidth, AKiteSurfGearPreview::ImageHeight);
+		PreviewBrush.DrawAs = ESlateBrushDrawType::Image;
+	}
+}
+
+void UKiteSurfGearWidget::UpdatePreview()
+{
+	if (Preview)
+	{
+		Preview->ShowGear(CurrentRider, CurrentKiteModel, GetEffectiveKiteSizeM2(), CurrentBoardSize);
+	}
+	auto Set = [](const TSharedPtr<STextBlock>& Block, const FString& Text)
+	{
+		if (Block.IsValid())
+		{
+			Block->SetText(FText::FromString(Text));
+		}
+	};
+	Set(PreviewName, RiderCharacter::GetDisplayName(CurrentRider));
+	Set(PreviewDescription, RiderCharacter::GetDescription(CurrentRider));
+	FString KiteName = KiteGear::GetDisplayName(CurrentKiteModel);
+	int32 Space = INDEX_NONE;
+	if (KiteName.FindChar(TEXT(' '), Space))
+	{
+		KiteName.LeftInline(Space); // "LOOP (3 STRUT)" -> "LOOP"
+	}
+	Set(PreviewRig, FString::Printf(TEXT("%s %.0f m  /  %s"), *KiteName, GetEffectiveKiteSizeM2(), KiteGear::GetDisplayName(CurrentBoardSize)));
+}
+
+TSharedRef<SWidget> UKiteSurfGearWidget::BuildPreviewPanel()
+{
+	auto Arrow = [](const TCHAR* Glyph, TFunction<void()> OnClicked)
+	{
+		return SNew(SButton)
+			.IsFocusable(false)
+			.VAlign(VAlign_Center)
+			.OnClicked_Lambda([OnClicked]()
+			{
+				OnClicked();
+				return FReply::Handled();
+			})
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Glyph))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 20))
+				.Margin(FMargin(10.0f, 2.0f))
+			];
+	};
+
+	constexpr float PreviewWidth = 400.0f;
+	const float PreviewHeight = PreviewWidth * AKiteSurfGearPreview::ImageHeight / AKiteSurfGearPreview::ImageWidth;
+
+	return SNew(SVerticalBox)
+		// The rider, with arrows to go through them.
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(14.0f, 14.0f, 14.0f, 2.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				Arrow(TEXT("<"), [this]() { CycleRiderBack(); })
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			[
+				SAssignNew(PreviewName, STextBlock)
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 24))
+				.ColorAndOpacity(TitleColor)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				Arrow(TEXT(">"), [this]() { CycleRider(); })
+			]
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.HAlign(HAlign_Center)
+		.Padding(14.0f, 0.0f, 14.0f, 8.0f)
+		[
+			SAssignNew(PreviewDescription, STextBlock)
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
+			.ColorAndOpacity(HintColor)
+		]
+		// The stand, turning; drag it to turn it by hand.
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.HAlign(HAlign_Center)
+		.Padding(14.0f, 0.0f)
+		[
+			SNew(SBox)
+			.WidthOverride(PreviewWidth)
+			.HeightOverride(PreviewHeight)
+			[
+				SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(FLinearColor(0.02f, 0.06f, 0.12f, 1.0f))
+				.Padding(0.0f)
+				.Cursor(EMouseCursor::GrabHand)
+				.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent& Event)
+				{
+					if (Event.GetEffectingButton() != EKeys::LeftMouseButton)
+					{
+						return FReply::Unhandled();
+					}
+					bDraggingPreview = true;
+					return FReply::Handled();
+				})
+				.OnMouseButtonUp_Lambda([this](const FGeometry&, const FPointerEvent&)
+				{
+					bDraggingPreview = false;
+					return FReply::Handled();
+				})
+				.OnMouseMove_Lambda([this](const FGeometry&, const FPointerEvent& Event)
+				{
+					if (!bDraggingPreview || !Event.IsMouseButtonDown(EKeys::LeftMouseButton))
+					{
+						bDraggingPreview = false;
+						return FReply::Unhandled();
+					}
+					if (Preview)
+					{
+						Preview->TurnBy(Event.GetCursorDelta().X * 0.6f);
+					}
+					return FReply::Handled();
+				})
+				[
+					SNew(SImage)
+					.Image_Lambda([this]() -> const FSlateBrush* { return Preview ? &PreviewBrush : nullptr; })
+				]
+			]
+		]
+		// What is rigged.
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(14.0f, 8.0f, 14.0f, 2.0f)
+		.HAlign(HAlign_Center)
+		[
+			SAssignNew(PreviewRig, STextBlock)
+			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 13))
+			.ColorAndOpacity(LabelColor)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(14.0f, 0.0f, 14.0f, 12.0f)
+		.HAlign(HAlign_Center)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("Drag to turn")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			.ColorAndOpacity(HintColor)
+		];
 }
 
 TSharedRef<SWidget> UKiteSurfGearWidget::BuildChoiceRow(const TCHAR* Label, TSharedPtr<SButton>& OutButton, TSharedPtr<STextBlock>& OutValueText, TSharedPtr<STextBlock>& OutDescriptionText, TFunction<void()> OnClicked)
@@ -91,6 +281,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::BuildChoiceRow(const TCHAR* Label, TSha
 			.VAlign(VAlign_Center)
 			[
 				SAssignNew(OutButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([OnClicked]()
 				{
@@ -123,6 +314,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 	}
 
 	LoadChoices();
+	SpawnPreview();
 	BackgroundTexture = KiteSurfMenuStyle::LoadBackgroundTexture();
 	KiteSurfMenuStyle::SetupBackgroundBrush(BackgroundBrush, BackgroundTexture);
 
@@ -168,6 +360,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			.VAlign(VAlign_Center)
 			[
 				SAssignNew(WindSlider, SSlider)
+				.IsFocusable(false)
 				.Value((CurrentWindKnots - MinWindKnots) / (MaxWindKnots - MinWindKnots))
 				.StepSize(1.0f / (MaxWindKnots - MinWindKnots))
 				.OnValueChanged_Lambda([this](float Normalised)
@@ -214,6 +407,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SAssignNew(ConfirmButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([this]()
 				{
@@ -230,7 +424,8 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
-				SNew(SButton)
+				SAssignNew(BackButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([this]()
 				{
@@ -299,6 +494,14 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			[
 				KiteSurfMenuStyle::BuildPanel(SpotRows)
 			]
+		]
+		// Who and what: the rider, kite and board as chosen, turning on a stand.
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Top)
+		.Padding(18.0f, 0.0f, 0.0f, 0.0f)
+		[
+			KiteSurfMenuStyle::BuildPanel(BuildPreviewPanel())
 		];
 
 	TSharedRef<SWidget> Root = SNew(SBox)
@@ -322,7 +525,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 	}
 	else
 	{
-		Root = KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, Root);
+		Root = KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, KiteSurfMenuStyle::MenuLoopBrush(GetGameInstance()), Root);
 	}
 
 	UpdateTexts();
@@ -353,6 +556,13 @@ void UKiteSurfGearWidget::CycleRider()
 	UpdateTexts();
 }
 
+void UKiteSurfGearWidget::CycleRiderBack()
+{
+	const int32 Count = static_cast<int32>(ERiderCharacter::Count);
+	CurrentRider = RiderCharacter::FromIndex((static_cast<int32>(CurrentRider) + Count - 1) % Count);
+	UpdateTexts();
+}
+
 void UKiteSurfGearWidget::CycleKiteModel()
 {
 	CurrentKiteModel = KiteGear::Next(CurrentKiteModel);
@@ -372,6 +582,32 @@ void UKiteSurfGearWidget::SetKiteSizeM2(float SizeM2)
 {
 	CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SizeM2) ? SizeM2 : 0.0f;
 	UpdateTexts();
+}
+
+FKiteMenuNavigator::FItem UKiteSurfGearWidget::MakeKiteSizeItem()
+{
+	// Accept steps on to the next size as a click does; left and right step either way through
+	// recommended, 5 m ... 17 m.
+	FKiteMenuNavigator::FItem Item;
+	Item.Activate = [this]() { CycleKiteSize(); };
+	Item.Adjust = [this](int32 Direction)
+	{
+		const TConstArrayView<float> Sizes = UKiteComponent::GetKiteSizesM2();
+		// Position in the cycle: 0 is "recommended", then the sizes.
+		const int32 Position = Sizes.IndexOfByKey(CurrentKiteSizeM2) + 1;
+		const int32 Count = Sizes.Num() + 1;
+		const int32 Next = ((Position + Direction) % Count + Count) % Count;
+		SetKiteSizeM2(Next == 0 ? 0.0f : Sizes[Next - 1]);
+	};
+	const TWeakPtr<SButton> WeakButton = KiteSizeButton;
+	Item.Highlight = [WeakButton](bool bSelected)
+	{
+		if (const TSharedPtr<SButton> Pinned = WeakButton.Pin())
+		{
+			Pinned->SetBorderBackgroundColor(bSelected ? FLinearColor(1.0f, 0.8f, 0.15f) : FLinearColor::White);
+		}
+	};
+	return Item;
 }
 
 void UKiteSurfGearWidget::CycleBoardSize()
@@ -430,6 +666,14 @@ void UKiteSurfGearWidget::UpdateTexts()
 		}
 	};
 	Set(WindText, FString::Printf(TEXT("%.0f kn"), CurrentWindKnots));
+	if (WindSlider.IsValid())
+	{
+		const float Normalised = (CurrentWindKnots - MinWindKnots) / (MaxWindKnots - MinWindKnots);
+		if (!FMath::IsNearlyEqual(WindSlider->GetValue(), Normalised, 0.001f))
+		{
+			WindSlider->SetValue(Normalised); // moved by the keys rather than the mouse
+		}
+	}
 	Set(KiteSizeText, GetKiteSizeText());
 	Set(KiteSizeDescription, GetPowerText());
 	Set(KiteModelText, KiteGear::GetDisplayName(CurrentKiteModel));
@@ -444,6 +688,7 @@ void UKiteSurfGearWidget::UpdateTexts()
 	Set(IslandsDescription, TEXT("Sand islands with palms, further out. Something to ride round."));
 	Set(SharksText, bSharks ? TEXT("ON") : TEXT("OFF"));
 	Set(SharksDescription, TEXT("They patrol in circles, and come for a rider who is down in the water."));
+	UpdatePreview();
 }
 
 void UKiteSurfGearWidget::Confirm()
@@ -501,17 +746,55 @@ void UKiteSurfGearWidget::Cancel()
 
 void UKiteSurfGearWidget::FocusFirst()
 {
-	if (ConfirmButton.IsValid())
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		FSlateApplication::Get().SetKeyboardFocus(ConfirmButton);
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
+}
+
+FKiteMenuNavigator& UKiteSurfGearWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
+	{
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
+	}
+	return Navigator;
+}
+
+void UKiteSurfGearWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
+	Navigator.AddSlider(WindSlider, [this](int32 Direction) { SetWindKnots(CurrentWindKnots + Direction); });
+	Navigator.AddItem(MakeKiteSizeItem());
+	Navigator.AddButton(KiteModelButton, [this]() { CycleKiteModel(); }, true);
+	Navigator.AddButton(BoardButton, [this]() { CycleBoardSize(); }, true);
+	Navigator.AddButton(RiderButton, [this]() { CycleRider(); }, true);
+	Navigator.AddButton(SandbarsButton, [this]() { ToggleSandbars(); }, true);
+	Navigator.AddButton(IslandsButton, [this]() { ToggleIslands(); }, true);
+	Navigator.AddButton(SharksButton, [this]() { ToggleSharks(); }, true);
+	Navigator.DefaultIndex = Navigator.AddButton(ConfirmButton, [this]() { Confirm(); });
+	Navigator.AddButton(BackButton, [this]() { Cancel(); });
 }
 
 FReply UKiteSurfGearWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right)
 	{
+		KiteSurfMenuStyle::PlayMenuSound(this, EKiteMenuSound::Back);
 		Cancel();
 		return FReply::Handled();
 	}

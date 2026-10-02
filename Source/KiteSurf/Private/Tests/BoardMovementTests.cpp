@@ -294,34 +294,48 @@ bool FKiteSurfJumpOnlyFromPlaning::RunTest(const FString& Parameters)
 			{
 				Pawn->SetActorLocation(FVector::ZeroVector);
 
-				// Case 1: In displacement state with low speed (< 8 knots)
-				BoardComp->Velocity = FVector(200.0f, 0.0f, 0.0f);
-				BoardComp->SetBoardState(EBoardState::Displacement);
-				BoardComp->SetEdgeInput(0.8f);
-				TestEqual(TEXT("Jump rejected when in Displacement state"), BoardComp->Jump(), EJumpRejectReason::NotPlaning);
-				TestEqual(TEXT("State remains Displacement"), BoardComp->GetBoardState(), EBoardState::Displacement);
+				// A rider can always pop while they are up on the board on the water.
 
-				// Case 2: In Planing state, but edge input is below minimum (0.4)
+				// No edge at all: still a pop.
 				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
 				BoardComp->SetBoardState(EBoardState::Planing);
-				BoardComp->SetEdgeInput(0.2f);
-				TestEqual(TEXT("Jump rejected when EdgeInput < 0.4"), BoardComp->Jump(), EJumpRejectReason::NotEdged);
-				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
+				BoardComp->SetEdgeInput(0.0f);
+				TestEqual(TEXT("Popping with no edge works"), BoardComp->Jump(), EJumpRejectReason::None);
+				TestEqual(TEXT("and the rider is in the air"), BoardComp->GetBoardState(), EBoardState::Airborne);
+				const float PlainPopVz = BoardComp->Velocity.Z;
+				TestTrue(FString::Printf(TEXT("from the legs alone: 2 to 3 m/s (%.0f cm/s)"), PlainPopVz), PlainPopVz > 200.0f && PlainPopVz < 300.0f);
 
-				// Case 3: In Planing state, but speed is below minimum (8 kn = 411.5 cm/s)
+				// Already in the air: there is nothing to pop from.
+				TestEqual(TEXT("Popping again in the air is refused"), BoardComp->Jump(), EJumpRejectReason::NotPlaning);
+
+				// Slow, below planing speed but still up on the board: a pop.
+				Pawn->SetActorLocation(FVector::ZeroVector);
 				BoardComp->Velocity = FVector(350.0f, 0.0f, 0.0f);
-				BoardComp->SetBoardState(EBoardState::Planing);
-				BoardComp->SetEdgeInput(0.8f);
-				TestEqual(TEXT("Jump rejected when Speed < 8 knots"), BoardComp->Jump(), EJumpRejectReason::TooSlow);
-				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
+				BoardComp->SetBoardState(EBoardState::Displacement);
+				TestEqual(TEXT("Popping below planing speed works"), BoardComp->Jump(), EJumpRejectReason::None);
 
-				// Case 4: Planing, speed >= 8 knots, edge input >= 0.4 -> Success
-				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
+				// Weight back on the tail pushes off harder.
+				Pawn->SetActorLocation(FVector::ZeroVector);
+				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f);
 				BoardComp->SetBoardState(EBoardState::Planing);
-				BoardComp->SetEdgeInput(0.8f);
-				TestEqual(TEXT("Jump succeeds when planing, fast enough, and edging hard"), BoardComp->Jump(), EJumpRejectReason::None);
-				TestEqual(TEXT("State transitions to Airborne"), BoardComp->GetBoardState(), EBoardState::Airborne);
-				TestTrue(TEXT("Vertical velocity positive on takeoff"), BoardComp->Velocity.Z > 200.0f);
+				BoardComp->SetWeightShift(-1.0f);
+				TestEqual(TEXT("Popping with the weight back works"), BoardComp->Jump(), EJumpRejectReason::None);
+				TestTrue(TEXT("and is stronger than a plain pop"), BoardComp->Velocity.Z > PlainPopVz + 50.0f);
+				BoardComp->SetWeightShift(0.0f);
+
+				// Stopped and floating, the board is under the water: no pop.
+				Pawn->SetActorLocation(FVector::ZeroVector);
+				BoardComp->Velocity = FVector::ZeroVector;
+				BoardComp->SetBoardState(EBoardState::Displacement);
+				for (int32 Step = 0; Step < 120; ++Step)
+				{
+					BoardComp->Velocity.X = 0.0f;
+					BoardComp->Velocity.Y = 0.0f;
+					BoardComp->TickComponent(1.0f / 60.0f, LEVELTICK_All, nullptr);
+				}
+				TestTrue(TEXT("At rest the rider is floating"), BoardComp->IsFloating());
+				TestEqual(TEXT("Popping while floating is refused"), BoardComp->Jump(), EJumpRejectReason::NotPlaning);
+				TestTrue(TEXT("and the rider stays in the water"), BoardComp->GetBoardState() != EBoardState::Airborne);
 			}
 		}
 

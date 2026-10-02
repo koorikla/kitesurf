@@ -52,6 +52,12 @@ UBoardMovementComponent::UBoardMovementComponent()
 	AirWeightShiftPitchDeg = 30.0f;
 	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
 	EdgedLiftoffWeightBonus = 3.0f;
+	LoadRatePerSec = 2.5f;        // a full crouch in 0.4 s
+	LoadReleaseRatePerSec = 6.0f;
+	LoadGripBonus = 1.5f;
+	LoadPopBonus = 0.6f;
+	LoadAmount = 0.0f;
+	bLoadHeld = false;
 	AirSpinRate = 200.0f;
 	TailWeightPopBonus = 0.5f;
 	AutoHeelDeg = 12.0f;
@@ -160,7 +166,7 @@ FString UBoardMovementComponent::JumpRejectReasonToString(EJumpRejectReason Reas
 	switch (Reason)
 	{
 	case EJumpRejectReason::NotPlaning:
-		return TEXT("Not planing");
+		return TEXT("Get up on the board first");
 	case EJumpRejectReason::TooSlow:
 		return TEXT("Need more speed");
 	case EJumpRejectReason::NotEdged:
@@ -172,31 +178,17 @@ FString UBoardMovementComponent::JumpRejectReasonToString(EJumpRejectReason Reas
 
 EJumpRejectReason UBoardMovementComponent::Jump()
 {
-	// Jump only allowed while in Planing state
-	if (CurrentBoardState != EBoardState::Planing)
+	// A rider can always pop off the water: with or without an edge, fast or slow. What they
+	// cannot do is pop when they are not on the board on the water: already in the air, in the
+	// middle of a crash, or floating with the board under the surface.
+	const bool bOnTheWater = CurrentBoardState == EBoardState::Planing || CurrentBoardState == EBoardState::Displacement;
+	if (!bOnTheWater || bIsCrashing || IsFloating())
 	{
 		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::NotPlaning);
 		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
 		return EJumpRejectReason::NotPlaning;
 	}
-
-	// Board speed must be at least JumpMinSpeedKnots
 	const float SpeedKnots = KiteUnits::CmSToKnots(Velocity.Size2D());
-	if (SpeedKnots < JumpMinSpeedKnots - KINDA_SMALL_NUMBER)
-	{
-		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::TooSlow);
-		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
-		return EJumpRejectReason::TooSlow;
-	}
-
-	// The edge must be loaded: either turning or with the weight back on the tail, by at least 0.4
-	const float EdgeLoad = FMath::Max(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift);
-	if (EdgeLoad < JumpMinEdgeInput - KINDA_SMALL_NUMBER)
-	{
-		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::NotEdged);
-		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
-		return EJumpRejectReason::NotEdged;
-	}
 
 	float UpwardKiteForce = 0.0f;
 	if (const AActor* OwnerActor = GetOwner())
@@ -207,7 +199,11 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 		}
 	}
 
-	const float PopImpulse = PopImpulseKgCmPerS * (1.0f + TailWeightPopBonus * FMath::Max(-CurrentWeightShift, 0.0f));
+	// The legs push off harder with the weight back and from a loaded crouch, and less from a
+	// board that is part sunk.
+	const float OnSurface = FloatSubmersionCm > 0.0f ? FMath::Clamp(1.0f - CurrentFloatDepthCm / FloatSubmersionCm, 0.0f, 1.0f) : 1.0f;
+	const float PopImpulse = PopImpulseKgCmPerS * OnSurface * (1.0f + TailWeightPopBonus * FMath::Max(-CurrentWeightShift, 0.0f)) * (1.0f + LoadPopBonus * LoadAmount);
+	LoadAmount = 0.0f;
 	const float Impulse = PopImpulse + EdgeReleaseSeconds * UpwardKiteForce;
 	const float EffectiveMass = FMath::Max(MassKg, 1.0f);
 	const float VerticalDeltaV = Impulse / EffectiveMass;
@@ -423,7 +419,12 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		// overhead or looping it does this without a pop.
 		// A rider who is edging (carving, or with their weight back) leans against the lines with
 		// the board dug in, and can hold a much harder pull down until they let the edge go.
-		const float EdgeHold = FMath::Clamp(FMath::Max(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift), 0.0f, 1.0f);
+		// The load: held, the rider sinks into a crouch with their weight over the back of the
+		// board and drives the edge in. It builds over a moment and lets go quickly.
+		const bool bCanLoad = bLoadHeld && !bIsAirborne && !bIsCrashing && !IsFloating();
+		LoadAmount = FMath::Clamp(LoadAmount + (bCanLoad ? LoadRatePerSec : -LoadReleaseRatePerSec) * DeltaTime, 0.0f, 1.0f);
+
+		const float EdgeHold = FMath::Clamp(FMath::Max3(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift, LoadAmount), 0.0f, 1.0f);
 		const float LiftoffFactor = LiftoffWeightFactor + EdgedLiftoffWeightBonus * EdgeHold;
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffFactor - 1.0f))
 		{
@@ -505,8 +506,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			}
 
 			// Sideways grip. Weight on the tail digs the rail in and bites harder; on the nose the board lets go.
+			// Weight back, and more so a loaded crouch, digs the edge in against the lines.
 			const float EdgeFactor = FMath::Abs(CurrentEdgeInput);
-			const float PressureGripScale = FMath::Pow(TailWeightGripScale, -CurrentWeightShift);
+			const float PressureGripScale = FMath::Pow(TailWeightGripScale, -CurrentWeightShift) * (1.0f + LoadGripBonus * LoadAmount);
 			GripRatePerS = (BaseGripKgPerS + EdgeGripKgPerS * EdgeFactor) * PressureGripScale / EffectiveMass;
 
 			// Edge Drive: the rail lift of a heeled board turns the sideways grip force into forward

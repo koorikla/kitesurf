@@ -121,7 +121,42 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|State")
 	void SetBoardState(EBoardState InState) { CurrentBoardState = InState; }
 
-	/** Attempt to trigger a kite-powered jump. Returns EJumpRejectReason::None if jump conditions were met, or specific rejection reason. */
+	/**
+	 * Holds the load: the rider crouches with their weight over the back of the board and drives
+	 * the edge in against the lines. Lateral grip rises by up to LoadGripBonus, the board is held
+	 * down as with a full edge, and the pop that follows is up to LoadPopBonus stronger. How much
+	 * that raises the line tension depends on where the kite is: an edge resists a pull across
+	 * the board, not one along it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	void SetLoadHeld(bool bHeld) { bLoadHeld = bHeld; }
+
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	bool IsLoadHeld() const { return bLoadHeld; }
+
+	/** How far into the crouch the rider is, 0..1. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLoadAmount() const { return LoadAmount; }
+
+	/** How fast the crouch builds while held, and lets go when released (1/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float LoadRatePerSec;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float LoadReleaseRatePerSec;
+
+	/** Extra lateral grip at full load, as a fraction. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float LoadGripBonus;
+
+	/** Extra pop from a full load, as a fraction. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float LoadPopBonus;
+
+	/**
+	 * Pops the rider off the water. Always possible while they are up on the board on the water;
+	 * refused (NotPlaning) in the air, during a crash, or while floating.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	EJumpRejectReason Jump();
 
@@ -407,6 +442,8 @@ private:
 	float CurrentFloatDepthCm;
 	int32 ResetCount = 0;
 	EBoardSize BoardSize = EBoardSize::Medium;
+	float LoadAmount = 0.0f;
+	bool bLoadHeld = false;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
 

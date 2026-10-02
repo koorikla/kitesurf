@@ -4,6 +4,8 @@
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
 #include "RiderCharacter.h"
+#include "KiteMotionBar.h"
+#include "RiderRig.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -13,13 +15,31 @@ class UCameraComponent;
 class UWindComponent;
 class UBoardMovementComponent;
 class UBoardWakeComponent;
+class UWindStreakComponent;
 class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
 class UAudioComponent;
 class USoundBase;
 
-/** Volume and pitch for the three sound loops: wind in the ears, water under the board, lines under load. */
+/** What the rider is doing, as far as it can be heard. */
+struct FRideAudioState
+{
+	/** Wind past the rider's ears: true wind less their own motion (knots). */
+	float ApparentWindKnots = 0.0f;
+	float BoardSpeedKnots = 0.0f;
+	bool bOnWater = true;
+	float LineTensionN = 0.0f;
+	/** Air over the kite (m/s): about the wind when it is parked, several times that through a loop. */
+	float KiteAirspeedMS = 0.0f;
+	/** The canopy has no load in it: slack lines, a stall, or the bar right out. 0..1. */
+	float KiteLuff = 0.0f;
+	/** How hard the edge is driven: carving or a loaded crouch. 0..1. */
+	float EdgeEffort = 0.0f;
+	bool bAirborne = false;
+};
+
+/** Volume and pitch for each sound loop, and how much of the music's second layer to play. */
 struct FRideAudioMix
 {
 	float WindVolume = 0.0f;
@@ -28,6 +48,24 @@ struct FRideAudioMix
 	float WaterPitch = 1.0f;
 	float LineVolume = 0.0f;
 	float LinePitch = 1.0f;
+	/** Spray off a hard edge. */
+	float SprayVolume = 0.0f;
+	/** The kite moving through the air. */
+	float KiteVolume = 0.0f;
+	float KitePitch = 1.0f;
+	/** A luffing canopy flapping. */
+	float FlutterVolume = 0.0f;
+	/** The music's in-the-air layer, 0..1 of the music volume. */
+	float AirMusic = 0.0f;
+};
+
+/** Something that happened to the rider that has its own sound. */
+enum class ERideSound : uint8
+{
+	KiteCrash,
+	Relaunch,
+	Aground,
+	Shark
 };
 
 UCLASS()
@@ -108,6 +146,7 @@ public:
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
 	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
+	UWindStreakComponent* GetWindStreaks() const { return WindStreaks.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
@@ -131,8 +170,117 @@ public:
 	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
 	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
 
+	/** Holds or lets go of the loaded crouch (the jump button held down). */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void SetLoadHeld(bool bHeld);
+
+	/** The jump button let go: pops with whatever load has built up, then stands the rider up. True if they left the water. */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	bool ReleaseLoadAndPop();
+
+	/** Brief controller vibration on the pop, landings, crashes, the kite hitting the water and a hard yank on the lines. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Haptics")
+	void SetHapticsEnabled(bool bEnabled) { bHapticsEnabled = bEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Input|Haptics")
+	bool AreHapticsEnabled() const { return bHapticsEnabled; }
+
+	/** One short buzz: strength 0..1, for this long, on the heavy motors (a thump) or the light ones (a tick). Does nothing when haptics are off. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Haptics")
+	void PlayHaptic(float Intensity, float DurationSeconds, bool bHeavy);
+
+	/** How hard and how long a landing of this many g buzzes. */
+	static void GetLandingHaptic(float LandingG, float& OutIntensity, float& OutDurationSeconds);
+
+	/** Watches the line tension for a sudden hard pull (a loop's yank) and buzzes once for it. Tick calls this. */
+	void UpdateTensionHaptic(float LineTensionN, float DeltaTime);
+
+	/** How many buzzes have been asked for, and the last one, for tests. */
+	int32 GetHapticCount() const { return HapticCount; }
+	float GetLastHapticIntensity() const { return LastHapticIntensity; }
+	float GetLastHapticDuration() const { return LastHapticDuration; }
+
+	/** Line tension above which the lines' pull is felt as a yank (N). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Haptics")
+	float HapticYankTensionN = 2200.0f;
+
+	/**
+	 * Uses the controller's motion sensors as the bar: tilt it like a bar to steer, tip its top
+	 * towards you to pull the bar in. While it is on and a controller with sensors is found, the
+	 * right stick, triggers and bar keys no longer move the bar; without one they carry on working.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void SetMotionBarEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	bool IsMotionBarEnabled() const { return bMotionBarEnabled; }
+
+	/** True while the bar is actually following a controller's motion sensors. */
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	bool IsMotionBarActive() const { return bMotionBarActive; }
+
+	/** Takes the way the controller is held now as "bar level, where it is". Done when the motion bar is switched on and on reset. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void RecentreMotionBar();
+
+	/** The controller being read, for the settings screen; empty if none. */
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	FString GetMotionDeviceName() const;
+
+	/** How the controller is being held, as the motion bar sees it: roll right and pitch towards the player (deg). */
+	FVector2D GetMotionTiltDeg() const { return FVector2D(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg()); }
+
+	/** The last reading taken from the controller. */
+	const FKiteMotionSample& GetLastMotionSample() const { return LastMotionSample; }
+
+	/** Where motion readings come from. Tests put a scripted controller here; otherwise it is the platform's. */
+	void SetMotionSource(TSharedPtr<IKiteMotionSource> InSource);
+
+	/** How tilt becomes steering and bar position. */
+	FMotionBarMapping MotionBarMapping;
+
 	/** How loud and at what pitch each loop should play for what the rider is doing. Volumes 0..1, pitch 1 = as recorded. */
+	static FRideAudioMix ComputeAudioMix(const FRideAudioState& State);
+
+	/** The same for a rider with a parked kite and no edge: wind, water and lines only. */
 	static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN);
+
+	/** Plays the sound for something that happened. Running aground and a shark replace the splash of the crash they cause. */
+	void PlayRideSound(ERideSound Sound);
+
+	/** How many ride sounds have been asked for, and the last one, for tests. */
+	int32 GetRideSoundCount() const { return RideSoundCount; }
+	ERideSound GetLastRideSound() const { return LastRideSound; }
+
+	/** Music volume, 0..1: the ride's music follows it at once. */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetMusicVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetMusicVolume() const { return MusicVolume; }
+
+	/** Ambient volume, 0..1: scales the wind, water, spray, line, kite and flutter loops. */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetAmbientVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetAmbientVolume() const { return AmbientVolume; }
+
+	/** Effects volume, 0..1: scales the one-shots (pop, landing, crashes, reset and the rest). */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetEffectsVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetEffectsVolume() const { return EffectsVolume; }
+
+	/** The volume the last one-shot was played at, after the effects volume, for tests. */
+	float GetLastOneShotVolume() const { return LastOneShotVolume; }
+
+	UAudioComponent* GetMusicBase() const { return MusicBaseComponent.Get(); }
+	UAudioComponent* GetMusicAir() const { return MusicAirComponent.Get(); }
+	UAudioComponent* GetSprayLoop() const { return SprayLoopComponent.Get(); }
+	UAudioComponent* GetKiteLoop() const { return KiteLoopComponent.Get(); }
+	UAudioComponent* GetFlutterLoop() const { return FlutterLoopComponent.Get(); }
 
 	/** The mix the loops are playing at now. */
 	const FRideAudioMix& GetAudioMix() const { return AudioMix; }
@@ -161,7 +309,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rider")
 	ERiderCharacter GetRiderCharacter() const { return RiderCharacter; }
 
-	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderStaticMesh.Get(); }
+	/** The jointed rider's torso (pelvis to head). */
+	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderTorso.Get(); }
+
+	/** The jointed rider's limb parts: thigh, shin, upper arm and forearm for the left side, then the same for the right. */
+	const TArray<TObjectPtr<UStaticMeshComponent>>& GetRiderLimbs() const { return RiderLimbs; }
+
+	/** How the jointed rider is posed now: where the pelvis, knees, feet, elbows and hands are. */
+	const FRiderRigPose& GetRiderRigPose() const { return RiderPose; }
 
 	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
@@ -218,6 +373,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderFloatLeanDeg;
 
+	/** Extra lean away from the kite in a full loaded crouch (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderLoadLeanDeg;
+
 	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderAirHangLeanDeg;
@@ -230,7 +389,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderSwitchTurnRateDeg;
 
-	/** The harness hook on the rider's body: forward, right, up from the feet (cm). */
+	/** The harness hook on the rider's body: forward, right, up from the pelvis (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	FVector HarnessHookOffsetCm;
 
@@ -247,9 +406,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USkeletalMeshComponent> RiderMesh;
 
-	/** The posed riders (Santa, wetsuit); the robot uses the skeletal RiderMesh. */
+	/** The jointed riders (Santa, wetsuit): a torso and eight limb parts, posed every frame by RiderRig. The robot uses the skeletal RiderMesh. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UStaticMeshComponent> RiderStaticMesh;
+	TObjectPtr<UStaticMeshComponent> RiderTorso;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TArray<TObjectPtr<UStaticMeshComponent>> RiderLimbs;
+
+	FRiderRigPose RiderPose;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rider")
 	ERiderCharacter RiderCharacter;
@@ -272,6 +436,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardWakeComponent> Wake;
 
+	/** Wind lines on the water round the rider: how the wind's direction is read off the sea. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UWindStreakComponent> WindStreaks;
+
 	// Sound: loops that play all the time and are faded and pitched by UpdateAudioModulation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> WindLoopComponent;
@@ -281,6 +449,34 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> LineLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> SprayLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> KiteLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> FlutterLoopComponent;
+
+	/** The ride's music: two loops of the same length played in step. The second comes in while the rider is in the air. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> MusicBaseComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> MusicAirComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> KiteCrashSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> RelaunchSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> AgroundSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> SharkSound;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<USoundBase> PopSound;
@@ -332,7 +528,8 @@ private:
 	void OnEdgeTriggered(const FInputActionValue& Value);
 	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void UpdateMouseBar();
-	void OnJumpTriggered(const FInputActionValue& Value);
+	void OnJumpPressed(const FInputActionValue& Value);
+	void OnJumpReleased(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
 	void OnResetTriggered(const FInputActionValue& Value);
 
@@ -355,6 +552,35 @@ private:
 	bool bLoggedTelemetryHeader = false;
 
 	FRideAudioMix AudioMix;
+	void PlayOneShot(USoundBase* Sound, float Volume, float Pitch = 1.0f);
+	float MusicVolume = 0.6f;
+	float AmbientVolume = 1.0f;
+	float EffectsVolume = 1.0f;
+	float LastOneShotVolume = 0.0f;
+	int32 RideSoundCount = 0;
+	ERideSound LastRideSound = ERideSound::KiteCrash;
+	/** Set by running aground or a shark: the crash that follows keeps quiet, as they have their own sound. */
+	bool bSkipNextCrashSplash = false;
+
+	UFUNCTION()
+	void HandleKiteRelaunched();
+
+	void UpdateMotionBar(float DeltaTime);
+	TSharedPtr<IKiteMotionSource> MotionSource;
+	FMotionBarFilter MotionFilter;
+	FKiteMotionSample LastMotionSample;
+	bool bMotionBarEnabled = false;
+	bool bMotionBarActive = false;
+	bool bMotionRecentrePending = false;
+
+	UFUNCTION()
+	void HandleKiteCrashed(FVector Location);
+	bool bHapticsEnabled = true;
+	int32 HapticCount = 0;
+	float LastHapticIntensity = 0.0f;
+	float LastHapticDuration = 0.0f;
+	float YankCooldownSeconds = 0.0f;
+	bool bAboveYankTension = false;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);
 

@@ -92,6 +92,16 @@ public:
 	static float KnotsToCmPerSec(float Knots);
 
 	/**
+	 * Which way the wind blows as seen on screen, for a view looking along CameraYawDeg: a unit
+	 * vector with x to the right and y down the screen, so wind from behind the camera points up.
+	 * Zero in a calm.
+	 */
+	static FVector2D GetWindOnScreen(const FVector& Wind, float CameraYawDeg);
+
+	/** Where the wind comes from relative to the view, in words: "from behind", "from the left", ... */
+	static FString DescribeWindSource(const FVector2D& WindOnScreen);
+
+	/**
 	 * Where the two ends of the control bar are drawn. The bar slides down the throw as it is
 	 * pulled in (Sheet 0 at ThrowTop, 1 at ThrowTop + ThrowLength) and the end of the hand that
 	 * is pulling drops towards the rider: steer right lowers the right end.
@@ -107,7 +117,7 @@ protected:
 
 	void DrawTelemetry(AKiteRiderPawn* RiderPawn);
 	void DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius);
-	void DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius);
+	void DrawWindFlag(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Size);
 	void DrawFPS(float ScreenX, float ScreenY);
 	void DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
 	void DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);

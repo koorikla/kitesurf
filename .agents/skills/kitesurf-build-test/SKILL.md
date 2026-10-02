@@ -64,7 +64,11 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    - `kitesurf.Jump`, `kitesurf.TogglePause`, `kitesurf.OpenSettings` and `kitesurf.OpenGear` do what the keys and buttons do.
    - `kitesurf.Wind <knots>` sets the base wind speed, e.g. `kitesurf.After 200 kitesurf.Wind 2` to drop the kite and leave the rider floating.
    - `kite.Physics.Debug 1` draws the winds, forces and numbers at the kite and the rider and a gust bar (colours and scales in `docs/ARCHITECTURE.md`); `kite.Physics.Debug 2` also logs a `kitecsv` line per fixed step to `LogKiteSurf`, which `grep -o 'kitecsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` turns into a CSV. Not in Shipping builds.
-   - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
+   - `kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>` cuts to a cinematic camera on the rider, `kitesurf.HideUI` clears the HUD and widgets, and `kitesurf.CaptureFrames <frames> <name>` writes every frame to `Saved/MenuVideo/<name>/` and exits. With `-benchmark -fps=30` the timestep is fixed, so the same commands film the same ride every run; `scripts/render-menu-video.sh` uses this to film and encode the menu videos.
+   - `kitesurf.Load <0|1>` holds or lets go of the jump button: held is the loaded crouch, letting go pops. `kitesurf.Jump` is an immediate pop.
+   - `kitesurf.MenuKey <key>` sends a key press through the UI (`Down`, `Enter`, `Gamepad_DPad_Up`, `Gamepad_FaceButton_Bottom`, ...) and logs whether a menu handled it, so menu navigation can be driven and captured in an offscreen run.
+   - `kitesurf.MotionBar <0|1>` switches the motion-sensor bar and logs the controller, its raw readings and the resulting steer and bar position. It works in offscreen runs if a controller with sensors is connected.
+   - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays, on a ride or in the menus, to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
 6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh

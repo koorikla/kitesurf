@@ -30,16 +30,29 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    - `scripts/editor/make_open_water_level.py` builds `/Game/Maps/L_OpenWater`.
    - `scripts/editor/make_input_assets.py` builds `IA_*`, `IMC_Default` and `BP_KiteRider`
      defaults.
-   - `scripts/editor/make_sound_assets.py` synthesises the sounds (`make_sound_wavs.py`, standard
-     library only) and imports them as `SW_*` sound waves in `/Game/Audio`.
+   - `scripts/editor/make_sound_assets.py` synthesises the sound effects (`make_sound_wavs.py`) and
+     the music (`make_music_wavs.py`, the tunes written out as notes), both standard library only,
+     and imports them as `SW_*` and `MU_*` sound waves in `/Game/Audio`. Either generator also runs
+     on its own (`python3 scripts/editor/make_music_wavs.py <dir>`) to listen before importing.
    - `scripts/editor/import_menu_art.py` draws the startup splash (`Content/Splash/`, loose PNGs the
      engine reads directly) and the menu background (`T_MenuBackground`) with `make_splash.sh`.
      Keep the art 8 bits per channel: a 16-bit PNG imports as linear data and looks washed out.
+     When `scripts/render-menu-video.sh` has filmed the menu videos (`Content/Movies/*.webm`), the
+     stills use a frame of the film, so run that first, then this.
    - `scripts/editor/import_spot_assets.py` generates and imports the island, sandbar and shark
      meshes and their materials. Their sand shapes are mirrored in `KiteSurfSpot.cpp`.
-   - `scripts/editor/import_geometry.py` generates and imports the kite, board, bar and rider
-     meshes (`generate_mesh_objs.py`) and the kite canopy texture (`make_kite_texture.sh`,
-     needs ImageMagick); run `scripts/editor/create_materials.py` after it to assign materials.
+   - `scripts/editor/import_rider_parts.py` generates and imports the jointed riders' parts (torso,
+     thigh, shin, upper arm, forearm per rider) that the ride poses every frame. Their lengths are
+     mirrored in `RiderRig.h`. The one-piece rider meshes from `import_geometry.py` are only for
+     the gear screen's preview.
+   - `scripts/editor/import_geometry.py` generates and imports the kite (`SM_Kite`, and the
+     five-strut `SM_KiteBoost`), board, bar and rider meshes (`generate_mesh_objs.py`) and one
+     canopy texture per kite model (`make_kite_texture.sh <out> loop|boost`, needs ImageMagick);
+     run `scripts/editor/create_materials.py` after it to assign materials. A new kite colourway
+     is a case in `make_kite_texture.sh`, a texture and canopy material here, and an entry in
+     `KiteGear::GetMeshPath`.
+   - `scripts/editor/import_gear_preview_assets.py` builds the gear preview's backdrop card
+     (`SM_PreviewBackdrop`) and its unlit sky-and-sea gradient (`M_PreviewBackdrop`).
    - `scripts/editor/make_water_fx_materials.py` builds `M_WaterFoam` and `M_WaterSpray`,
      the per-instance-fading materials used by `UBoardWakeComponent`.
    Extend the existing script so one run still rebuilds the whole asset.

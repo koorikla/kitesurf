@@ -6,6 +6,7 @@
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
+#include "WindStreakComponent.h"
 #include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -94,13 +95,13 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	RiderMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f)); // Face across the board in kitesurf stance
 
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(RiderCharacter::MannequinMeshPath);
 	if (RiderMeshFinder.Succeeded())
 	{
 		RiderMesh->SetSkeletalMesh(RiderMeshFinder.Object);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(TEXT("/Game/Characters/Mannequins/Anims/MM_Idle"));
+	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(RiderCharacter::MannequinIdlePath);
 	if (RiderAnimFinder.Succeeded())
 	{
 		RiderMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
@@ -108,12 +109,24 @@ AKiteRiderPawn::AKiteRiderPawn()
 		RiderMesh->Play(true);
 	}
 
-	// Posed riders stand on the board; which one is shown is set by SetRiderCharacter.
-	RiderStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderStaticMesh"));
-	RiderStaticMesh->SetupAttachment(RootComponent);
-	RiderStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 2.0f));
-	RiderStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	RiderStaticMesh->SetUsingAbsoluteRotation(true);
+	// The jointed riders: a torso and eight limb parts placed in world space every frame by
+	// UpdateRiderPose. Which rider's parts they show is set by SetRiderCharacter.
+	auto MakeRiderPart = [this](const TCHAR* Name) -> UStaticMeshComponent*
+	{
+		UStaticMeshComponent* Part = CreateDefaultSubobject<UStaticMeshComponent>(Name);
+		Part->SetupAttachment(RootComponent);
+		Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Part->SetUsingAbsoluteLocation(true);
+		Part->SetUsingAbsoluteRotation(true);
+		Part->SetUsingAbsoluteScale(true);
+		return Part;
+	};
+	RiderTorso = MakeRiderPart(TEXT("RiderTorso"));
+	static const TCHAR* LimbNames[] = { TEXT("RiderLeftThigh"), TEXT("RiderLeftShin"), TEXT("RiderLeftUpperArm"), TEXT("RiderLeftForearm"), TEXT("RiderRightThigh"), TEXT("RiderRightShin"), TEXT("RiderRightUpperArm"), TEXT("RiderRightForearm") };
+	for (const TCHAR* LimbName : LimbNames)
+	{
+		RiderLimbs.Add(MakeRiderPart(LimbName));
+	}
 
 	// ControlBarMesh attached to BoardMesh, positioned in front of rider chest height
 	ControlBarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlBarMesh"));
@@ -140,9 +153,10 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderMaxLeanDeg = 22.0f;
 	RiderFloatLeanDeg = 30.0f;
 	RiderAirHangLeanDeg = 38.0f;
+	RiderLoadLeanDeg = 20.0f;
 	RiderSwitchDelaySeconds = 0.4f;
 	RiderSwitchTurnRateDeg = 540.0f;
-	HarnessHookOffsetCm = FVector(16.0f, 0.0f, 100.0f);
+	HarnessHookOffsetCm = FVector(22.0f, 0.0f, 16.0f);
 
 	// The rider stands across the board and turns with it, but stays upright and leans against the kite
 	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
@@ -192,6 +206,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Foam trail and spray behind the board
 	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
 
+	// Wind lines on the sea
+	WindStreaks = CreateDefaultSubobject<UWindStreakComponent>(TEXT("WindStreaks"));
+
 	// Sound: three loops that are always playing and are faded and pitched by what the rider
 	// would hear (UpdateAudioModulation), and one-shots for the pop, landing, crash and reset.
 	auto MakeLoop = [this](const TCHAR* ComponentName, const TCHAR* SoundPath) -> UAudioComponent*
@@ -211,6 +228,17 @@ AKiteRiderPawn::AKiteRiderPawn()
 	WindLoopComponent = MakeLoop(TEXT("WindLoopComponent"), TEXT("/Game/Audio/SW_WindLoop"));
 	WaterLoopComponent = MakeLoop(TEXT("WaterLoopComponent"), TEXT("/Game/Audio/SW_WaterLoop"));
 	LineLoopComponent = MakeLoop(TEXT("LineLoopComponent"), TEXT("/Game/Audio/SW_LineLoop"));
+	SprayLoopComponent = MakeLoop(TEXT("SprayLoopComponent"), TEXT("/Game/Audio/SW_SprayLoop"));
+	KiteLoopComponent = MakeLoop(TEXT("KiteLoopComponent"), TEXT("/Game/Audio/SW_KiteLoop"));
+	FlutterLoopComponent = MakeLoop(TEXT("FlutterLoopComponent"), TEXT("/Game/Audio/SW_FlutterLoop"));
+
+	// Music: plays through a pause, and is not part of the world's sound.
+	MusicBaseComponent = MakeLoop(TEXT("MusicBaseComponent"), TEXT("/Game/Audio/MU_RideBase"));
+	MusicAirComponent = MakeLoop(TEXT("MusicAirComponent"), TEXT("/Game/Audio/MU_RideAir"));
+	for (UAudioComponent* Music : { MusicBaseComponent.Get(), MusicAirComponent.Get() })
+	{
+		Music->bIsUISound = true;
+	}
 
 	auto FindSound = [](const TCHAR* SoundPath) -> USoundBase*
 	{
@@ -221,6 +249,10 @@ AKiteRiderPawn::AKiteRiderPawn()
 	LandingSound = FindSound(TEXT("/Game/Audio/SW_Landing"));
 	CrashSound = FindSound(TEXT("/Game/Audio/SW_Crash"));
 	ResetSound = FindSound(TEXT("/Game/Audio/SW_ResetCue"));
+	KiteCrashSound = FindSound(TEXT("/Game/Audio/SW_KiteCrash"));
+	RelaunchSound = FindSound(TEXT("/Game/Audio/SW_Relaunch"));
+	AgroundSound = FindSound(TEXT("/Game/Audio/SW_Aground"));
+	SharkSound = FindSound(TEXT("/Game/Audio/SW_Shark"));
 
 	RiderCharacter = ERiderCharacter::Santa;
 	SetRiderCharacter(RiderCharacter);
@@ -266,6 +298,11 @@ void AKiteRiderPawn::BeginPlay()
 		if (const UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
 		{
 			SetRiderCharacter(GI->RiderCharacter);
+			SetMotionBarEnabled(GI->bMotionBar);
+			SetHapticsEnabled(GI->bHaptics);
+			SetMusicVolume(GI->MusicVolume);
+			SetAmbientVolume(GI->AmbientVolume);
+			SetEffectsVolume(GI->EffectsVolume);
 		}
 	}
 
@@ -275,8 +312,14 @@ void AKiteRiderPawn::BeginPlay()
 		BoardMovement->OnBoardReset.AddDynamic(this, &AKiteRiderPawn::HandleBoardReset);
 		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
 	}
+	if (Kite)
+	{
+		Kite->OnKiteCrashed.AddDynamic(this, &AKiteRiderPawn::HandleKiteCrashed);
+		Kite->OnKiteRelaunched.AddDynamic(this, &AKiteRiderPawn::HandleKiteRelaunched);
+	}
 
-	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get() })
+	// The two music loops start on the same frame so that they stay in step.
+	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get(), SprayLoopComponent.Get(), KiteLoopComponent.Get(), FlutterLoopComponent.Get(), MusicBaseComponent.Get(), MusicAirComponent.Get() })
 	{
 		if (Loop && Loop->GetSound())
 		{
@@ -328,7 +371,9 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		}
 		if (JumpAction)
 		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
+			// Held: crouch and load the edge. Released: pop.
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnJumpPressed);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnJumpReleased);
 		}
 		if (ResetAction)
 		{
@@ -347,10 +392,186 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Left, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
 }
 
+void AKiteRiderPawn::PlayHaptic(float Intensity, float DurationSeconds, bool bHeavy)
+{
+	if (!bHapticsEnabled || Intensity <= 0.0f || DurationSeconds <= 0.0f)
+	{
+		return;
+	}
+	++HapticCount;
+	LastHapticIntensity = FMath::Clamp(Intensity, 0.0f, 1.0f);
+	LastHapticDuration = DurationSeconds;
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		// A thump on the big motors, a tick on the small ones.
+		PC->PlayDynamicForceFeedback(LastHapticIntensity, DurationSeconds, bHeavy, !bHeavy, bHeavy, !bHeavy);
+	}
+}
+
+void AKiteRiderPawn::GetLandingHaptic(float LandingG, float& OutIntensity, float& OutDurationSeconds)
+{
+	// A soft touchdown is a light tap; five g and more is a full thump that lasts.
+	const float Hardness = FMath::Clamp((LandingG - 1.0f) / 4.0f, 0.0f, 1.0f);
+	OutIntensity = 0.3f + 0.7f * Hardness;
+	OutDurationSeconds = 0.12f + 0.2f * Hardness;
+}
+
+void AKiteRiderPawn::UpdateTensionHaptic(float LineTensionN, float DeltaTime)
+{
+	YankCooldownSeconds = FMath::Max(YankCooldownSeconds - DeltaTime, 0.0f);
+	const bool bAbove = LineTensionN >= HapticYankTensionN;
+	// Once as the pull comes on, not for as long as it lasts.
+	if (bAbove && !bAboveYankTension && YankCooldownSeconds <= 0.0f)
+	{
+		PlayHaptic(FMath::Clamp(0.35f + 0.5f * (LineTensionN - HapticYankTensionN) / 3000.0f, 0.35f, 0.85f), 0.12f, true);
+		YankCooldownSeconds = 0.8f;
+	}
+	bAboveYankTension = bAbove;
+}
+
+void AKiteRiderPawn::HandleKiteCrashed(FVector Location)
+{
+	PlayRideSound(ERideSound::KiteCrash);
+	PlayHaptic(0.6f, 0.25f, true);
+}
+
+void AKiteRiderPawn::HandleKiteRelaunched()
+{
+	PlayRideSound(ERideSound::Relaunch);
+}
+
+void AKiteRiderPawn::PlayOneShot(USoundBase* Sound, float Volume, float Pitch)
+{
+	LastOneShotVolume = Volume * EffectsVolume;
+	if (Sound && LastOneShotVolume > 0.0f)
+	{
+		// Never quite the same twice.
+		UGameplayStatics::PlaySound2D(this, Sound, LastOneShotVolume, Pitch * FMath::FRandRange(0.95f, 1.05f));
+	}
+}
+
+void AKiteRiderPawn::PlayRideSound(ERideSound Sound)
+{
+	++RideSoundCount;
+	LastRideSound = Sound;
+	switch (Sound)
+	{
+	case ERideSound::KiteCrash:
+		PlayOneShot(KiteCrashSound, 0.7f);
+		break;
+	case ERideSound::Relaunch:
+		PlayOneShot(RelaunchSound, 0.6f);
+		break;
+	case ERideSound::Aground:
+		PlayOneShot(AgroundSound, 0.9f);
+		bSkipNextCrashSplash = true;
+		break;
+	case ERideSound::Shark:
+		PlayOneShot(SharkSound, 0.9f);
+		bSkipNextCrashSplash = true;
+		break;
+	}
+}
+
+void AKiteRiderPawn::SetMusicVolume(float Volume)
+{
+	MusicVolume = FMath::Clamp(Volume, 0.0f, 1.0f);
+}
+
+void AKiteRiderPawn::SetAmbientVolume(float Volume)
+{
+	AmbientVolume = FMath::Clamp(Volume, 0.0f, 1.0f);
+}
+
+void AKiteRiderPawn::SetEffectsVolume(float Volume)
+{
+	EffectsVolume = FMath::Clamp(Volume, 0.0f, 1.0f);
+}
+
+void AKiteRiderPawn::SetMotionBarEnabled(bool bEnabled)
+{
+	bMotionBarEnabled = bEnabled;
+	if (bEnabled)
+	{
+		if (!MotionSource)
+		{
+			MotionSource = KiteMotionBar::CreatePlatformSource();
+		}
+		MotionFilter.Reset();
+		bMotionRecentrePending = true;
+	}
+	else if (bMotionBarActive)
+	{
+		// Hand the bar back level, where it is.
+		bMotionBarActive = false;
+		SteerKite(KeySteerInput + MouseSteerInput);
+	}
+}
+
+void AKiteRiderPawn::RecentreMotionBar()
+{
+	bMotionRecentrePending = true;
+}
+
+FString AKiteRiderPawn::GetMotionDeviceName() const
+{
+	return MotionSource ? MotionSource->GetDeviceName() : FString();
+}
+
+void AKiteRiderPawn::SetMotionSource(TSharedPtr<IKiteMotionSource> InSource)
+{
+	MotionSource = InSource;
+	MotionFilter.Reset();
+	bMotionRecentrePending = true;
+}
+
+void AKiteRiderPawn::UpdateMotionBar(float DeltaTime)
+{
+	FKiteMotionSample Sample;
+	const bool bHaveReading = bMotionBarEnabled && MotionSource && MotionSource->Poll(Sample);
+	if (!bHaveReading)
+	{
+		if (bMotionBarActive)
+		{
+			// The controller went away: the stick and keys have the bar again.
+			bMotionBarActive = false;
+			MotionFilter.Reset();
+			SteerKite(KeySteerInput + MouseSteerInput);
+		}
+		return;
+	}
+
+	LastMotionSample = Sample;
+	MotionFilter.Update(Sample, DeltaTime);
+	if (!MotionFilter.IsInitialized())
+	{
+		return;
+	}
+	if (bMotionRecentrePending || !bMotionBarActive)
+	{
+		// However the pad is being held now is "bar level": no jump in steering or power.
+		MotionBarMapping.Calibrate(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg(), CurrentSheetInput);
+		bMotionRecentrePending = false;
+	}
+	bMotionBarActive = true;
+
+	// The right stick is taken out of the steering: the keys and the mouse still add to the tilt.
+	float StickSteer = 0.0f;
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		StickSteer = PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX);
+	}
+	SteerKite(KeySteerInput - StickSteer + MouseSteerInput + MotionBarMapping.GetSteer(MotionFilter.GetRollDeg()));
+	SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+}
+
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 {
 	KeySteerInput = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
-	SteerKite(KeySteerInput + MouseSteerInput);
+	if (!bMotionBarActive)
+	{
+		SteerKite(KeySteerInput + MouseSteerInput);
+	}
 }
 
 void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop)
@@ -417,9 +638,38 @@ void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 	EdgeBoard(Value.Get<float>());
 }
 
-void AKiteRiderPawn::OnJumpTriggered(const FInputActionValue& Value)
+void AKiteRiderPawn::OnJumpPressed(const FInputActionValue& Value)
 {
-	Jump();
+	SetLoadHeld(true);
+}
+
+void AKiteRiderPawn::OnJumpReleased(const FInputActionValue& Value)
+{
+	ReleaseLoadAndPop();
+}
+
+void AKiteRiderPawn::SetLoadHeld(bool bHeld)
+{
+	if (BoardMovement)
+	{
+		BoardMovement->SetLoadHeld(bHeld);
+	}
+}
+
+bool AKiteRiderPawn::ReleaseLoadAndPop()
+{
+	// The pop uses the load that has built up, so it comes before the crouch is let go.
+	const bool bWasHeld = BoardMovement && BoardMovement->IsLoadHeld();
+	const bool bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+	bool bPopped = false;
+	// If the kite has already pulled the rider off the water there is nothing to pop from, and no
+	// message is needed for that.
+	if (bWasHeld && !bAirborne)
+	{
+		bPopped = Jump();
+	}
+	SetLoadHeld(false);
+	return bPopped;
 }
 
 bool AKiteRiderPawn::Jump()
@@ -440,10 +690,8 @@ bool AKiteRiderPawn::Jump()
 		}
 
 		// Play pop bass thump
-		if (PopSound)
-		{
-			UGameplayStatics::PlaySound2D(this, PopSound, 0.8f);
-		}
+		PlayOneShot(PopSound, 0.8f);
+		PlayHaptic(0.5f, 0.1f, false);
 		return true;
 	}
 	return false;
@@ -634,7 +882,10 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!FMath::IsNearlyZero(SheetRateInput))
+	UpdateMotionBar(DeltaTime);
+
+	// With the motion bar in the rider's hands, the stick, triggers and keys leave the bar alone.
+	if (!bMotionBarActive && !FMath::IsNearlyZero(SheetRateInput))
 	{
 		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
 	}
@@ -712,6 +963,7 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 
 	UpdateAudioModulation(DeltaTime);
+	UpdateTensionHaptic(Kite ? Kite->GetLineTensionN() : 0.0f, DeltaTime);
 
 	const int32 DebugLevel = GetPhysicsDebugLevel();
 	if (DebugLevel >= 1)
@@ -728,22 +980,35 @@ void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
 {
 	RiderCharacter = RiderCharacter::FromIndex(static_cast<int32>(InCharacter));
 
-	const bool bRobot = RiderCharacter == ERiderCharacter::Robot;
+	// Riders without a posed static mesh are the animated mannequin.
+	const bool bRobot = RiderCharacter::GetStaticMeshPath(RiderCharacter) == nullptr;
 	if (RiderMesh)
 	{
 		RiderMesh->SetVisibility(bRobot);
 	}
-	if (RiderStaticMesh)
+	// The jointed riders share a rig; each has its own torso and limb parts.
+	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : TEXT("Santa");
+	auto SetPart = [RiderName, bRobot](UStaticMeshComponent* Component, const TCHAR* PartName)
 	{
+		if (!Component)
+		{
+			return;
+		}
 		if (!bRobot)
 		{
-			const TCHAR* MeshPath = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("/Game/Meshes/SM_RiderWetsuit") : TEXT("/Game/Meshes/SM_RiderSanta");
-			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath))
+			const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
+			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
 			{
-				RiderStaticMesh->SetStaticMesh(Mesh);
+				Component->SetStaticMesh(Mesh);
 			}
 		}
-		RiderStaticMesh->SetVisibility(!bRobot);
+		Component->SetVisibility(!bRobot);
+	};
+	SetPart(RiderTorso, TEXT("Torso"));
+	static const TCHAR* LimbPartNames[] = { TEXT("Thigh"), TEXT("Shin"), TEXT("UpperArm"), TEXT("Forearm") };
+	for (int32 Index = 0; Index < RiderLimbs.Num(); ++Index)
+	{
+		SetPart(RiderLimbs[Index], LimbPartNames[Index % 4]);
 	}
 }
 
@@ -838,23 +1103,34 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
 		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
 	}
+	// Loading: the rider sits back away from the kite, weight low over the back of the board.
+	const float Load = BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f;
+	if (Load > 0.0f)
+	{
+		const FVector Away = bHasKite ? -TowardsKite : -Facing;
+		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
+	}
 	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
+
+	// The jointed rider: feet in the straps wherever the board goes, pelvis over them along the
+	// body's lean and lower in a crouch, knees bending to fit.
+	FRiderRigInput RigInput;
+	RigInput.Board = GetActorTransform();
+	RigInput.Facing = Facing;
+	RigInput.BodyUp = BodyUp.GetSafeNormal();
+	RigInput.Crouch = Load;
+	RiderPose = RiderRig::SolveBody(RigInput);
 
 	if (RiderMesh)
 	{
 		// The mannequin's front is +Y in mesh space.
 		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
 	}
-	if (RiderStaticMesh)
-	{
-		// The posed riders are built facing +X.
-		RiderStaticMesh->SetWorldRotation(BodyQuat);
-	}
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them
 	// just beyond the hook, further out the more it is sheeted out, and always in front of the
 	// body: when the kite is behind a spinning rider the lines come over their shoulder.
-	HarnessHookPosition = GetActorLocation() + BodyQuat.RotateVector(HarnessHookOffsetCm);
+	HarnessHookPosition = RiderPose.Pelvis + RiderPose.Torso.RotateVector(HarnessHookOffsetCm);
 	if (Kite)
 	{
 		FVector LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : Facing;
@@ -864,7 +1140,24 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		{
 			LineDir = (LineDir + Facing * (MinForward - Forward)).GetSafeNormal();
 		}
-		const float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
+		// The bar is never further up the lines than the rider's arms reach: leaning back with the
+		// kite low, it comes in closer to the hook.
+		const float HandSpacingCm = 14.0f;
+		const float ArmReachCm = (RiderRig::UpperArmLengthCm + RiderRig::ForearmLengthCm) * 0.97f;
+		float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
+		const float MinBarReachCm = 14.0f;
+		for (int32 Try = 0; Try < 16 && BarReachCm > MinBarReachCm; ++Try)
+		{
+			const FVector Candidate = HarnessHookPosition + LineDir * BarReachCm;
+			// The hands are either side of the bar's middle; to judge reach, level with the shoulders is near enough.
+			const FVector Across = RiderPose.Torso.GetAxisY() * HandSpacingCm;
+			const float Furthest = FMath::Max(FVector::Dist(RiderPose.Arms[0].Root, Candidate - Across), FVector::Dist(RiderPose.Arms[1].Root, Candidate + Across));
+			if (Furthest <= ArmReachCm)
+			{
+				break;
+			}
+			BarReachCm = FMath::Max(BarReachCm - 4.0f, MinBarReachCm);
+		}
 		const FVector BarCentre = HarnessHookPosition + LineDir * BarReachCm;
 
 		// The bar is held square to the lines across the rider's body, and tilts with the steering.
@@ -881,6 +1174,38 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		if (ControlBarMesh)
 		{
 			ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotationMatrix::MakeFromXY(LineDir, TiltedSpan).ToQuat());
+		}
+
+		// Hands on the bar, either side of its middle; the elbows bend to reach.
+		RiderRig::SolveArms(RiderPose, BarCentre - TiltedSpan * HandSpacingCm, BarCentre + TiltedSpan * HandSpacingCm);
+	}
+
+	// Draw the parts where the rig put them.
+	if (RiderTorso)
+	{
+		RiderTorso->SetWorldLocationAndRotation(RiderPose.Pelvis, RiderPose.Torso);
+	}
+	if (RiderLimbs.Num() == 8)
+	{
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const FRiderLimbPose& Leg = RiderPose.Legs[Side];
+			const FRiderLimbPose& Arm = RiderPose.Arms[Side];
+			const FTransform Parts[4] =
+			{
+				RiderRig::SegmentTransform(Leg.Root, Leg.Joint, Leg.Pole),
+				// The foot points the way the knee does.
+				RiderRig::SegmentTransform(Leg.Joint, Leg.End, Leg.Pole),
+				RiderRig::SegmentTransform(Arm.Root, Arm.Joint, Arm.Pole),
+				RiderRig::SegmentTransform(Arm.Joint, Arm.End, Arm.Pole),
+			};
+			for (int32 Part = 0; Part < 4; ++Part)
+			{
+				if (UStaticMeshComponent* Component = RiderLimbs[Side * 4 + Part])
+				{
+					Component->SetWorldLocationAndRotation(Parts[Part].GetLocation(), Parts[Part].GetRotation());
+				}
+			}
 		}
 	}
 }
@@ -937,6 +1262,7 @@ void AKiteRiderPawn::OnResetTriggered(const FInputActionValue& Value)
 
 void AKiteRiderPawn::ResetRider()
 {
+	RecentreMotionBar();
 	if (BoardMovement)
 	{
 		BoardMovement->ResetToTack(8.0f);
@@ -945,18 +1271,19 @@ void AKiteRiderPawn::ResetRider()
 
 void AKiteRiderPawn::HandleBoardCrash(float Intensity)
 {
-	if (CrashSound)
+	// Running aground and a shark have just played their own sound.
+	if (!bSkipNextCrashSplash)
 	{
-		UGameplayStatics::PlaySound2D(this, CrashSound, FMath::Clamp(Intensity, 0.4f, 1.2f));
+		PlayOneShot(CrashSound, FMath::Clamp(Intensity, 0.4f, 1.2f));
 	}
+	bSkipNextCrashSplash = false;
+	PlayHaptic(1.0f, 0.45f, true);
 }
 
 void AKiteRiderPawn::HandleBoardReset()
 {
-	if (ResetSound)
-	{
-		UGameplayStatics::PlaySound2D(this, ResetSound, 0.5f);
-	}
+	PlayOneShot(ResetSound, 0.5f);
+	bSkipNextCrashSplash = false;
 }
 
 void AKiteRiderPawn::HandleBoardLanding(float LandingG)
@@ -965,28 +1292,57 @@ void AKiteRiderPawn::HandleBoardLanding(float LandingG)
 	{
 		// A harder landing is a louder, deeper splash.
 		const float Hardness = FMath::Clamp((LandingG - 1.0f) / 5.0f, 0.0f, 1.0f);
-		UGameplayStatics::PlaySound2D(this, LandingSound, 0.45f + 0.65f * Hardness, 1.1f - 0.3f * Hardness);
+		PlayOneShot(LandingSound, 0.45f + 0.65f * Hardness, 1.1f - 0.3f * Hardness);
 	}
+	float HapticIntensity = 0.0f;
+	float HapticDuration = 0.0f;
+	GetLandingHaptic(LandingG, HapticIntensity, HapticDuration);
+	PlayHaptic(HapticIntensity, HapticDuration, true);
 }
 
 FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)
 {
+	FRideAudioState State;
+	State.ApparentWindKnots = ApparentWindKnots;
+	State.BoardSpeedKnots = BoardSpeedKnots;
+	State.bOnWater = bOnWater;
+	State.LineTensionN = LineTensionN;
+	State.bAirborne = !bOnWater;
+	return ComputeAudioMix(State);
+}
+
+FRideAudioMix AKiteRiderPawn::ComputeAudioMix(const FRideAudioState& State)
+{
 	FRideAudioMix Mix;
 
 	// Wind in the ears: nothing in a calm, loud and higher in a blow.
-	const float WindAmount = FMath::Clamp(ApparentWindKnots / 40.0f, 0.0f, 1.0f);
-	Mix.WindVolume = 0.9f * FMath::Pow(WindAmount, 1.3f);
+	const float WindAmount = FMath::Clamp(State.ApparentWindKnots / 40.0f, 0.0f, 1.0f);
+	Mix.WindVolume = 0.72f * FMath::Pow(WindAmount, 1.3f);
 	Mix.WindPitch = 0.8f + 0.5f * WindAmount;
 
 	// Water under the board: only while it is on the water, a slosh when slow, a hiss at speed.
-	const float SpeedAmount = FMath::Clamp(BoardSpeedKnots / 28.0f, 0.0f, 1.0f);
-	Mix.WaterVolume = bOnWater ? 0.08f + 0.75f * FMath::Pow(SpeedAmount, 1.2f) : 0.0f;
+	const float SpeedAmount = FMath::Clamp(State.BoardSpeedKnots / 28.0f, 0.0f, 1.0f);
+	Mix.WaterVolume = State.bOnWater ? 0.08f + 0.6f * FMath::Pow(SpeedAmount, 1.2f) : 0.0f;
 	Mix.WaterPitch = 0.75f + 0.55f * SpeedAmount;
 
 	// Lines singing under load: silent when slack, rising with the pull.
-	const float LoadAmount = FMath::Clamp(LineTensionN / 3500.0f, 0.0f, 1.0f);
+	const float LoadAmount = FMath::Clamp(State.LineTensionN / 3500.0f, 0.0f, 1.0f);
 	Mix.LineVolume = 0.55f * FMath::Pow(LoadAmount, 1.2f);
 	Mix.LinePitch = 0.7f + 0.9f * LoadAmount;
+
+	// Spray: an edge driven hard at speed throws it; none in the air or standing still.
+	Mix.SprayVolume = State.bOnWater ? 0.6f * FMath::Clamp(State.EdgeEffort, 0.0f, 1.0f) * FMath::Clamp(State.BoardSpeedKnots / 14.0f, 0.0f, 1.0f) : 0.0f;
+
+	// The kite: hardly heard parked, a roar when it is flown fast through a turn or a loop.
+	const float KiteSpeedAmount = FMath::Clamp((State.KiteAirspeedMS - 16.0f) / 24.0f, 0.0f, 1.0f);
+	Mix.KiteVolume = 0.75f * FMath::Pow(KiteSpeedAmount, 1.2f);
+	Mix.KitePitch = 0.8f + 0.6f * KiteSpeedAmount;
+
+	// A canopy with no load in it flaps, as long as there is wind to flap it.
+	Mix.FlutterVolume = 0.5f * FMath::Clamp(State.KiteLuff, 0.0f, 1.0f) * FMath::Clamp(State.ApparentWindKnots / 12.0f, 0.0f, 1.0f);
+
+	// The music lifts while the rider is in the air.
+	Mix.AirMusic = State.bAirborne ? 1.0f : 0.0f;
 	return Mix;
 }
 
@@ -996,11 +1352,38 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	// The wind in the rider's ears: at chest height, where the kite says the rider feels it.
 	const FVector EarLocation = GetActorLocation() + FVector(0.0f, 0.0f, Kite ? Kite->RiderWindHeightCm : 0.0f);
 	const FVector TrueWind = Wind ? Wind->GetWindAt(EarLocation) : FVector::ZeroVector;
-	const float ApparentWindKnots = KiteUnits::CmSToKnots((TrueWind - Vel).Size());
-	const bool bOnWater = BoardMovement && BoardMovement->GetBoardState() != EBoardState::Airborne;
-	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;
 
-	const FRideAudioMix Target = ComputeAudioMix(ApparentWindKnots, KiteUnits::CmSToKnots(Vel.Size2D()), bOnWater, LineTensionN);
+	FRideAudioState State;
+	State.ApparentWindKnots = KiteUnits::CmSToKnots((TrueWind - Vel).Size());
+	State.BoardSpeedKnots = KiteUnits::CmSToKnots(Vel.Size2D());
+	State.bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+	State.bOnWater = !State.bAirborne;
+	if (BoardMovement)
+	{
+		State.EdgeEffort = FMath::Max(FMath::Abs(BoardMovement->GetEdgeInput()), BoardMovement->GetLoadAmount());
+	}
+	if (Kite)
+	{
+		State.LineTensionN = Kite->GetLineTensionN();
+		if (!Kite->IsCrashed())
+		{
+			State.KiteAirspeedMS = Kite->GetAirspeedCmS() / KiteUnits::CmPerM;
+			// Slack lines flap hardest; a stalled canopy and one with the bar right out less so.
+			if (!Kite->AreLinesTaut())
+			{
+				State.KiteLuff = 1.0f;
+			}
+			else if (Kite->GetAngleOfAttackDeg() > Kite->StallAngleDeg)
+			{
+				State.KiteLuff = 0.7f;
+			}
+			else
+			{
+				State.KiteLuff = 0.5f * FMath::Clamp(1.0f - CurrentSheetInput / 0.15f, 0.0f, 1.0f);
+			}
+		}
+	}
+	const FRideAudioMix Target = ComputeAudioMix(State);
 
 	// Eased so that a gust or the board leaving the water is heard as a swell, not a switch.
 	const float Ease = 6.0f;
@@ -1010,18 +1393,38 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	AudioMix.WaterPitch = FMath::FInterpTo(AudioMix.WaterPitch, Target.WaterPitch, DeltaTime, Ease);
 	AudioMix.LineVolume = FMath::FInterpTo(AudioMix.LineVolume, Target.LineVolume, DeltaTime, Ease);
 	AudioMix.LinePitch = FMath::FInterpTo(AudioMix.LinePitch, Target.LinePitch, DeltaTime, Ease);
+	AudioMix.SprayVolume = FMath::FInterpTo(AudioMix.SprayVolume, Target.SprayVolume, DeltaTime, 2.0f * Ease);
+	AudioMix.KiteVolume = FMath::FInterpTo(AudioMix.KiteVolume, Target.KiteVolume, DeltaTime, Ease);
+	AudioMix.KitePitch = FMath::FInterpTo(AudioMix.KitePitch, Target.KitePitch, DeltaTime, Ease);
+	AudioMix.FlutterVolume = FMath::FInterpTo(AudioMix.FlutterVolume, Target.FlutterVolume, DeltaTime, Ease);
+	// The air layer comes in quickly on take-off and lingers for a couple of seconds after landing.
+	AudioMix.AirMusic = FMath::FInterpConstantTo(AudioMix.AirMusic, Target.AirMusic, DeltaTime, Target.AirMusic > AudioMix.AirMusic ? 2.5f : 0.45f);
 
-	auto Apply = [](UAudioComponent* Loop, float Volume, float Pitch)
+	// The mix is what the ride calls for; the ambient volume setting scales what is played.
+	auto Apply = [this](UAudioComponent* Loop, float Volume, float Pitch)
 	{
 		if (Loop)
 		{
-			Loop->SetVolumeMultiplier(Volume);
+			Loop->SetVolumeMultiplier(Volume * AmbientVolume);
 			Loop->SetPitchMultiplier(Pitch);
 		}
 	};
 	Apply(WindLoopComponent, AudioMix.WindVolume, AudioMix.WindPitch);
 	Apply(WaterLoopComponent, AudioMix.WaterVolume, AudioMix.WaterPitch);
 	Apply(LineLoopComponent, AudioMix.LineVolume, AudioMix.LinePitch);
+	Apply(SprayLoopComponent, AudioMix.SprayVolume, 1.0f);
+	Apply(KiteLoopComponent, AudioMix.KiteVolume, AudioMix.KitePitch);
+	Apply(FlutterLoopComponent, AudioMix.FlutterVolume, 1.0f);
+
+	// Music sits under the sound of the ride. Its pitch never moves, or the layers would drift apart.
+	if (MusicBaseComponent)
+	{
+		MusicBaseComponent->SetVolumeMultiplier(0.8f * MusicVolume);
+	}
+	if (MusicAirComponent)
+	{
+		MusicAirComponent->SetVolumeMultiplier(0.7f * MusicVolume * AudioMix.AirMusic);
+	}
 }
 
 void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)

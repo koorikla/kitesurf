@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "RiderRig.h"
 #include "KiteSurfSpot.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "BoardMovementComponent.h"
@@ -973,13 +974,27 @@ bool FKiteSurfPawnRiderCharacterSelection::RunTest(const FString& Parameters)
 	const USkeletalMeshComponent* Robot = Pawn->GetRiderMesh();
 
 	TestEqual(TEXT("Santa is the default rider"), Pawn->GetRiderCharacter(), ERiderCharacter::Santa);
-	TestTrue(TEXT("Santa is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderSanta"));
+	TestTrue(TEXT("Santa is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderSanta_Torso"));
 	TestFalse(TEXT("The robot is hidden behind Santa"), Robot->IsVisible());
 
 	Pawn->SetRiderCharacter(ERiderCharacter::Wetsuit);
-	TestTrue(TEXT("The wetsuit rider is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderWetsuit"));
+	TestTrue(TEXT("The wetsuit rider is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderWetsuit_Torso"));
+
+	TestEqual(TEXT("The rider has eight limb parts"), Pawn->GetRiderLimbs().Num(), 8);
+	bool bLimbsAreWetsuit = Pawn->GetRiderLimbs().Num() == 8;
+	for (const UStaticMeshComponent* Limb : Pawn->GetRiderLimbs())
+	{
+		bLimbsAreWetsuit = bLimbsAreWetsuit && Limb && Limb->IsVisible() && Limb->GetStaticMesh() && Limb->GetStaticMesh()->GetName().StartsWith(TEXT("SM_RiderWetsuit_"));
+	}
+	TestTrue(TEXT("and they are the wetsuit rider's"), bLimbsAreWetsuit);
 
 	Pawn->SetRiderCharacter(ERiderCharacter::Robot);
+	bool bLimbsHidden = true;
+	for (const UStaticMeshComponent* Limb : Pawn->GetRiderLimbs())
+	{
+		bLimbsHidden = bLimbsHidden && Limb && !Limb->IsVisible();
+	}
+	TestTrue(TEXT("The jointed rider's limbs are hidden behind the robot"), bLimbsHidden);
 	TestTrue(TEXT("The robot is shown"), Robot->IsVisible());
 	TestFalse(TEXT("The posed rider is hidden behind the robot"), Posed->IsVisible());
 
@@ -1002,7 +1017,7 @@ bool FKiteSurfPawnRiderCharacterSelection::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Guards the output of scripts/editor/import_geometry.py and create_materials.py.
+// Guards the output of scripts/editor/import_geometry.py, import_rider_parts.py and create_materials.py.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfAssetsKiteAndRiderMeshes, "KiteSurf.Assets.KiteAndRiderMeshes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
@@ -1011,8 +1026,20 @@ bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
 	const FExpectedMesh ExpectedMeshes[] =
 	{
 		{ TEXT("/Game/Meshes/SM_Kite.SM_Kite"), 2, 400.0f },                 // canopy and tubes; a 12 m2 kite spans over 4 m
+		// The one-piece riders, shown on the gear screen's preview.
 		{ TEXT("/Game/Meshes/SM_RiderSanta.SM_RiderSanta"), 4, 150.0f },     // skin, white, red, black
 		{ TEXT("/Game/Meshes/SM_RiderWetsuit.SM_RiderWetsuit"), 4, 150.0f }, // skin, wetsuit, accent, black
+		// The jointed riders' parts, posed in the ride (import_rider_parts.py). A slot count of 0 means "any".
+		{ TEXT("/Game/Meshes/SM_RiderSanta_Torso.SM_RiderSanta_Torso"), 4, 80.0f },       // skin, white, red, black
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit_Torso.SM_RiderWetsuit_Torso"), 4, 80.0f },   // skin, wetsuit, accent, black
+		{ TEXT("/Game/Meshes/SM_RiderSanta_Thigh.SM_RiderSanta_Thigh"), 0, 45.0f },
+		{ TEXT("/Game/Meshes/SM_RiderSanta_Shin.SM_RiderSanta_Shin"), 0, 42.0f },
+		{ TEXT("/Game/Meshes/SM_RiderSanta_UpperArm.SM_RiderSanta_UpperArm"), 0, 26.0f },
+		{ TEXT("/Game/Meshes/SM_RiderSanta_Forearm.SM_RiderSanta_Forearm"), 0, 27.0f },
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit_Thigh.SM_RiderWetsuit_Thigh"), 0, 45.0f },
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit_Shin.SM_RiderWetsuit_Shin"), 0, 42.0f },
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit_UpperArm.SM_RiderWetsuit_UpperArm"), 0, 26.0f },
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit_Forearm.SM_RiderWetsuit_Forearm"), 0, 27.0f },
 	};
 	for (const FExpectedMesh& Expected : ExpectedMeshes)
 	{
@@ -1022,7 +1049,11 @@ bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
 		{
 			continue;
 		}
-		TestEqual(FString::Printf(TEXT("%s material slot count"), Expected.Path), Mesh->GetStaticMaterials().Num(), Expected.MaterialSlots);
+		if (Expected.MaterialSlots > 0)
+		{
+			TestEqual(FString::Printf(TEXT("%s material slot count"), Expected.Path), Mesh->GetStaticMaterials().Num(), Expected.MaterialSlots);
+		}
+		TestTrue(FString::Printf(TEXT("%s has at least one material slot"), Expected.Path), Mesh->GetStaticMaterials().Num() >= 1);
 		for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
 		{
 			TestTrue(FString::Printf(TEXT("%s slot %s uses a project material"), Expected.Path, *Slot.MaterialSlotName.ToString()),
@@ -1723,6 +1754,7 @@ bool FKiteSurfSpotSand::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Riding onto the sandbar is a crash"), bCrashed);
 	TestEqual(TEXT("and the spot says why"), Spot->GetLastEvent(), FString(TEXT("Ran aground")));
+	TestTrue(TEXT("with the sound of the board on sand"), Ride.Pawn->GetRideSoundCount() > 0 && Ride.Pawn->GetLastRideSound() == ERideSound::Aground);
 	TestTrue(FString::Printf(TEXT("The rider is back in the water (sand %.0f cm)"), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation())), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation()) <= 0.0f);
 	TestTrue(TEXT("on the side they came from"), FVector::DotProduct(Ride.Pawn->GetActorLocation() - BarCentre, Across) < 0.0f);
 
@@ -1816,6 +1848,7 @@ bool FKiteSurfSpotSharks::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The shark goes for a rider floating nearby"), bHunted);
 	TestTrue(FString::Printf(TEXT("and reaches them (from %.0f m, in %.1f s)"), DistanceBefore / 100.0f, Seconds), bBitten);
 	TestEqual(TEXT("The spot says what happened"), Spot->GetLastEvent(), FString(TEXT("Shark!")));
+	TestTrue(TEXT("with the shark's sound"), Ride.Pawn->GetLastRideSound() == ERideSound::Shark);
 
 	// Having had its bite it leaves the rider alone for a while.
 	Spot->StepSpot(RideDeltaTime);
@@ -1913,6 +1946,224 @@ bool FKiteSurfPhysicsDebugStepBreakdown::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Board drag opposes its motion"), FVector::DotProduct(BoardStep.DragForceN, BoardVelocity) < 0.0f);
 	TestTrue(FString::Printf(TEXT("The board grips: %.0f N sideways"), BoardStep.GripForceN.Size()), BoardStep.GripForceN.Size() > 10.0f);
 	TestTrue(FString::Printf(TEXT("Riding, the board slips only a few degrees (%.1f)"), BoardStep.LeewayDeg), FMath::Abs(BoardStep.LeewayDeg) < 15.0f);
+	return true;
+}
+
+// Holding the jump button: the rider crouches with their weight back and loads the edge against
+// the lines; letting go pops.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpLoadAndRelease, "KiteSurf.Jump.LoadAndRelease", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
+{
+	// The default kite in the default wind, riding steadily.
+	auto Settled = [](FRideFixture& Ride)
+	{
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.Simulate(10.0f);
+	};
+
+	// The crouch builds over a moment while held and lets go when released.
+	FRideFixture Ride(20.0f);
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	Settled(Ride);
+	UBoardMovementComponent* Board = Ride.Board;
+	TestEqual(TEXT("Not loading to start with"), Board->GetLoadAmount(), 0.0f);
+	const float TensionBefore = Ride.Kite->GetLineTensionN();
+	const float LateralBefore = FMath::Abs(Board->GetLateralSpeed());
+
+	Ride.Pawn->SetLoadHeld(true);
+	Ride.Simulate(0.2f);
+	TestTrue(FString::Printf(TEXT("After 0.2 s the crouch is part way (%.2f)"), Board->GetLoadAmount()), Board->GetLoadAmount() > 0.3f && Board->GetLoadAmount() < 0.8f);
+	Ride.Simulate(0.4f);
+	TestNearlyEqual(TEXT("and full after 0.6 s"), Board->GetLoadAmount(), 1.0f, 0.001f);
+
+	// Loaded, the edge bites: the board slips downwind less and the lines pull harder.
+	float PeakTension = 0.0f;
+	for (float Elapsed = 0.0f; Elapsed < 2.0f; Elapsed += RideDeltaTime)
+	{
+		Ride.Simulate(RideDeltaTime);
+		PeakTension = FMath::Max(PeakTension, Ride.Kite->GetLineTensionN());
+	}
+	const float LateralLoaded = FMath::Abs(Board->GetLateralSpeed());
+	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: tension %.0f N riding, up to %.0f N loaded; sideways slip %.0f cm/s riding, %.0f cm/s loaded"), TensionBefore, PeakTension, LateralBefore, LateralLoaded);
+	TestTrue(FString::Printf(TEXT("Loading cuts the sideways slip (%.0f cm/s to %.0f cm/s)"), LateralBefore, LateralLoaded), LateralLoaded < 0.7f * LateralBefore);
+	TestTrue(FString::Printf(TEXT("and raises the line tension (%.0f N to %.0f N)"), TensionBefore, PeakTension), PeakTension > 1.1f * TensionBefore);
+	TestTrue(TEXT("The rider is still on the water, held down by the edge"), Board->GetBoardState() != EBoardState::Airborne);
+
+	// Letting go pops, harder than a pop with no load.
+	const bool bPopped = Ride.Pawn->ReleaseLoadAndPop();
+	TestTrue(TEXT("Letting go pops"), bPopped && Board->GetBoardState() == EBoardState::Airborne);
+	const float LoadedVz = Board->Velocity.Z;
+	TestFalse(TEXT("The load is no longer held"), Board->IsLoadHeld());
+	Ride.Simulate(0.3f);
+	TestNearlyEqual(TEXT("and the crouch is gone"), Board->GetLoadAmount(), 0.0f, 0.001f);
+
+	FRideFixture Plain(20.0f);
+	Settled(Plain);
+	Plain.Simulate(2.6f);
+	Plain.Pawn->SetLoadHeld(true);
+	const bool bTapPopped = Plain.Pawn->ReleaseLoadAndPop(); // a tap: pressed and let go at once
+	TestTrue(TEXT("A tap of the button is a plain pop"), bTapPopped && Plain.Board->GetBoardState() == EBoardState::Airborne);
+	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: take-off %.0f cm/s loaded against %.0f cm/s from a tap"), LoadedVz, Plain.Board->Velocity.Z);
+	TestTrue(FString::Printf(TEXT("A loaded pop leaves the water faster (%.0f cm/s against %.0f cm/s)"), LoadedVz, Plain.Board->Velocity.Z), LoadedVz > 1.25f * Plain.Board->Velocity.Z);
+
+	// Letting go when the kite has already pulled the rider off the water does nothing more.
+	Plain.Pawn->SetLoadHeld(true);
+	TestFalse(TEXT("Letting go in the air is not a second pop"), Plain.Pawn->ReleaseLoadAndPop());
+
+	// The loaded edge holds the rider down like a full edge does.
+	FRideFixture Held;
+	if (!Held.IsValid())
+	{
+		return false;
+	}
+	Held.Board->SetLoadHeld(true);
+	Held.Simulate(0.6f);
+	Held.Board->AddExternalForce(FVector(0.0f, 0.0f, 2.5f * Held.Board->MassKg * KiteUnits::GravityCmS2));
+	Held.Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Loaded, two and a half times the rider's weight upwards does not lift them"), Held.Board->GetBoardState() != EBoardState::Airborne);
+	return true;
+}
+
+// The jointed rider: bones keep their length, the feet stay in the straps, the hands go to the bar.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRiderRig, "KiteSurf.Rider.JointedRig", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRiderRig::RunTest(const FString& Parameters)
+{
+	// The two-bone solver.
+	{
+		const FVector Root(0.0f, 0.0f, 100.0f);
+		FVector End;
+		FVector Joint = RiderRig::SolveTwoBone(Root, FVector(10.0f, 0.0f, 30.0f), FVector::ForwardVector, 45.0f, 42.0f, End);
+		TestTrue(TEXT("A target within reach is reached"), End.Equals(FVector(10.0f, 0.0f, 30.0f), 0.01f));
+		TestNearlyEqual(TEXT("The upper bone keeps its length"), static_cast<float>(FVector::Dist(Root, Joint)), 45.0f, 0.01f);
+		TestNearlyEqual(TEXT("The lower bone keeps its length"), static_cast<float>(FVector::Dist(Joint, End)), 42.0f, 0.01f);
+		TestTrue(TEXT("The joint bends towards the pole"), Joint.X > 5.0f);
+		Joint = RiderRig::SolveTwoBone(Root, FVector(10.0f, 0.0f, 30.0f), FVector::BackwardVector, 45.0f, 42.0f, End);
+		TestTrue(TEXT("and the other way for the opposite pole"), Joint.X < 5.0f);
+
+		Joint = RiderRig::SolveTwoBone(Root, FVector(0.0f, 0.0f, -200.0f), FVector::ForwardVector, 45.0f, 42.0f, End);
+		TestTrue(FString::Printf(TEXT("A target out of reach is pointed at with the limb nearly straight (%.1f cm long)"), FVector::Dist(Root, End)), FVector::Dist(Root, End) > 86.0f && FVector::Dist(Root, End) < 87.0f && FMath::Abs(End.X) < 0.01f);
+		TestNearlyEqual(TEXT("with the bones still their own length"), static_cast<float>(FVector::Dist(Root, Joint) + FVector::Dist(Joint, End)), 87.0f, 0.01f);
+
+		Joint = RiderRig::SolveTwoBone(Root, Root + FVector(0.0f, 0.0f, -1.0f), FVector::ForwardVector, 45.0f, 42.0f, End);
+		TestNearlyEqual(TEXT("A target too close folds the limb without changing its bones"), static_cast<float>(FVector::Dist(Root, Joint)), 45.0f, 0.01f);
+	}
+
+	auto CheckLegs = [this](const TCHAR* What, const FRiderRigPose& Pose, const FRiderRigInput& Input)
+	{
+		const FVector Along = Input.Board.GetUnitAxis(EAxis::X);
+		const FVector Centre = Input.Board.GetLocation() + Input.Board.GetUnitAxis(EAxis::Z) * RiderRig::AnkleHeightCm;
+		bool bFeetInStraps = true;
+		bool bBonesRight = true;
+		bool bKneesForward = true;
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const FRiderLimbPose& Leg = Pose.Legs[Side];
+			const FVector FromCentre = Leg.End - Centre;
+			bFeetInStraps = bFeetInStraps && FMath::IsNearlyEqual(static_cast<float>(FMath::Abs(FVector::DotProduct(FromCentre, Along))), RiderRig::StrapHalfSpacingCm, 0.05f)
+				&& (FromCentre - FVector::DotProduct(FromCentre, Along) * Along).Size() < 0.05f;
+			bBonesRight = bBonesRight && FMath::IsNearlyEqual(static_cast<float>(FVector::Dist(Leg.Root, Leg.Joint)), RiderRig::ThighLengthCm, 0.01f)
+				&& FMath::IsNearlyEqual(static_cast<float>(FVector::Dist(Leg.Joint, Leg.End)), RiderRig::ShinLengthCm, 0.01f);
+			const FVector MidLeg = (Leg.Root + Leg.End) * 0.5f;
+			bKneesForward = bKneesForward && FVector::DotProduct(Leg.Joint - MidLeg, Input.Facing) > 0.0f;
+		}
+		TestTrue(FString::Printf(TEXT("%s: both feet are in the straps"), What), bFeetInStraps);
+		TestTrue(FString::Printf(TEXT("%s: thighs and shins keep their length"), What), bBonesRight);
+		TestTrue(FString::Printf(TEXT("%s: the knees bend forwards"), What), bKneesForward);
+		TestTrue(FString::Printf(TEXT("%s: the feet are apart, one in each strap"), What), FVector::Dist(Pose.Legs[0].End, Pose.Legs[1].End) > 2.0f * RiderRig::StrapHalfSpacingCm - 0.1f);
+	};
+	auto KneeAngleDeg = [](const FRiderLimbPose& Leg)
+	{
+		return FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct((Leg.Root - Leg.Joint).GetSafeNormal(), (Leg.End - Leg.Joint).GetSafeNormal())));
+	};
+
+	// Standing across a level board that points along +X, facing its right rail (+Y).
+	FRiderRigInput Input;
+	Input.Board = FTransform(FRotator::ZeroRotator, FVector(1000.0f, 2000.0f, 50.0f));
+	Input.Facing = FVector::RightVector;
+	Input.BodyUp = FVector::UpVector;
+	const FRiderRigPose Standing = RiderRig::SolveBody(Input);
+	CheckLegs(TEXT("Standing"), Standing, Input);
+	TestNearlyEqual(TEXT("Standing, the pelvis is its standing height above the ankles"), static_cast<float>(Standing.Pelvis.Z - 50.0f - RiderRig::AnkleHeightCm), RiderRig::StandingPelvisHeightCm, 0.1f);
+	const float StandingKnee = KneeAngleDeg(Standing.Legs[0]);
+	TestTrue(FString::Printf(TEXT("with the knees a little bent (%.0f deg)"), StandingKnee), StandingKnee > 120.0f && StandingKnee < 175.0f);
+	// Facing +Y, the rider's right is -X: their right foot is in the strap towards -X.
+	TestTrue(TEXT("The right foot is on the rider's right"), Standing.Legs[1].End.X < Standing.Legs[0].End.X);
+
+	// Crouched: lower, with the knees bent much further.
+	Input.Crouch = 1.0f;
+	const FRiderRigPose Crouched = RiderRig::SolveBody(Input);
+	CheckLegs(TEXT("Crouched"), Crouched, Input);
+	TestTrue(FString::Printf(TEXT("A full crouch drops the pelvis by about %.0f cm (%.0f cm)"), RiderRig::StandingPelvisHeightCm * RiderRig::CrouchDropFraction, Standing.Pelvis.Z - Crouched.Pelvis.Z),
+		FMath::IsNearlyEqual(static_cast<float>(Standing.Pelvis.Z - Crouched.Pelvis.Z), RiderRig::StandingPelvisHeightCm * RiderRig::CrouchDropFraction, 0.5f));
+	TestTrue(FString::Printf(TEXT("and bends the knees much further (%.0f deg against %.0f deg)"), KneeAngleDeg(Crouched.Legs[0]), StandingKnee), KneeAngleDeg(Crouched.Legs[0]) < StandingKnee - 40.0f);
+	Input.Crouch = 0.0f;
+
+	// Leaning right out: the feet stay put and the body goes with the lean.
+	Input.BodyUp = (FVector::UpVector - Input.Facing * FMath::Tan(FMath::DegreesToRadians(45.0f))).GetSafeNormal();
+	const FRiderRigPose Leaning = RiderRig::SolveBody(Input);
+	CheckLegs(TEXT("Leaning back 45 deg"), Leaning, Input);
+	TestTrue(TEXT("Leaning back moves the pelvis back behind the feet"), FVector::DotProduct(Leaning.Pelvis - Input.Board.GetLocation(), Input.Facing) < -30.0f);
+	Input.BodyUp = FVector::UpVector;
+
+	// The board tilted and turned, as in a jump: the feet go with it.
+	Input.Board = FTransform(FRotator(25.0f, 140.0f, -30.0f), FVector(-500.0f, 300.0f, 900.0f));
+	Input.Facing = FRotator(0.0f, 140.0f - 90.0f, 0.0f).Vector();
+	const FRiderRigPose Tilted = RiderRig::SolveBody(Input);
+	CheckLegs(TEXT("On a tilted board"), Tilted, Input);
+
+	// Facing the other rail, the feet swap straps so that the right foot is still on the right.
+	Input.Board = FTransform(FRotator::ZeroRotator, FVector::ZeroVector);
+	Input.Facing = -FVector::RightVector;
+	const FRiderRigPose OtherWay = RiderRig::SolveBody(Input);
+	CheckLegs(TEXT("Facing the other rail"), OtherWay, Input);
+	TestTrue(TEXT("Facing -Y, the right foot is towards +X"), OtherWay.Legs[1].End.X > OtherWay.Legs[0].End.X);
+
+	// Arms: the hands go to the points given, with the elbows below the line from shoulder to hand.
+	FRiderRigPose Arms = Standing;
+	const FVector LeftHand = Standing.Pelvis + Standing.Torso.RotateVector(FVector(40.0f, -14.0f, 30.0f));
+	const FVector RightHand = Standing.Pelvis + Standing.Torso.RotateVector(FVector(40.0f, 14.0f, 30.0f));
+	RiderRig::SolveArms(Arms, LeftHand, RightHand);
+	TestTrue(TEXT("The hands reach the bar"), Arms.Arms[0].End.Equals(LeftHand, 0.05f) && Arms.Arms[1].End.Equals(RightHand, 0.05f));
+	TestTrue(TEXT("The arm bones keep their length"), FMath::IsNearlyEqual(static_cast<float>(FVector::Dist(Arms.Arms[0].Root, Arms.Arms[0].Joint)), RiderRig::UpperArmLengthCm, 0.01f)
+		&& FMath::IsNearlyEqual(static_cast<float>(FVector::Dist(Arms.Arms[1].Joint, Arms.Arms[1].End)), RiderRig::ForearmLengthCm, 0.01f));
+	TestTrue(TEXT("The elbows hang below the arm's line"), Arms.Arms[0].Joint.Z < (Arms.Arms[0].Root.Z + Arms.Arms[0].End.Z) * 0.5f && Arms.Arms[1].Joint.Z < (Arms.Arms[1].Root.Z + Arms.Arms[1].End.Z) * 0.5f);
+	TestTrue(TEXT("The shoulders are either side of the body"), FVector::Dist(Arms.Arms[0].Root, Arms.Arms[1].Root) > 40.0f);
+
+	// On the pawn: the parts are drawn where the rig says, the hands are on the bar, and loading crouches.
+	FRideFixture Ride;
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	Ride.Simulate(2.0f);
+	const FRiderRigPose& Riding = Ride.Pawn->GetRiderRigPose();
+	TestTrue(TEXT("The torso is drawn at the pelvis"), Ride.Pawn->GetRiderStaticMesh()->GetComponentLocation().Equals(Riding.Pelvis, 0.1f));
+	TestTrue(TEXT("The left shin is drawn from the left knee"), Ride.Pawn->GetRiderLimbs()[1]->GetComponentLocation().Equals(Riding.Legs[0].Joint, 0.1f));
+	TestTrue(TEXT("The right forearm is drawn from the right elbow"), Ride.Pawn->GetRiderLimbs()[7]->GetComponentLocation().Equals(Riding.Arms[1].Joint, 0.1f));
+	const FVector BarLeft = Ride.Kite->GetBarEndWorldPosition(true);
+	const FVector BarRight = Ride.Kite->GetBarEndWorldPosition(false);
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const FVector Hand = Riding.Arms[Side].End;
+		const float OffBar = FMath::PointDistToSegment(Hand, BarLeft, BarRight);
+		TestTrue(FString::Printf(TEXT("The %s hand is on the bar (%.1f cm off it)"), Side == 0 ? TEXT("left") : TEXT("right"), OffBar), OffBar < 2.5f);
+	}
+	TestTrue(TEXT("The left hand is nearer the bar's left end"), FVector::Dist(Riding.Arms[0].End, BarLeft) < FVector::Dist(Riding.Arms[0].End, BarRight));
+	const float RidingPelvisHeight = Riding.Pelvis.Z - Ride.Pawn->GetActorLocation().Z;
+	const float RidingKnee = KneeAngleDeg(Riding.Legs[0]);
+
+	Ride.Pawn->SetLoadHeld(true);
+	Ride.Simulate(0.8f);
+	const FRiderRigPose& Loaded = Ride.Pawn->GetRiderRigPose();
+	const float LoadedPelvisHeight = Loaded.Pelvis.Z - Ride.Pawn->GetActorLocation().Z;
+	UE_LOG(LogKiteSurf, Log, TEXT("JointedRig: pelvis %.0f cm above the board riding, %.0f cm loaded; knee %.0f deg riding, %.0f deg loaded"), RidingPelvisHeight, LoadedPelvisHeight, RidingKnee, KneeAngleDeg(Loaded.Legs[0]));
+	TestTrue(FString::Printf(TEXT("Loading sits the rider down (pelvis %.0f cm to %.0f cm above the board)"), RidingPelvisHeight, LoadedPelvisHeight), LoadedPelvisHeight < RidingPelvisHeight - 20.0f);
+	TestTrue(TEXT("with the knees bent further"), KneeAngleDeg(Loaded.Legs[0]) < RidingKnee - 25.0f);
 	return true;
 }
 

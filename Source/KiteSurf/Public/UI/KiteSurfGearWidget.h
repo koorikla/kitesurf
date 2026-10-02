@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "KiteGear.h"
 #include "RiderCharacter.h"
 #include "Styling/SlateBrush.h"
@@ -79,6 +80,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void CycleRider();
 
+	/** The rider before this one, for the preview's left arrow. */
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void CycleRiderBack();
+
+	/** The stand that shows the chosen rider, kite and board; null where nothing can be spawned. */
+	class AKiteSurfGearPreview* GetPreview() const { return Preview; }
+
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void CycleKiteModel();
 
@@ -121,12 +129,32 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator::FItem MakeKiteSizeItem();
+	FKiteMenuNavigator Navigator;
+
 	void LoadChoices();
 	void UpdateTexts();
+	void SpawnPreview();
+	void UpdatePreview();
+	TSharedRef<SWidget> BuildPreviewPanel();
+
+	UPROPERTY(Transient)
+	TObjectPtr<class AKiteSurfGearPreview> Preview;
+	FSlateBrush PreviewBrush;
+	TSharedPtr<STextBlock> PreviewName;
+	TSharedPtr<STextBlock> PreviewDescription;
+	TSharedPtr<STextBlock> PreviewRig;
+	bool bDraggingPreview = false;
 	TSharedRef<SWidget> BuildChoiceRow(const TCHAR* Label, TSharedPtr<SButton>& OutButton, TSharedPtr<STextBlock>& OutValueText, TSharedPtr<STextBlock>& OutDescriptionText, TFunction<void()> OnClicked);
 
 	bool bChoicesLoaded = false;
@@ -159,4 +187,5 @@ private:
 	TSharedPtr<STextBlock> SharksText;
 	TSharedPtr<STextBlock> SharksDescription;
 	TSharedPtr<SButton> ConfirmButton;
+	TSharedPtr<SButton> BackButton;
 };

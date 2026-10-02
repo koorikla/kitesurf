@@ -1,5 +1,7 @@
 #include "UI/KiteSurfSettingsWidget.h"
 #include "KiteSurfUnits.h"
+#include "UI/KiteSurfMainMenuGameMode.h"
+#include "UI/KiteSurfMenuStyle.h"
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
 #include "WindComponent.h"
@@ -58,9 +60,14 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 		{
 			CurrentWindKnots = GI->PendingWindKnots;
 			CurrentVolume = GI->MasterVolume;
+			CurrentMusicVolume = GI->MusicVolume;
+			CurrentAmbientVolume = GI->AmbientVolume;
+			CurrentEffectsVolume = GI->EffectsVolume;
 			bSkipOnboarding = GI->bSkipOnboarding;
 			CurrentRiderCharacter = GI->RiderCharacter;
 			CurrentKiteSizeM2 = GI->KiteSizeM2;
+			bMotionBar = GI->bMotionBar;
+			bHaptics = GI->bHaptics;
 		}
 		else
 		{
@@ -69,6 +76,9 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			{
 				CurrentWindKnots = SaveGame->WindStrengthKnots;
 				CurrentVolume = SaveGame->MasterVolume;
+				CurrentMusicVolume = SaveGame->MusicVolume;
+				CurrentAmbientVolume = SaveGame->AmbientVolume;
+				CurrentEffectsVolume = SaveGame->EffectsVolume;
 				bSkipOnboarding = SaveGame->bSkipOnboarding;
 				CurrentRiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
 				CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SaveGame->KiteSizeM2) ? SaveGame->KiteSizeM2 : 0.0f;
@@ -191,6 +201,45 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 
 	InitializeSettings();
 
+	// A label, a slider and a percentage, as the master volume row is laid out.
+	auto MakeVolumeRow = [](const TCHAR* Label, TSharedPtr<SSlider>& Slider, TSharedPtr<STextBlock>& Text, float Value, TFunction<void(float)> OnChanged) -> TSharedRef<SWidget>
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(170.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Label))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+				]
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.Padding(10.0f, 0.0f)
+			.VAlign(VAlign_Center)
+			[
+				SAssignNew(Slider, SSlider)
+				.IsFocusable(false)
+				.Value(Value)
+				.OnValueChanged_Lambda([OnChanged](float NewVal) { OnChanged(NewVal); })
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(70.0f).HAlign(HAlign_Right)
+				[
+					SAssignNew(Text, STextBlock)
+					.Text(FText::FromString(FString::Printf(TEXT("%.0f%%"), Value * 100.0f)))
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+					.ColorAndOpacity(FLinearColor::White)
+				]
+			];
+	};
+
 	ResolutionOptions.Empty();
 	TSharedPtr<FString> InitiallySelectedRes;
 	for (int32 i = 0; i < SupportedResolutions.Num(); ++i)
@@ -263,6 +312,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateVolumeSlider, SSlider)
+						.IsFocusable(false)
 						.Value(CurrentVolume)
 						.OnValueChanged_Lambda([this](float NewVal)
 						{
@@ -281,6 +331,25 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 							.ColorAndOpacity(FLinearColor::White)
 						]
 					]
+				]
+				// Music, ambient and effects volume rows
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					MakeVolumeRow(TEXT("MUSIC VOLUME:"), SlateMusicSlider, SlateMusicText, CurrentMusicVolume, [this](float NewVal) { OnMusicSliderChanged(NewVal); })
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					MakeVolumeRow(TEXT("AMBIENT VOLUME:"), SlateAmbientSlider, SlateAmbientText, CurrentAmbientVolume, [this](float NewVal) { OnAmbientSliderChanged(NewVal); })
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					MakeVolumeRow(TEXT("EFFECTS VOLUME:"), SlateEffectsSlider, SlateEffectsText, CurrentEffectsVolume, [this](float NewVal) { OnEffectsSliderChanged(NewVal); })
 				]
 				// Fullscreen row
 				+ SVerticalBox::Slot()
@@ -305,6 +374,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateFullscreenButton, SButton)
+						.IsFocusable(false)
 						.HAlign(HAlign_Center)
 						.OnClicked_Lambda([this]()
 						{
@@ -341,6 +411,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateResolutionCombo, SComboBox<TSharedPtr<FString>>)
+						.IsFocusable(false)
 						.OptionsSource(&ResolutionOptions)
 						.InitiallySelectedItem(InitiallySelectedRes)
 						.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
@@ -363,6 +434,90 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						[
 							SAssignNew(SlateResolutionText, STextBlock)
 							.Text(FText::FromString(FString::Printf(TEXT("%d x %d"), CurrentResolution.X, CurrentResolution.Y)))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
+				// Motion bar row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("MOTION BAR:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateMotionBarButton, SButton)
+						.IsFocusable(false)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleMotionBar();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateMotionBarText, STextBlock)
+							.Text(FText::FromString(bMotionBar ? TEXT("ON") : TEXT("OFF")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(200.0f, 0.0f, 20.0f, 6.0f)
+				[
+					SAssignNew(SlateMotionBarNote, STextBlock)
+					.Text(FText::FromString(GetMotionBarNote()))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					.ColorAndOpacity(FLinearColor(0.55f, 0.75f, 0.9f))
+					.AutoWrapText(true)
+				]
+				// Vibration row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("VIBRATION:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateHapticsButton, SButton)
+						.IsFocusable(false)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleHaptics();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateHapticsText, STextBlock)
+							.Text(FText::FromString(bHaptics ? TEXT("ON") : TEXT("OFF")))
 							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
 						]
 					]
@@ -390,6 +545,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateVSyncButton, SButton)
+						.IsFocusable(false)
 						.HAlign(HAlign_Center)
 						.OnClicked_Lambda([this]()
 						{
@@ -426,6 +582,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateQualityCombo, SComboBox<TSharedPtr<FString>>)
+						.IsFocusable(false)
 						.OptionsSource(&QualityOptions)
 						.InitiallySelectedItem(InitiallySelectedQuality)
 						.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
@@ -459,6 +616,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 				.HAlign(HAlign_Center)
 				[
 					SAssignNew(SlateBackButton, SButton)
+					.IsFocusable(false)
 					.OnClicked_Lambda([this]()
 					{
 						OnBackClicked();
@@ -483,7 +641,71 @@ void UKiteSurfSettingsWidget::OnWindSliderChanged(float Value)
 void UKiteSurfSettingsWidget::OnVolumeSliderChanged(float Value)
 {
 	CurrentVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	if (SlateVolumeSlider.IsValid() && !FMath::IsNearlyEqual(SlateVolumeSlider->GetValue(), CurrentVolume))
+	{
+		SlateVolumeSlider->SetValue(CurrentVolume); // moved by the keys rather than the mouse
+	}
 	UpdateTextDisplays();
+}
+
+void UKiteSurfSettingsWidget::ShowVolume(const TSharedPtr<SSlider>& Slider, const TSharedPtr<STextBlock>& Text, float Volume)
+{
+	if (Slider.IsValid() && !FMath::IsNearlyEqual(Slider->GetValue(), Volume))
+	{
+		Slider->SetValue(Volume);
+	}
+	if (Text.IsValid())
+	{
+		Text->SetText(FText::FromString(FString::Printf(TEXT("%.0f%%"), Volume * 100.0f)));
+	}
+}
+
+// Each of these is heard straight away, in the menu or over a paused ride.
+void UKiteSurfSettingsWidget::OnMusicSliderChanged(float Value)
+{
+	CurrentMusicVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	ShowVolume(SlateMusicSlider, SlateMusicText, CurrentMusicVolume);
+	if (UWorld* World = GetWorld())
+	{
+		if (AKiteSurfMainMenuGameMode* MenuMode = Cast<AKiteSurfMainMenuGameMode>(World->GetAuthGameMode()))
+		{
+			MenuMode->SetMusicVolume(CurrentMusicVolume);
+		}
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetMusicVolume(CurrentMusicVolume);
+		}
+	}
+}
+
+void UKiteSurfSettingsWidget::OnAmbientSliderChanged(float Value)
+{
+	CurrentAmbientVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	ShowVolume(SlateAmbientSlider, SlateAmbientText, CurrentAmbientVolume);
+	const UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+	{
+		Rider->SetAmbientVolume(CurrentAmbientVolume);
+	}
+}
+
+void UKiteSurfSettingsWidget::OnEffectsSliderChanged(float Value)
+{
+	CurrentEffectsVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	ShowVolume(SlateEffectsSlider, SlateEffectsText, CurrentEffectsVolume);
+	const UWorld* World = GetWorld();
+	// The menus' own sounds read it from the game instance, so the next tick of this slider is at the new level.
+	if (UKiteSurfGameInstance* GI = World ? Cast<UKiteSurfGameInstance>(World->GetGameInstance()) : nullptr)
+	{
+		GI->SetEffectsVolume(CurrentEffectsVolume);
+	}
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+	{
+		Rider->SetEffectsVolume(CurrentEffectsVolume);
+	}
 }
 
 void UKiteSurfSettingsWidget::ToggleFullscreen()
@@ -520,6 +742,60 @@ void UKiteSurfSettingsWidget::SetResolutionByIndex(int32 Index)
 	{
 		SetResolution(SupportedResolutions[Index]);
 	}
+}
+
+void UKiteSurfSettingsWidget::ToggleHaptics()
+{
+	bHaptics = !bHaptics;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetHapticsEnabled(bHaptics);
+			// A buzz to say it is on.
+			Rider->PlayHaptic(0.5f, 0.15f, true);
+		}
+	}
+	UpdateTextDisplays();
+}
+
+void UKiteSurfSettingsWidget::ToggleMotionBar()
+{
+	bMotionBar = !bMotionBar;
+
+	// Straight away, so the note can say which controller it found.
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetMotionBarEnabled(bMotionBar);
+		}
+	}
+	UpdateTextDisplays();
+}
+
+FString UKiteSurfSettingsWidget::GetMotionBarNote() const
+{
+	if (!bMotionBar)
+	{
+		return TEXT("Hold the controller like a bar: tilt to steer, tip it towards you for power. Needs a controller with motion sensors (PlayStation, Switch); Xbox controllers have none.");
+	}
+	FString Device;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (const AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Device = Rider->IsMotionBarActive() ? Rider->GetMotionDeviceName() : FString();
+		}
+	}
+	if (!Device.IsEmpty())
+	{
+		return FString::Printf(TEXT("Using %s. However you are holding it when you start is level; reset [R] re-centres."), *Device);
+	}
+	return TEXT("On. With no motion sensors found the right stick still works. However you hold the controller when the ride starts is level; reset [R] re-centres.");
 }
 
 void UKiteSurfSettingsWidget::ToggleVSync()
@@ -676,6 +952,19 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 		SlateRiderText->SetText(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)));
 	}
 
+	if (SlateHapticsText.IsValid())
+	{
+		SlateHapticsText->SetText(FText::FromString(bHaptics ? TEXT("ON") : TEXT("OFF")));
+	}
+	if (SlateMotionBarText.IsValid())
+	{
+		SlateMotionBarText->SetText(FText::FromString(bMotionBar ? TEXT("ON") : TEXT("OFF")));
+	}
+	if (SlateMotionBarNote.IsValid())
+	{
+		SlateMotionBarNote->SetText(FText::FromString(GetMotionBarNote()));
+	}
+
 	const FString VSyncStr = bCurrentVSync ? TEXT("ENABLED") : TEXT("DISABLED");
 	if (VSyncValueText)
 	{
@@ -702,9 +991,14 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 		{
 			GI->SetPendingWindKnots(CurrentWindKnots);
 			GI->SetMasterVolume(CurrentVolume);
+			GI->SetMusicVolume(CurrentMusicVolume);
+			GI->SetAmbientVolume(CurrentAmbientVolume);
+			GI->SetEffectsVolume(CurrentEffectsVolume);
 			GI->SetSkipOnboarding(bSkipOnboarding);
 			GI->SetRiderCharacter(CurrentRiderCharacter);
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
+			GI->SetMotionBar(bMotionBar);
+			GI->SetHaptics(bHaptics);
 			GI->SaveSettingsToDisk();
 
 			// A ride that is already under way gets the new wind and kite straight away.
@@ -729,6 +1023,9 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			{
 				SaveGame->WindStrengthKnots = CurrentWindKnots;
 				SaveGame->MasterVolume = CurrentVolume;
+				SaveGame->MusicVolume = CurrentMusicVolume;
+				SaveGame->AmbientVolume = CurrentAmbientVolume;
+				SaveGame->EffectsVolume = CurrentEffectsVolume;
 				SaveGame->bSkipOnboarding = bSkipOnboarding;
 				SaveGame->RiderCharacterIndex = static_cast<int32>(CurrentRiderCharacter);
 				SaveGame->KiteSizeM2 = CurrentKiteSizeM2;
@@ -745,21 +1042,62 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 
 void UKiteSurfSettingsWidget::FocusFirst()
 {
-	if (BackButton)
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		BackButton->SetKeyboardFocus();
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
-	else if (SlateBackButton.IsValid())
+}
+
+FKiteMenuNavigator& UKiteSurfSettingsWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
 	{
-		FSlateApplication::Get().SetKeyboardFocus(SlateBackButton);
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
 	}
+	return Navigator;
+}
+
+void UKiteSurfSettingsWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
+	Navigator.AddSlider(SlateVolumeSlider, [this](int32 Direction) { OnVolumeSliderChanged(CurrentVolume + 0.05f * Direction); });
+	Navigator.AddSlider(SlateMusicSlider, [this](int32 Direction) { OnMusicSliderChanged(CurrentMusicVolume + 0.05f * Direction); });
+	Navigator.AddSlider(SlateAmbientSlider, [this](int32 Direction) { OnAmbientSliderChanged(CurrentAmbientVolume + 0.05f * Direction); });
+	Navigator.AddSlider(SlateEffectsSlider, [this](int32 Direction) { OnEffectsSliderChanged(CurrentEffectsVolume + 0.05f * Direction); });
+	Navigator.AddButton(SlateFullscreenButton, [this]() { ToggleFullscreen(); }, true);
+	Navigator.AddText(SlateResolutionText, [this](int32 Direction)
+	{
+		// Step to the neighbouring resolution; from one that is not in the list, start at its end.
+		const int32 Current = SupportedResolutions.IndexOfByKey(CurrentResolution);
+		const int32 Next = Current == INDEX_NONE ? (Direction > 0 ? 0 : SupportedResolutions.Num() - 1) : Current + Direction;
+		SetResolutionByIndex(FMath::Clamp(Next, 0, FMath::Max(SupportedResolutions.Num() - 1, 0)));
+	});
+	Navigator.AddButton(SlateMotionBarButton, [this]() { ToggleMotionBar(); }, true);
+	Navigator.AddButton(SlateHapticsButton, [this]() { ToggleHaptics(); }, true);
+	Navigator.AddButton(SlateVSyncButton, [this]() { ToggleVSync(); }, true);
+	Navigator.AddText(SlateQualityText, [this](int32 Direction) { SetQualityPreset(CurrentQualityPreset + Direction); });
+	Navigator.AddButton(SlateBackButton, [this]() { OnBackClicked(); });
 }
 
 FReply UKiteSurfSettingsWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right || Key == EKeys::Gamepad_FaceButton_Right)
 	{
+		KiteSurfMenuStyle::PlayMenuSound(this, EKiteMenuSound::Back);
 		OnBackClicked();
 		return FReply::Handled();
 	}

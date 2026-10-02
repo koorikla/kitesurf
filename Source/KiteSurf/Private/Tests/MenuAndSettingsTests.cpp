@@ -14,6 +14,11 @@
 #include "Engine/World.h"
 #include "Misc/App.h"
 #include "GameMapsSettings.h"
+#include "GameFramework/GameUserSettings.h"
+#include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstance.h"
+#include "KiteRiderPawn.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FKiteSurfSaveGameDefaultsAndClampingTest,
@@ -159,5 +164,128 @@ bool FKiteSurfPauseMenuTogglesTest::RunTest(const FString& Parameters)
     }
 
     World->DestroyWorld(false);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FKiteSurfSettingsV2ControlsTest,
+    "KiteSurf.UI.SettingsV2Controls",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FKiteSurfSettingsV2ControlsTest::RunTest(const FString& Parameters)
+{
+    UKiteSurfSettingsWidget* SettingsWidget = NewObject<UKiteSurfSettingsWidget>();
+    TestNotNull(TEXT("UKiteSurfSettingsWidget can be instantiated"), SettingsWidget);
+    if (!SettingsWidget)
+    {
+        return false;
+    }
+    SettingsWidget->Initialize();
+
+    // 1. Initial State verification
+    TestTrue(TEXT("SupportedResolutions is populated"), SettingsWidget->SupportedResolutions.Num() > 0);
+    TestTrue(TEXT("CurrentQualityPreset is in valid range [0, 3]"), SettingsWidget->CurrentQualityPreset >= 0 && SettingsWidget->CurrentQualityPreset <= 3);
+
+    // 2. Fullscreen mode toggle and set
+    const EWindowMode::Type InitialMode = SettingsWidget->CurrentWindowMode;
+    SettingsWidget->ToggleFullscreen();
+    TestNotEqual(TEXT("ToggleFullscreen changes window mode"), SettingsWidget->CurrentWindowMode.GetValue(), InitialMode);
+    SettingsWidget->SetFullscreenMode(EWindowMode::WindowedFullscreen);
+    TestEqual(TEXT("SetFullscreenMode sets WindowedFullscreen"), SettingsWidget->CurrentWindowMode.GetValue(), EWindowMode::WindowedFullscreen);
+    SettingsWidget->SetFullscreenMode(EWindowMode::Windowed);
+    TestEqual(TEXT("SetFullscreenMode sets Windowed"), SettingsWidget->CurrentWindowMode.GetValue(), EWindowMode::Windowed);
+
+    // 3. Resolution setting
+    const FIntPoint TestRes(1920, 1080);
+    SettingsWidget->SetResolution(TestRes);
+    TestEqual(TEXT("SetResolution sets 1920x1080"), SettingsWidget->CurrentResolution, TestRes);
+
+    if (SettingsWidget->SupportedResolutions.Num() > 0)
+    {
+        SettingsWidget->SetResolutionByIndex(0);
+        TestEqual(TEXT("SetResolutionByIndex sets first supported resolution"), SettingsWidget->CurrentResolution, SettingsWidget->SupportedResolutions[0]);
+    }
+
+    // 4. VSync toggle and set
+    const bool bInitialVSync = SettingsWidget->bCurrentVSync;
+    SettingsWidget->ToggleVSync();
+    TestEqual(TEXT("ToggleVSync inverts vsync flag"), SettingsWidget->bCurrentVSync, !bInitialVSync);
+    SettingsWidget->SetVSyncEnabled(true);
+    TestTrue(TEXT("SetVSyncEnabled(true) enables VSync"), SettingsWidget->bCurrentVSync);
+    SettingsWidget->SetVSyncEnabled(false);
+    TestFalse(TEXT("SetVSyncEnabled(false) disables VSync"), SettingsWidget->bCurrentVSync);
+
+    // 5. Scalability Quality Presets (0=Low, 1=Medium, 2=High, 3=Epic)
+    SettingsWidget->SetQualityPreset(0);
+    TestEqual(TEXT("SetQualityPreset(0) sets Low"), SettingsWidget->CurrentQualityPreset, 0);
+    SettingsWidget->SetQualityPreset(3);
+    TestEqual(TEXT("SetQualityPreset(3) sets Epic"), SettingsWidget->CurrentQualityPreset, 3);
+    SettingsWidget->SetQualityPreset(2);
+    TestEqual(TEXT("SetQualityPreset(2) sets High"), SettingsWidget->CurrentQualityPreset, 2);
+    SettingsWidget->SetQualityPreset(1);
+    TestEqual(TEXT("SetQualityPreset(1) sets Medium"), SettingsWidget->CurrentQualityPreset, 1);
+
+    // Clamping test
+    SettingsWidget->SetQualityPreset(-1);
+    TestEqual(TEXT("SetQualityPreset(-1) clamped to 0"), SettingsWidget->CurrentQualityPreset, 0);
+    SettingsWidget->SetQualityPreset(5);
+    TestEqual(TEXT("SetQualityPreset(5) clamped to 3"), SettingsWidget->CurrentQualityPreset, 3);
+
+    // 6. Test Slate fallback widget hierarchy creation
+    TSharedRef<SWidget> SlateWidget = SettingsWidget->TakeWidget();
+    TestTrue(TEXT("TakeWidget creates valid Slate widget"), SlateWidget != SNullWidget::NullWidget);
+
+    // 7. Verify ApplyVideoSettings updates UGameUserSettings
+    SettingsWidget->SetQualityPreset(2);
+    SettingsWidget->SetFullscreenMode(EWindowMode::Windowed);
+    SettingsWidget->SetVSyncEnabled(false);
+    SettingsWidget->ApplyVideoSettings();
+
+    UGameUserSettings* UserSettings = UGameUserSettings::GetGameUserSettings();
+    TestNotNull(TEXT("UGameUserSettings is valid"), UserSettings);
+    if (UserSettings)
+    {
+        TestEqual(TEXT("UserSettings Scalability matches CurrentQualityPreset"), UserSettings->GetOverallScalabilityLevel(), 2);
+        TestEqual(TEXT("UserSettings WindowMode matches CurrentWindowMode"), UserSettings->GetFullscreenMode(), EWindowMode::Windowed);
+        TestEqual(TEXT("UserSettings VSync matches bCurrentVSync"), UserSettings->IsVSyncEnabled(), false);
+    }
+
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FKiteSurfRiderMaterialsTest,
+    "KiteSurf.Graphics.RiderMaterials",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FKiteSurfRiderMaterialsTest::RunTest(const FString& Parameters)
+{
+    // 1. Verify SKM_Manny_Simple skeletal mesh exists and loads
+    USkeletalMesh* MannyMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
+    TestNotNull(TEXT("SKM_Manny_Simple skeletal mesh loads successfully"), MannyMesh);
+
+    // 2. Verify M_Mannequin base material exists and loads
+    UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Characters/Mannequins/Materials/M_Mannequin.M_Mannequin"));
+    TestNotNull(TEXT("M_Mannequin material loads successfully"), BaseMaterial);
+
+    // 3. Verify MI_Manny_01_New and MI_Manny_02_New material instances exist and load
+    UMaterialInterface* MannyMat01 = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_01_New.MI_Manny_01_New"));
+    TestNotNull(TEXT("MI_Manny_01_New material instance loads successfully"), MannyMat01);
+
+    UMaterialInterface* MannyMat02 = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Characters/Mannequins/Materials/Manny/MI_Manny_02_New.MI_Manny_02_New"));
+    TestNotNull(TEXT("MI_Manny_02_New material instance loads successfully"), MannyMat02);
+
+    if (MannyMesh)
+    {
+        const TArray<FSkeletalMaterial>& MeshMaterials = MannyMesh->GetMaterials();
+        TestTrue(TEXT("SKM_Manny_Simple has material slots"), MeshMaterials.Num() > 0);
+        for (int32 i = 0; i < MeshMaterials.Num(); ++i)
+        {
+            TestNotNull(FString::Printf(TEXT("SKM_Manny_Simple material slot %d is assigned"), i), MeshMaterials[i].MaterialInterface.Get());
+        }
+    }
+
     return true;
 }

@@ -19,6 +19,17 @@ class UInputAction;
 class UAudioComponent;
 class USoundBase;
 
+/** Volume and pitch for the three sound loops: wind in the ears, water under the board, lines under load. */
+struct FRideAudioMix
+{
+	float WindVolume = 0.0f;
+	float WindPitch = 1.0f;
+	float WaterVolume = 0.0f;
+	float WaterPitch = 1.0f;
+	float LineVolume = 0.0f;
+	float LinePitch = 1.0f;
+};
+
 UCLASS()
 class KITESURF_API AKiteRiderPawn : public APawn
 {
@@ -82,6 +93,20 @@ public:
 
 	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
 	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
+
+	/** How loud and at what pitch each loop should play for what the rider is doing. Volumes 0..1, pitch 1 = as recorded. */
+	static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN);
+
+	/** The mix the loops are playing at now. */
+	const FRideAudioMix& GetAudioMix() const { return AudioMix; }
+
+	UAudioComponent* GetWindLoop() const { return WindLoopComponent.Get(); }
+	UAudioComponent* GetWaterLoop() const { return WaterLoopComponent.Get(); }
+	UAudioComponent* GetLineLoop() const { return LineLoopComponent.Get(); }
+	USoundBase* GetPopSound() const { return PopSound.Get(); }
+	USoundBase* GetLandingSound() const { return LandingSound.Get(); }
+	USoundBase* GetCrashSound() const { return CrashSound.Get(); }
+	USoundBase* GetResetSound() const { return ResetSound.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSteerInput() const { return CurrentSteerInput; }
@@ -210,9 +235,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardWakeComponent> Wake;
 
-	// Procedural Audio Components
+	// Sound: loops that play all the time and are faded and pitched by UpdateAudioModulation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
-	TObjectPtr<UAudioComponent> AudioBedComponent;
+	TObjectPtr<UAudioComponent> WindLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> WaterLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> LineLoopComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<USoundBase> PopSound;
@@ -278,6 +309,7 @@ private:
 	void HandleBoardLanding(float LandingG);
 
 	void UpdateAudioModulation(float DeltaTime);
+	FRideAudioMix AudioMix;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);
 

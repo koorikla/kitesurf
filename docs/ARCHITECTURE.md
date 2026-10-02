@@ -20,6 +20,7 @@
 | `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
 | `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
 | `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering. Towards the other side of the window: the kite is flown there over the top (right = clockwise looking downwind). Towards the kite's own side: the bar turns it directly, which loops it. |
+| `AKiteRiderPawn` | `static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)` | Volume and pitch for the wind, water and line loops. The pawn eases its three looping audio components towards it every tick. |
 | `UKiteComponent` | `bool IsLooping() const` | True while the bar is going straight to the kite and turning it round. |
 | `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | Forces raw steering from any position. Not bound to a key; for scripted input and tests. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |

@@ -34,5 +34,5 @@ runs but has essentially no visuals. The first three items below address that.
 4. [x] **Jumps + hangtime** (DONE, PR #11) — allow the board to leave the water when line tension spikes with the kite overhead; air control, landing impact, HUD airtime counter.
 5. **Rider animation** — skeletal rider with IK legs on the board, harness/bar pose driven by sheet input, lean driven by edge input.
 6. **Course / race mode** — buoy course on `L_OpenWater`, lap timer, checkpoints, best-time persistence; `AKiteSurfGameMode` state machine.
-7. **Audio** — wind loop scaled by apparent wind, water spray / planing hiss, kite flutter when depowered, UI ticks.
+7. [x] **Audio** (first version) — wind, water and line-hum loops faded and pitched by apparent wind, board speed and line tension; pop, landing, crash and reset one-shots. Synthesised by `scripts/editor/make_sound_assets.py`. Still to do: kite flutter when depowered, UI ticks, a mix with buses and ducking.
 8. **Packaging follow-ups** — `scripts/package-linux.sh` needs a writable `Engine/Programs/AutomationTool` under `/opt/unreal-engine` (fixed on this host by chown; make the install script do it) and a `-nullrhi`-free smoke run of the Shipping binary in CI.

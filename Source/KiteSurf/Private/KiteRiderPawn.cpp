@@ -128,40 +128,35 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Foam trail and spray behind the board
 	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
 
-	// Procedural audio components
-	AudioBedComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("AudioBedComponent"));
-	AudioBedComponent->SetupAttachment(RootComponent);
-	AudioBedComponent->bAutoActivate = false;
-
-	static ConstructorHelpers::FObjectFinder<USoundBase> BedFinder(TEXT("/Game/Audio/MS_AudioBed"));
-	if (BedFinder.Succeeded())
+	// Sound: three loops that are always playing and are faded and pitched by what the rider
+	// would hear (UpdateAudioModulation), and one-shots for the pop, landing, crash and reset.
+	auto MakeLoop = [this](const TCHAR* ComponentName, const TCHAR* SoundPath) -> UAudioComponent*
 	{
-		AudioBedComponent->SetSound(BedFinder.Object);
-	}
+		UAudioComponent* Loop = CreateDefaultSubobject<UAudioComponent>(ComponentName);
+		Loop->SetupAttachment(RootComponent);
+		Loop->bAutoActivate = false;
+		Loop->bAllowSpatialization = false; // heard from the rider's own ears
+		Loop->VolumeMultiplier = 0.0f;
+		ConstructorHelpers::FObjectFinder<USoundBase> Finder(SoundPath);
+		if (Finder.Succeeded())
+		{
+			Loop->SetSound(Finder.Object);
+		}
+		return Loop;
+	};
+	WindLoopComponent = MakeLoop(TEXT("WindLoopComponent"), TEXT("/Game/Audio/SW_WindLoop"));
+	WaterLoopComponent = MakeLoop(TEXT("WaterLoopComponent"), TEXT("/Game/Audio/SW_WaterLoop"));
+	LineLoopComponent = MakeLoop(TEXT("LineLoopComponent"), TEXT("/Game/Audio/SW_LineLoop"));
 
-	static ConstructorHelpers::FObjectFinder<USoundBase> PopFinder(TEXT("/Game/Audio/MS_Pop"));
-	if (PopFinder.Succeeded())
+	auto FindSound = [](const TCHAR* SoundPath) -> USoundBase*
 	{
-		PopSound = PopFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<USoundBase> LandingFinder(TEXT("/Game/Audio/MS_Landing"));
-	if (LandingFinder.Succeeded())
-	{
-		LandingSound = LandingFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<USoundBase> CrashFinder(TEXT("/Game/Audio/MS_Crash"));
-	if (CrashFinder.Succeeded())
-	{
-		CrashSound = CrashFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<USoundBase> ResetFinder(TEXT("/Game/Audio/MS_ResetCue"));
-	if (ResetFinder.Succeeded())
-	{
-		ResetSound = ResetFinder.Object;
-	}
+		ConstructorHelpers::FObjectFinder<USoundBase> Finder(SoundPath);
+		return Finder.Succeeded() ? Finder.Object : nullptr;
+	};
+	PopSound = FindSound(TEXT("/Game/Audio/SW_Pop"));
+	LandingSound = FindSound(TEXT("/Game/Audio/SW_Landing"));
+	CrashSound = FindSound(TEXT("/Game/Audio/SW_Crash"));
+	ResetSound = FindSound(TEXT("/Game/Audio/SW_ResetCue"));
 
 	RiderCharacter = ERiderCharacter::Santa;
 	SetRiderCharacter(RiderCharacter);
@@ -207,9 +202,12 @@ void AKiteRiderPawn::BeginPlay()
 		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
 	}
 
-	if (AudioBedComponent && AudioBedComponent->GetSound())
+	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get() })
 	{
-		AudioBedComponent->Play();
+		if (Loop && Loop->GetSound())
+		{
+			Loop->Play();
+		}
 	}
 
 	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
@@ -370,7 +368,7 @@ bool AKiteRiderPawn::Jump()
 		// Play pop bass thump
 		if (PopSound)
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, PopSound, GetActorLocation());
+			UGameplayStatics::PlaySound2D(this, PopSound, 0.8f);
 		}
 		return true;
 	}
@@ -685,10 +683,7 @@ void AKiteRiderPawn::HandleBoardCrash(float Intensity)
 {
 	if (CrashSound)
 	{
-		if (UAudioComponent* AudioComp = UGameplayStatics::SpawnSoundAtLocation(this, CrashSound, GetActorLocation(), FRotator::ZeroRotator, FMath::Clamp(Intensity, 0.2f, 1.5f)))
-		{
-			AudioComp->SetFloatParameter(FName("CrashIntensity"), Intensity);
-		}
+		UGameplayStatics::PlaySound2D(this, CrashSound, FMath::Clamp(Intensity, 0.4f, 1.2f));
 	}
 }
 
@@ -696,7 +691,7 @@ void AKiteRiderPawn::HandleBoardReset()
 {
 	if (ResetSound)
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, ResetSound, GetActorLocation());
+		UGameplayStatics::PlaySound2D(this, ResetSound, 0.5f);
 	}
 }
 
@@ -704,33 +699,63 @@ void AKiteRiderPawn::HandleBoardLanding(float LandingG)
 {
 	if (LandingSound)
 	{
-		if (UAudioComponent* AudioComp = UGameplayStatics::SpawnSoundAtLocation(this, LandingSound, GetActorLocation()))
-		{
-			AudioComp->SetFloatParameter(FName("LandingG"), LandingG);
-		}
+		// A harder landing is a louder, deeper splash.
+		const float Hardness = FMath::Clamp((LandingG - 1.0f) / 5.0f, 0.0f, 1.0f);
+		UGameplayStatics::PlaySound2D(this, LandingSound, 0.45f + 0.65f * Hardness, 1.1f - 0.3f * Hardness);
 	}
+}
+
+FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)
+{
+	FRideAudioMix Mix;
+
+	// Wind in the ears: nothing in a calm, loud and higher in a blow.
+	const float WindAmount = FMath::Clamp(ApparentWindKnots / 40.0f, 0.0f, 1.0f);
+	Mix.WindVolume = 0.9f * FMath::Pow(WindAmount, 1.3f);
+	Mix.WindPitch = 0.8f + 0.5f * WindAmount;
+
+	// Water under the board: only while it is on the water, a slosh when slow, a hiss at speed.
+	const float SpeedAmount = FMath::Clamp(BoardSpeedKnots / 28.0f, 0.0f, 1.0f);
+	Mix.WaterVolume = bOnWater ? 0.08f + 0.75f * FMath::Pow(SpeedAmount, 1.2f) : 0.0f;
+	Mix.WaterPitch = 0.75f + 0.55f * SpeedAmount;
+
+	// Lines singing under load: silent when slack, rising with the pull.
+	const float LoadAmount = FMath::Clamp(LineTensionN / 3500.0f, 0.0f, 1.0f);
+	Mix.LineVolume = 0.55f * FMath::Pow(LoadAmount, 1.2f);
+	Mix.LinePitch = 0.7f + 0.9f * LoadAmount;
+	return Mix;
 }
 
 void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 {
 	const FVector Vel = GetBoardVelocity();
-	const float BoardSpeedKnots = Vel.Size2D() / 51.44f;
-
-	// ApparentWind = TrueWind - RiderVelocity
-	const FVector TrueWind = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector(20.0f * 51.44f, 0.0f, 0.0f);
-	const FVector ApparentWindVec = TrueWind - Vel;
-	const float ApparentWindKnots = ApparentWindVec.Size() / 51.44f;
-
-	// Line tension in Newtons
+	const FVector TrueWind = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector::ZeroVector;
+	const float ApparentWindKnots = (TrueWind - Vel).Size() / 51.44f;
+	const bool bOnWater = BoardMovement && BoardMovement->GetBoardState() != EBoardState::Airborne;
 	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;
 
-	// Modulate continuous AudioBed MetaSound (three inputs: ApparentWind, LineTension, BoardSpeed)
-	if (AudioBedComponent && AudioBedComponent->IsPlaying())
+	const FRideAudioMix Target = ComputeAudioMix(ApparentWindKnots, Vel.Size2D() / 51.44f, bOnWater, LineTensionN);
+
+	// Eased so that a gust or the board leaving the water is heard as a swell, not a switch.
+	const float Ease = 6.0f;
+	AudioMix.WindVolume = FMath::FInterpTo(AudioMix.WindVolume, Target.WindVolume, DeltaTime, Ease);
+	AudioMix.WindPitch = FMath::FInterpTo(AudioMix.WindPitch, Target.WindPitch, DeltaTime, Ease);
+	AudioMix.WaterVolume = FMath::FInterpTo(AudioMix.WaterVolume, Target.WaterVolume, DeltaTime, 2.0f * Ease);
+	AudioMix.WaterPitch = FMath::FInterpTo(AudioMix.WaterPitch, Target.WaterPitch, DeltaTime, Ease);
+	AudioMix.LineVolume = FMath::FInterpTo(AudioMix.LineVolume, Target.LineVolume, DeltaTime, Ease);
+	AudioMix.LinePitch = FMath::FInterpTo(AudioMix.LinePitch, Target.LinePitch, DeltaTime, Ease);
+
+	auto Apply = [](UAudioComponent* Loop, float Volume, float Pitch)
 	{
-		AudioBedComponent->SetFloatParameter(FName("ApparentWind"), ApparentWindKnots);
-		AudioBedComponent->SetFloatParameter(FName("LineTension"), LineTensionN);
-		AudioBedComponent->SetFloatParameter(FName("BoardSpeed"), BoardSpeedKnots);
-	}
+		if (Loop)
+		{
+			Loop->SetVolumeMultiplier(Volume);
+			Loop->SetPitchMultiplier(Pitch);
+		}
+	};
+	Apply(WindLoopComponent, AudioMix.WindVolume, AudioMix.WindPitch);
+	Apply(WaterLoopComponent, AudioMix.WaterVolume, AudioMix.WaterPitch);
+	Apply(LineLoopComponent, AudioMix.LineVolume, AudioMix.LinePitch);
 }
 
 void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)

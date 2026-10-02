@@ -12,6 +12,9 @@
 #include "KiteSurfHUD.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 AKiteRiderPawn::AKiteRiderPawn()
 {
@@ -83,6 +86,41 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Kite component: aerodynamics producing the line force consumed by BoardMovement
 	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
 
+	// Procedural audio components
+	AudioBedComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("AudioBedComponent"));
+	AudioBedComponent->SetupAttachment(RootComponent);
+	AudioBedComponent->bAutoActivate = false;
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> BedFinder(TEXT("/Game/Audio/MS_AudioBed"));
+	if (BedFinder.Succeeded())
+	{
+		AudioBedComponent->SetSound(BedFinder.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> PopFinder(TEXT("/Game/Audio/MS_Pop"));
+	if (PopFinder.Succeeded())
+	{
+		PopSound = PopFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> LandingFinder(TEXT("/Game/Audio/MS_Landing"));
+	if (LandingFinder.Succeeded())
+	{
+		LandingSound = LandingFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> CrashFinder(TEXT("/Game/Audio/MS_Crash"));
+	if (CrashFinder.Succeeded())
+	{
+		CrashSound = CrashFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> ResetFinder(TEXT("/Game/Audio/MS_ResetCue"));
+	if (ResetFinder.Succeeded())
+	{
+		ResetSound = ResetFinder.Object;
+	}
+
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
 	KiteAzimuthDeg = 0.0f;
@@ -92,6 +130,18 @@ AKiteRiderPawn::AKiteRiderPawn()
 void AKiteRiderPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (BoardMovement)
+	{
+		BoardMovement->OnBoardCrash.AddDynamic(this, &AKiteRiderPawn::HandleBoardCrash);
+		BoardMovement->OnBoardReset.AddDynamic(this, &AKiteRiderPawn::HandleBoardReset);
+		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
+	}
+
+	if (AudioBedComponent && AudioBedComponent->GetSound())
+	{
+		AudioBedComponent->Play();
+	}
 
 	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
@@ -134,12 +184,21 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		{
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
 		}
+		if (ResetAction)
+		{
+			EnhancedInputComponent->BindAction(ResetAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnResetTriggered);
+		}
 	}
 
 	// Fallback binding for standard Escape key in case Enhanced Input action is unassigned
 	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
 	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
 	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+
+	// Fallback binding for manual reset
+	PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
+	PlayerInputComponent->BindKey(EKeys::Gamepad_FaceButton_Right, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
+	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Left, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
 }
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
@@ -177,6 +236,12 @@ bool AKiteRiderPawn::Jump()
 				}
 			}
 			return false;
+		}
+
+		// Play pop bass thump
+		if (PopSound)
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, PopSound, GetActorLocation());
 		}
 		return true;
 	}
@@ -246,6 +311,73 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	}
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
+
+	UpdateAudioModulation(DeltaTime);
+}
+
+void AKiteRiderPawn::OnResetTriggered(const FInputActionValue& Value)
+{
+	ResetRider();
+}
+
+void AKiteRiderPawn::ResetRider()
+{
+	if (BoardMovement)
+	{
+		BoardMovement->ResetToTack(8.0f);
+	}
+}
+
+void AKiteRiderPawn::HandleBoardCrash(float Intensity)
+{
+	if (CrashSound)
+	{
+		if (UAudioComponent* AudioComp = UGameplayStatics::SpawnSoundAtLocation(this, CrashSound, GetActorLocation(), FRotator::ZeroRotator, FMath::Clamp(Intensity, 0.2f, 1.5f)))
+		{
+			AudioComp->SetFloatParameter(FName("CrashIntensity"), Intensity);
+		}
+	}
+}
+
+void AKiteRiderPawn::HandleBoardReset()
+{
+	if (ResetSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, ResetSound, GetActorLocation());
+	}
+}
+
+void AKiteRiderPawn::HandleBoardLanding(float LandingG)
+{
+	if (LandingSound)
+	{
+		if (UAudioComponent* AudioComp = UGameplayStatics::SpawnSoundAtLocation(this, LandingSound, GetActorLocation()))
+		{
+			AudioComp->SetFloatParameter(FName("LandingG"), LandingG);
+		}
+	}
+}
+
+void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
+{
+	const FVector Vel = GetBoardVelocity();
+	const float BoardSpeedKnots = Vel.Size2D() / 51.44f;
+
+	// ApparentWind = TrueWind - RiderVelocity
+	const FVector TrueWind = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector(20.0f * 51.44f, 0.0f, 0.0f);
+	const FVector ApparentWindVec = TrueWind - Vel;
+	const float ApparentWindKnots = ApparentWindVec.Size() / 51.44f;
+
+	// Line tension in Newtons
+	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;
+
+	// Modulate continuous AudioBed MetaSound (three inputs: ApparentWind, LineTension, BoardSpeed)
+	if (AudioBedComponent && AudioBedComponent->IsPlaying())
+	{
+		AudioBedComponent->SetFloatParameter(FName("ApparentWind"), ApparentWindKnots);
+		AudioBedComponent->SetFloatParameter(FName("LineTension"), LineTensionN);
+		AudioBedComponent->SetFloatParameter(FName("BoardSpeed"), BoardSpeedKnots);
+	}
 }
 
 void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)

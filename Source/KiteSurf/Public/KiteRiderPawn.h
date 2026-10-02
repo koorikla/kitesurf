@@ -14,6 +14,8 @@ class UBoardMovementComponent;
 class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
+class UAudioComponent;
+class USoundBase;
 
 UCLASS()
 class KITESURF_API AKiteRiderPawn : public APawn
@@ -92,6 +94,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardMovementComponent> BoardMovement;
 
+	// Procedural Audio Components
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> AudioBedComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> PopSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> LandingSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> CrashSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> ResetSound;
+
 	// Enhanced Input
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -111,6 +129,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> PauseAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> ResetAction;
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "Gameplay")
+	void ResetRider();
+
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void TogglePause();
 
@@ -120,6 +145,18 @@ private:
 	void OnEdgeTriggered(const FInputActionValue& Value);
 	void OnJumpTriggered(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
+	void OnResetTriggered(const FInputActionValue& Value);
+
+	UFUNCTION()
+	void HandleBoardCrash(float Intensity);
+
+	UFUNCTION()
+	void HandleBoardReset();
+
+	UFUNCTION()
+	void HandleBoardLanding(float LandingG);
+
+	void UpdateAudioModulation(float DeltaTime);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

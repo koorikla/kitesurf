@@ -42,7 +42,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	MaxLandingAngle = 30.0f;    // 30 deg
 	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
-	CrashRespawnDelay = 1.5f;   // 1.5 s
+	CrashRespawnDelay = 1.0f;   // 1.0 s (total crash-to-reset: 1.5 s)
 
 	CurrentDragRegime = EBoardDragRegime::Displacement;
 	CurrentBoardState = EBoardState::Displacement;
@@ -244,25 +244,8 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 			if (CrashTimer >= CrashDecelDuration + CrashRespawnDelay)
 			{
-				// Rider respawns upright after 1.5 s at crash position (no camera cut)
-				FRotator CurrentRot = UpdatedComponent->GetComponentRotation();
-				CurrentRot.Pitch = 0.0f;
-				CurrentRot.Roll = 0.0f;
-				UpdatedComponent->SetWorldRotation(CurrentRot);
-
-				float WaterHeight = 0.0f;
-				FVector WaterNormal = FVector::UpVector;
-				SampleWaterSurface(Location, WaterHeight, WaterNormal);
-
-				FVector RespawnLoc = Location;
-				RespawnLoc.Z = WaterHeight;
-				UpdatedComponent->SetWorldLocation(RespawnLoc);
-
-				Velocity = FVector::ZeroVector;
-				bIsCrashing = false;
-				CrashTimer = 0.0f;
-				CurrentBoardState = EBoardState::Displacement;
-				CurrentDragRegime = EBoardDragRegime::Displacement;
+				// Rider respawns upright after 1.5 s at crash position with 8 kn on previous tack
+				ResetToTack(8.0f);
 				UE_LOG(LogKiteSurf, Log, TEXT("Rider respawned upright after crash recovery"));
 			}
 
@@ -484,6 +467,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 					// Clean landing: keep 80% of speed
 					bLastLandingClean = true;
 					bIsCrashing = false;
+					const float VerticalSpeed = FMath::Abs(Velocity.Z);
 					Velocity.X *= CleanLandingSpeedRetention;
 					Velocity.Y *= CleanLandingSpeedRetention;
 					Velocity.Z = 0.0f;
@@ -495,23 +479,20 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 					CurrentBoardState = EBoardState::Landing;
 					LandingStateTimer = 0.25f;
 
-					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn"),
-						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, Velocity.Size2D() / 51.44f);
+					const float LandingG = FMath::Clamp(VerticalSpeed / 980.0f, 1.0f, 10.0f);
+					OnBoardLanding.Broadcast(LandingG);
+
+					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn, LandingG: %.2f"),
+						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, Velocity.Size2D() / 51.44f, LandingG);
 				}
 				else
 				{
 					// Crash landing: speed drops to 0 over 0.5 s, rider respawns upright after 1.5 s
-					bLastLandingClean = false;
-					bIsCrashing = true;
-					CrashTimer = 0.0f;
-					CrashInitialVelocity = Velocity;
-					Velocity.Z = 0.0f;
-
 					FVector LandedLoc = PostMoveLocation;
 					LandedLoc.Z = WaterHeight;
 					UpdatedComponent->SetWorldLocation(LandedLoc);
 
-					CurrentBoardState = EBoardState::Landing;
+					TriggerCrash();
 
 					UE_LOG(LogKiteSurf, Log, TEXT("Crash landing! Angle: %.1f deg > %.1f deg. Apex: %.1f cm, Airtime: %.2f s. Initiating crash sequence."),
 						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime);
@@ -542,4 +523,94 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 		UpdateComponentVelocity();
 	}
+}
+
+void UBoardMovementComponent::TriggerCrash(float CrashIntensity)
+{
+	bLastLandingClean = false;
+	bIsCrashing = true;
+	CrashTimer = 0.0f;
+	CrashInitialVelocity = Velocity;
+	Velocity.Z = 0.0f;
+	CurrentBoardState = EBoardState::Landing;
+
+	const float Intensity = CrashIntensity > 0.0f ? CrashIntensity : FMath::Clamp(Velocity.Size2D() / 1000.0f, 0.2f, 1.0f);
+	OnBoardCrash.Broadcast(Intensity);
+}
+
+void UBoardMovementComponent::ResetToTack(float SpeedKnots)
+{
+	if (!UpdatedComponent)
+	{
+		return;
+	}
+
+	// 1. Determine previous tack direction
+	FVector Forward2D = FVector::ForwardVector;
+	if (CrashInitialVelocity.Size2D() > 10.0f)
+	{
+		Forward2D = CrashInitialVelocity.GetSafeNormal2D();
+	}
+	else if (Velocity.Size2D() > 10.0f)
+	{
+		Forward2D = Velocity.GetSafeNormal2D();
+	}
+	else
+	{
+		Forward2D = UpdatedComponent->GetForwardVector().GetSafeNormal2D();
+		if (Forward2D.IsNearlyZero())
+		{
+			Forward2D = FVector(1.0f, 0.0f, 0.0f);
+		}
+	}
+
+	// 2. Align board upright along tack heading
+	FRotator TargetRot = Forward2D.Rotation();
+	TargetRot.Pitch = 0.0f;
+	TargetRot.Roll = 0.0f;
+	UpdatedComponent->SetWorldRotation(TargetRot);
+
+	// 3. Reset location to water surface
+	const FVector Location = UpdatedComponent->GetComponentLocation();
+	float WaterHeight = 0.0f;
+	FVector WaterNormal = FVector::UpVector;
+	SampleWaterSurface(Location, WaterHeight, WaterNormal);
+
+	FVector RespawnLoc = Location;
+	RespawnLoc.Z = WaterHeight;
+	UpdatedComponent->SetWorldLocation(RespawnLoc);
+
+	// 4. Set velocity on tack (8 knots = 411.52 cm/s)
+	const float SpeedCmS = SpeedKnots * 51.44f;
+	Velocity = Forward2D * SpeedCmS;
+
+	// 5. Clear crash and set rideable state
+	bIsCrashing = false;
+	CrashTimer = 0.0f;
+	CrashInitialVelocity = FVector::ZeroVector;
+	LandingStateTimer = 0.0f;
+
+	if (SpeedCmS >= PlaningThresholdCmS)
+	{
+		CurrentBoardState = EBoardState::Planing;
+		CurrentDragRegime = EBoardDragRegime::Planing;
+	}
+	else
+	{
+		CurrentBoardState = EBoardState::Displacement;
+		CurrentDragRegime = EBoardDragRegime::Displacement;
+	}
+
+	// 6. Park kite at 10:30 (Azimuth -45 deg, Elevation 45 deg)
+	if (AActor* OwnerActor = GetOwner())
+	{
+		if (UKiteComponent* Kite = OwnerActor->FindComponentByClass<UKiteComponent>())
+		{
+			Kite->SetElevationDeg(45.0f);
+			Kite->SetAzimuthDeg(-45.0f);
+		}
+	}
+
+	// 7. Broadcast reset event
+	OnBoardReset.Broadcast();
 }

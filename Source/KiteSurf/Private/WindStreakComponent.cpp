@@ -1,6 +1,7 @@
 #include "WindStreakComponent.h"
 #include "BoardMovementComponent.h"
 #include "WindComponent.h"
+#include "KiteSurfUnits.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
@@ -83,7 +84,7 @@ void UWindStreakComponent::Simulate(float DeltaTime)
 	const FVector2D Centre(OwnerLocation.X, OwnerLocation.Y);
 	const FVector WindVector = Wind ? Wind->GetWindAt(OwnerLocation) : FVector::ZeroVector;
 	const FVector2D Wind2D(WindVector.X, WindVector.Y);
-	Strength = GetStrengthForWind(Wind2D.Size() / 51.44f);
+	Strength = GetStrengthForWind(KiteUnits::CmSToKnots(Wind2D.Size()));
 	if (Wind2D.SizeSquared() > 1.0f)
 	{
 		StreakYawDeg = FMath::RadiansToDegrees(FMath::Atan2(Wind2D.Y, Wind2D.X));

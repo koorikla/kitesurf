@@ -1,4 +1,5 @@
 #include "KiteSurfHUD.h"
+#include "KiteSurfUnits.h"
 #include "KiteRiderPawn.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
@@ -92,12 +93,12 @@ void AKiteSurfHUD::HidePauseMenu()
 
 float AKiteSurfHUD::CmPerSecToKnots(float SpeedCmPerSec)
 {
-	return SpeedCmPerSec / 51.44f;
+	return KiteUnits::CmSToKnots(SpeedCmPerSec);
 }
 
 float AKiteSurfHUD::KnotsToCmPerSec(float Knots)
 {
-	return Knots * 51.44f;
+	return KiteUnits::KnotsToCmS(Knots);
 }
 
 FString AKiteSurfHUD::FormatJumpLive(float HeightCm, float DistanceCm, float AirSeconds)
@@ -348,8 +349,9 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	DrawText(HeadingStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 72.0f, nullptr, 1.1f);
 
 	UWindComponent* WindComp = RiderPawn->FindComponentByClass<UWindComponent>();
-	// Sampled at the wind field's reference height: at the water the shear profile reads 30% low.
-	const FVector WindSampleLocation = RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp ? WindComp->ShearHeightCm : 0.0f);
+	// Sampled at the wind field's reference height (10 m), the wind forecasts quote: at chest height
+	// the profile reads about 20% lower, and the kite aloft sees about 10% more.
+	const FVector WindSampleLocation = RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp ? WindComp->ReferenceHeightCm : 0.0f);
 	FVector WindVec = WindComp ? WindComp->GetWindAt(WindSampleLocation) : FVector(772.0f, 0.0f, 0.0f);
 	// Gusts and lulls are called out: they are what the rider has to sheet and steer for.
 	const float GustFactor = WindComp ? WindComp->GetGustFactorAt(RiderPawn->GetActorLocation()) : 1.0f;
@@ -468,9 +470,9 @@ void AKiteSurfHUD::DrawWindFlag(AKiteRiderPawn* RiderPawn, float ScreenX, float 
 	}
 
 	// The same wind the telemetry reads: at the reference height, not slowed by the water.
-	const FVector Wind = WindComp->GetWindAt(RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp->ShearHeightCm));
+	const FVector Wind = WindComp->GetWindAt(RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp->ReferenceHeightCm));
 	const FVector2D OnScreen = GetWindOnScreen(Wind, PC->PlayerCameraManager->GetCameraRotation().Yaw);
-	const float Knots = Wind.Size2D() / 51.44f;
+	const float Knots = KiteUnits::CmSToKnots(Wind.Size2D());
 
 	// A flag on a pole seen from above, with the top of the dial the way you are looking. The
 	// flag streams the way the wind blows, longer the harder it blows.

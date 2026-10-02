@@ -4,6 +4,9 @@ This document outlines the board movement, edging, planing transition, and physi
 
 ## Physics Architecture
 
+### Fixed step
+The pawn steps the whole rig itself, at `AKiteRiderPawn::SimStepSeconds` (1/240 s) whatever the frame rate, in one order: the kite with the rider where they are (`UKiteComponent::StepKite`), the line force handed to the board, then the board (`UBoardMovementComponent::StepBoard`). `AKiteRiderPawn::Tick` runs as many of those steps as the frame holds (`StepSimulation`), clamps a long frame to `MaxFrameSeconds` (0.1 s) and runs at most `MaxSimStepsPerFrame` (32) steps, so a hitch slows the ride for a moment instead of throwing it. The rider and the kite are drawn between the last two steps (`bInterpolateRendering`). The kite and the board do not tick on their own under a pawn; `UKiteComponent::UpdateKite` and `UBoardMovementComponent::Simulate` / `TickComponent` still advance one by any time in steps of at most `MaxStepSeconds`, for tests and for components nobody else steps. The same ride at 30, 60 and 120 frames a second comes out identical (`KiteSurf.Physics.StepRateIndependent`). Units, constants and conversions are in `KiteSurfUnits.h`; the forces are worked out in SI inside each step.
+
 ### Dual Drag Regimes
 1. **Displacement Regime** ($v < 400 \text{ cm/s}$):
    - Quadratic drag: $F_{quad} = C_{disp} \cdot v^2$
@@ -18,7 +21,7 @@ This document outlines the board movement, edging, planing transition, and physi
 The board only carries the rider at speed. Below `FloatUntilSpeedFraction` of the planing threshold the rider floats with the board `FloatSubmersionCm` under the surface (about chest deep) and lies back in the water; between there and the planing threshold they rise, and at planing speed the board rides on the surface. The depth follows the speed at `FloatResponse`, so a rider who loses the kite sinks over a second or so and comes back up as the kite gets them going again. A rider in the air lands on the surface first and sinks from there. `IsFloating()` and `GetFloatDepthCm()` report it; the HUD state line reads Floating, Getting up or Planing.
 
 ### Course keeping, edging and carving
-- **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$, capped at $m / \Delta t$ so one step can at most cancel the sideways speed. The base term is the fins and a neutral stance: with no edge input the board holds its heading against the kite's sideways pull.
+- **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$ (`BaseGripKgPerS`, `EdgeGripKgPerS`), integrated exactly in each step ($v_{lat} \leftarrow v_{lat} e^{-c \Delta t / m}$), so it never overshoots at any step length. The forward drag is the closed-form decay of its linear plus quadratic terms in the same way. The base term is the fins and a neutral stance: with no edge input the board holds its heading against the kite's sideways pull.
 - **Edge Drive**: Hydrodynamic lift along the board rail converts lateral holding force into forward thrust: $F_{fwd} = |F_{lat}| \cdot |\text{EdgeInput}| \cdot \eta_{edge}$.
 - **Turning** (A / D, left stick X): A turn input carves the board: its heading moves towards $v_{heading} + \text{EdgeInput} \cdot \text{MaxEdgeAngleDeg}$ at up to `CarveTurnRate`. Holding an edge keeps turning, so a steady course is ridden with the edge neutral.
 - **Switching stance**: A twin-tip rides either way. When the board is moving tail-first faster than `SwitchStanceSpeedCmS`, nose and tail swap, so after flying the kite to the other side the rider simply rides off on the new tack.
@@ -27,60 +30,67 @@ The board only carries the rider at speed. Below `FloatUntilSpeedFraction` of th
 ### Weight shift, liftoff and the air
 - **Weight shift** (W / S, left stick Y): +1 is weight on the nose, -1 on the tail. Weight back sinks the tail: lateral grip is scaled by `TailWeightGripScale`, drag rises by `TailWeightDrag`, the board heels further, the nose lifts, and the pop gains `TailWeightPopBonus`. Weight forward flattens the board: grip drops by the same factor, planing drag falls by `NoseWeightDragSaving`, and the nose dips. In the air it tips the board by up to `AirWeightShiftPitchDeg`.
 - **Off the plane** the board pivots towards a beam reach on the kite's side at up to `LowSpeedPivotRate`, so a stalled rider is lined up for the kite to pull them back onto the plane.
-- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight, or up to `EdgedLiftoffWeightBonus` more when the rider is edging. Holding the edge while the kite is sent, then popping, is how a jump is loaded; see `docs/jumping.md`.
-- **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
+- **Load** (the jump button held): the rider crouches with their weight over the back of the board. The load builds inside the step at `LoadRatePerSec` and lets go at `LoadReleaseRatePerSec`; it multiplies the sideways grip by up to `1 + LoadGripBonus` and holds the board down like a full edge. Letting go pops; see `docs/jumping.md`.
+- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight, or up to `EdgedLiftoffWeightBonus` more when the rider is edging or loading. Holding the edge (or the load) while the kite is sent, then popping, is how a jump is loaded; see `docs/jumping.md`.
+- **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. The air drags on the rider and board, $0.5 \rho C_D A |v_a| v_a$ with `RiderDragAreaM2` (0.7 m^2) and $v_a$ the wind at chest height minus their velocity: 97 N at 15 m/s in still air (`KiteSurf.Jump.BodyDragInTheAir`). Nothing like it acts on the water, where the hull's drag and grip are the model. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
 
 ### How the kite drives the board
-The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 240 Hz or faster in SI units.
+The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped by the pawn at `SimStepSeconds` (1/240 s) with the forces in SI units.
 
 - **Forces on it**: lift and drag from the air flowing over it (true wind minus its own velocity), a side force that resists sliding sideways, gravity, and the pull of the lines.
-- **Angle of attack** is the angle of that airflow to the canopy plus the trim from the bar (`TrimSheetedOutDeg` to `TrimSheetedInDeg`). Lift rises to `MaxLiftCoefficient` at `StallAngleDeg`; past that the kite is stalled and makes mostly drag. Air on the wrong side of the canopy (overflying the window, or a fully depowered kite flown fast) luffs it.
+- **Angle of attack** is the angle of that airflow to the canopy plus the trim from the bar (`TrimSheetedOutDeg` to `TrimSheetedInDeg`). Lift rises from zero at `ZeroLiftAngleDeg` (0 by default; a cambered canopy is about -3) to `MaxLiftCoefficient` at `StallAngleDeg`; past that the kite is stalled and makes mostly drag. Bending the canopy into a turn costs drag: attached-flow drag is multiplied by `1 + SteeringDragFactor * |steer|` (0.6). Air on the wrong side of the canopy (overflying the window, or a fully depowered kite flown fast) luffs it.
 - **The lines only pull.** They hold the kite at line length while the forces on it point away from the rider; the tension is whatever that takes, so it rises with the square of the kite's airspeed and falls to nothing in a lull. When it reaches zero the lines are slack: the kite stops flying and falls like a sheet (`SlackDragCoefficient`) until the lines snatch tight again or it reaches the water.
 - **Parking** is not scripted: with its nose out of the window the kite settles where lift, drag and line tension balance, about 10 degrees inside the window edge, and further back the faster the rider goes. That is what limits board speed and upwind angle.
-- **Steering** turns the nose at airspeed / `MinTurnRadiusCm`, wound in at `TurnResponse`. There is no loop key. Bar towards the other side of the window is a request to fly there: an assist takes the kite over the top, and turns the nose up before it reaches the water. Bar centred means hold this clock position (the assist leans the nose against gravity and gusts). Bar towards the side the kite is already on, once it is more than `LoopClockDeg` round that side, goes straight to the kite: it turns down and round in a loop for as long as the bar is held, and a loop taken too low goes into the water. Reversing or centring the bar ends the loop.
+- **Steering** turns the nose at airspeed / `MinTurnRadiusCm`, wound in at `TurnResponse`, so the tightest turn has the same radius at any speed: about 6.3 m measured from the kite's path at 15 kn and 6.5 m at 25 kn, 2.3 s and 1.4 s a loop (`KiteSurf.Kite.LoopRadiusIsSpeedIndependent`). Sheeted out the bar turns the kite at `DepoweredTurnRateFactor` (0.45) of the rate sheeted in, following the sheet in between, and the rider's bar reaches the kite after a dead time of `SteeringDeadTimeSeconds` (0.15 s) plus `DepoweredDeadTimeExtraSeconds` (0.3 s) times how far out the bar is (`GetSteeringDeadTimeSeconds`): depowered, the kite turns 36% as far in the same time (`KiteSurf.Kite.DepowerSlowsTheTurn`). Gravity turns the nose of a slow kite flying across the window down, at `GravityTurnRadMPerS2` (2.4 rad m/s^2 for 12 m^2, more for smaller kites) over the airspeed. The assist below acts on the bar as it reaches the kite, and its own corrections are not delayed. There is no loop key. Bar towards the other side of the window is a request to fly there: an assist takes the kite over the top, and turns the nose up before it reaches the water. Bar centred lets the kite do what a real one does with the bar neutral: it drifts up the window edge to the zenith and sits there, the assist leaning its nose towards 12 by `ZenithDriftGain` degrees per degree of clock still to go, up to `ZenithDriftMaxHeadingDeg` (from clock 65, about 2 o'clock, to within 10 degrees of 12 in about 12 s in 15 kn, standing). With `bParkHoldAssist` on, bar centred instead holds the clock position the kite had when the bar was centred (the assist leans the nose against gravity and gusts, `ParkHoldGain`, `ParkHoldMaxDeg`). Bar towards the side the kite is already on, once it is more than `LoopClockDeg` round that side, goes straight to the kite: it turns down and round in a loop for as long as the bar is held, and a loop taken too low goes into the water. Reversing or centring the bar ends the loop.
 - **In the water** the lines are slack; the kite relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
-- The pull passed to the rider is capped at `MaxLineTensionN`.
+- The pull passed to the rider is capped at `MaxLineTensionN` (6000 N), which stands in for line stretch.
 - **Size**: `SetKiteSize` rigs a kite of a given area and scales its mass, the air it has to push and its turning radius with it (12 m^2: 3 kg, 4.2 m radius). `RecommendKiteSizeM2` gives the size a rider would rig for the wind, about 2.2 x rider kg / knots, from the sizes on offer (2 to 17 m^2; the 2, 3 and 4 m^2 kites are for 50 kn and up). The wind can be set from 8 to 90 kn (`KiteGear::MinWindKnots`, `MaxWindKnots`). The game rigs that size unless one is chosen in Settings; the HUD shows it next to the wind.
-- The bar position is persistent: sheet input moves it at `SheetRatePerSec` (2.5 per second: the whole throw in 0.4 s) and it stays there. It sets the kite's trim between `TrimSheetedOutDeg` (-22) and `TrimSheetedInDeg` (+2). On the 9 m in 20 kn that is 150 N and 8 kn with the bar out, 340 N and 13 kn half way, 1100 N and 22 kn with it in (`KiteSurf.Ride.BarIsTheThrottle`).
-- A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn with about 500 N in the lines; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
+- The bar position is persistent: sheet input moves it at `SheetRatePerSec` (2.5 per second: the whole throw in 0.4 s) and it stays there. It sets the kite's trim between `TrimSheetedOutDeg` (-22) and `TrimSheetedInDeg` (+2). On the 9 m in 20 kn that is 170 N and 9 kn with the bar out, 370 N and 14 kn half way, 1120 N and 22 kn with it in (`KiteSurf.Ride.BarIsTheThrottle`).
+- A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). Hands off, the kite climbs towards 12 and the rider is still planing after 5 s but off the plane by 10 s (`KiteSurf.Ride.KeepsPlaningWithoutInput`). With the kite held at clock 65 (the park-hold assist) in steady 15 kn wind a 12 m^2 kite and an 81 kg rider settle at about 15 kn with about 510 N in the lines (0.64 body weights), and in 20 kn at 19.5 kn with 840 N (`KiteSurf.Physics.SteadyRideAcross`). Held by the fins 25 degrees above a beam reach the board makes 1.7 m/s against the wind with 9.6 degrees of leeway (`KiteSurf.Physics.UpwindAtEdgeAngle`); 30 degrees above, in the default gusts, about 2 m/s (`KiteSurf.Movement.UpwindAngle`). A gust from 15 to 22 kn nearly doubles the pull and adds 6 kn within 5 s; a lull to 3 kn drops the kite at once (`KiteSurf.Physics.GustHitsMidRide`, `LullDropsKite`).
 
 ### Wind
-`UWindComponent` adds gusts, direction drift and shear to the base wind. Gusts are a slow swell over `GustPeriodSeconds` with quicker puffs on top (`GustPuffRate`, `GustPuffShare`), reaching most of `GustStrength` either way. `GetGustFactorAt` gives the current wind over the base wind; the HUD calls out GUST and LULL from it.
+`UWindComponent` is a pure function of position, time and `Seed` (`GetWindAtTime`), so the kite, the rider, the HUD and the sound all sample the same wind and a ride can be replayed. The kite samples it at its own simulation time, and so does the board for the rider's drag in the air, so the ride does not depend on the frame rate. The base wind is the wind at `ReferenceHeightCm` (10 m, as forecasts quote it); with height it follows a power law with `ShearExponent` 0.11, sampled no lower than `MinSampleHeightCm`, so the rider at chest height (`UKiteComponent::RiderWindHeightCm`, 1.5 m) feels about 0.81 of it and the kite at 25 m about 1.11. Gusts are two octaves of seeded noise over the water (`GustCellLengthCm` 60 m along the wind and half that across, puffs `GustPuffRate` times finer with `GustPuffShare` of the variation) carried downwind at the mean wind speed and changing over `GustEvolveSeconds`, so a gust seen upwind arrives a little later, and a cell takes about 8 s to pass in 15 kn. They reach `1 + GustStrength` and `1 - GustStrength` and never go past. The direction wanders by `DirectionDriftDeg` (standard deviation, 5 degrees) and never more than twice that. `GetGustFactorAt` gives the current wind over the base wind at the reference height; the HUD calls out GUST and LULL from it.
 
-The wind's direction is shown two ways. `UWindStreakComponent` keeps a field of long thin foam streaks on the water round the rider, lying along the wind and drifting down it at `DriftFraction` of its speed; they fade in from `MinWindKnots` and are not there in a calm. The HUD's WIND dial (`AKiteSurfHUD::DrawWindFlag`) is a flag seen from above with the top of the dial the way the camera looks (`GetWindOnScreen`), and says in words where the wind comes from.
+The wind's direction is shown two ways. `UWindStreakComponent` keeps a field of long thin foam streaks on the water round the rider, lying along the wind and drifting down it at `DriftFraction` of its speed; they fade in from `MinWindKnots` and are not there in a calm. They read the wind at the water, which the profile gives at `MinSampleHeightCm` (about 0.78 of the base wind). The HUD's WIND dial (`AKiteSurfHUD::DrawWindFlag`) is a flag seen from above with the top of the dial the way the camera looks (`GetWindOnScreen`), and says in words where the wind comes from; it quotes the wind at `ReferenceHeightCm`, as the telemetry does.
 
 ## Default Tunable Properties
 
-All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")`:
+`UBoardMovementComponent`, all `UPROPERTY(EditAnywhere, BlueprintReadWrite)` under `Tuning` (the jump ones are in `docs/jumping.md`). Forces in the component are kg*cm/s^2 (1 N = 100); the units are in the names.
 
-| Property | Default Value | Description |
+| Property | Default | Description |
 | :--- | :--- | :--- |
-| `MassKg` | `85.0f` | Total mass (rider + board + rig) in kilograms. |
-| `BoardLengthCm` | `140.0f` | Length of board in centimeters. |
-| `BoardWidthCm` | `42.0f` | Width of board in centimeters. |
-| `BuoyancyN` | `1500.0f` | Static buoyancy force in Newtons. |
-| `PlaningThresholdCmS` | `400.0f` | Speed threshold for planing transition (~7.78 kn). |
-| `DisplacementDragCoef` | `0.1f` | Quadratic displacement drag coefficient. |
-| `LinearDisplacementDragCoef` | `8.0f` | Linear displacement drag coefficient. |
-| `PlaningDragCoef` | `8.0f` | Linear planing drag coefficient. |
-| `PlaningQuadraticDragCoef` | `0.03f` | Quadratic planing drag coefficient. |
-| `BaseLateralDragCoef` | `500.0f` | Lateral grip with no edge input (fins, neutral stance). |
-| `EdgeGripCoef` | `2000.0f` | Extra lateral grip at full turn input. |
-| `EdgeDriveEfficiency` | `0.35f` | Forward drive efficiency gained from rail edging. |
-| `MaxEdgeAngleDeg` | `35.0f` | Maximum board roll and yaw carve angle. |
-| `MaxBoardSpeed` | `1800.4f` (35 kn) | Velocity magnitude clamp in cm/s. |
-| `CarveTurnRate` | `60.0f` | Turn rate at full turn input once planing, in degrees per second. |
-| `CarveResponse` | `6.0f` | How quickly the carve follows the input (1/s). |
-| `TailWeightGripScale` | `2.5f` | Grip multiplier with the weight on the tail; inverse on the nose. |
-| `WeightShiftPitchDeg` | `8.0f` | Board pitch at full weight shift on the water. |
-| `LowSpeedPivotRate` | `120.0f` | Pivot rate towards a beam reach when stopped, in degrees per second. |
-| `LiftoffWeightFactor` | `1.5f` | Upward line force, in rider weights, that lifts the board off. |
-| `AirSpinRate` | `200.0f` | Board spin rate in the air at full carve, in degrees per second. |
-| `SwitchStanceSpeedCmS` | `100.0f` | Tail-first speed at which nose and tail swap. |
-| `AutoHeelDeg` | `12.0f` | Heel away from the kite at full sideways load. |
-| `BuoyancySpringStiffness` | `3000.0f` | Vertical water surface equilibrium spring constant. |
-| `BuoyancyDamping` | `800.0f` | Vertical damping constant. |
-| `PlaningLiftCoef` | `50.0f` | Planing hydrodynamic lift force coefficient. |
+| `MassKg` | `85` | Rider, board and rig (kg). |
+| `BoardLengthCm` / `BoardWidthCm` | `140` / `42` | Board size (cm). |
+| `BuoyancyN` | `1500` | Most the water can push up on the board (N). |
+| `BuoyancyNaturalFrequencyHz` | `0.945` | How quickly the board bobs back to its ride height (Hz); the stiffness scales with the mass. |
+| `BuoyancyDampingRatio` | `0.79` | Damping of that bob: 1 settles without overshoot. |
+| `PlaningThresholdCmS` | `400` | Speed at which the board planes (cm/s, 7.8 kn). |
+| `DisplacementDragKgPerS` | `8` | Linear drag below planing speed (kg/s). |
+| `DisplacementQuadraticDragKgPerCm` | `0.1` | Quadratic drag below planing speed (kg/cm). |
+| `PlaningDragKgPerS` | `8` | Linear drag on the plane (kg/s). |
+| `PlaningQuadraticDragKgPerCm` | `0.03` | Quadratic drag on the plane (kg/cm); dominates, so speed scales with the wind. |
+| `PlaningLiftKgPerS` | `50` | Upward lift per cm/s above planing speed (kg/s). |
+| `BaseGripKgPerS` | `500` | Sideways grip with no edge input: fins and a neutral stance (kg/s). |
+| `EdgeGripKgPerS` | `2000` | Extra sideways grip at full carve input (kg/s). |
+| `EdgeDriveEfficiency` | `0.35` | Share of the grip force a heeled rail turns into forward drive. |
+| `MaxEdgeAngleDeg` | `35` | Most roll and carve angle (deg). |
+| `MaxBoardSpeedCmS` | `1800.4` (35 kn) | Speed clamp (cm/s). |
+| `CarveTurnRate` | `60` | Turn rate at full carve once planing (deg/s). |
+| `CarveResponse` | `6` | How quickly the carve follows the input (1/s). |
+| `TailWeightGripScale` | `2.5` | Grip multiplier with the weight on the tail; the inverse on the nose. |
+| `TailWeightDrag` / `NoseWeightDragSaving` | `0.35` / `0.15` | Planing drag added with the weight back, saved with it forward. |
+| `TailWeightHeelDeg` | `12` | Extra heel with the weight on the tail (deg). |
+| `WeightShiftPitchDeg` | `8` | Board pitch at full weight shift on the water (deg). |
+| `AutoHeelDeg` / `AutoHeelFullLoadN` | `12` / `500` | Heel away from the kite at full sideways load (deg), and that load (N). |
+| `LowSpeedPivotMaxSpeedCmS` / `LowSpeedPivotRate` / `LowSpeedPivotMinForceN` | `400` / `120` / `80` | Below this speed (cm/s) the board pivots towards a beam reach at this rate (deg/s) when the pull is over this (N). |
+| `FloatSubmersionCm` / `FloatUntilSpeedFraction` / `FloatResponse` | `85` / `0.45` / `2.5` | Floating depth (cm), the fraction of planing speed below which the rider is fully sunk, and how fast they sink or rise (1/s). |
+| `SwitchStanceSpeedCmS` | `100` | Tail-first speed at which nose and tail swap (cm/s). |
+| `LiftoffWeightFactor` / `EdgedLiftoffWeightBonus` | `1.5` / `3.0` | Upward line force, in rider weights, that lifts a flat board off, and the extra at full edge. |
+| `AirSpinRate` | `200` | Spin in the air at full carve (deg/s). |
+| `RiderDragAreaM2` | `0.7` | Drag area of the rider and board in the air (m^2). |
+| `MaxStepSeconds` / `MaxStepsPerUpdate` | `1/240` / `48` | Sub-steps of `Simulate` when nobody else steps the board. |
+
+The kite's own tunables are on `UKiteComponent` (aerodynamics: `MaxLiftCoefficient` 1.2, `StallAngleDeg` 18, `ZeroLiftAngleDeg` 0, `ParasiteDragCoefficient` 0.09, `InducedDragFactor` 0.085, `SteeringDragFactor` 0.6, `SideForceCoefficient` 1.2, `TrimSheetedOutDeg` -22, `TrimSheetedInDeg` 2; steering: `MinTurnRadiusCm` 420 at 12 m^2, `TurnResponse` 9, `SteeringDeadTimeSeconds` 0.15, `DepoweredDeadTimeExtraSeconds` 0.3, `DepoweredTurnRateFactor` 0.45, `GravityTurnRadMPerS2` 2.4; lines: `LineLengthCm` 2400, `MaxLineTensionN` 6000). What to tune them towards is in `docs/physics/CHANGELOG.md`.
 
 ## Rider stance and harness
 The rider's feet are in the straps, so the body always stands square across the board and turns with it: through carves, and through every spin in the air (`AKiteRiderPawn::UpdateRiderPose`). Which rail they face is chosen to face the kite when they get on the board (start, reset, or while floating). After that it is whichever rail keeps them facing the way they were, so a twin-tip swapping ends under them does not turn them round.
@@ -100,7 +110,7 @@ Santa and the wetsuit rider are jointed figures: a torso and eight limb parts, p
 ## Gear
 The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause menu) sets the wind, the kite size and model, the board and the rider. The choices live in `UKiteSurfGameInstance`, are saved with the settings, and are applied when a ride starts (`AKiteSurfGameMode::InitializeRide`) or when the screen is confirmed during one.
 
-- **Kite model** (`UKiteComponent::SetKiteModel`, traits in `KiteGear.cpp`): the loop kite (3 strut) is the kite the simulation is tuned for. The boost kite (5 strut) has 12% more lift, 15% less induced drag, 20% more mass and a 30% wider turn. With the best timing for each in 30 kn, the loop kite jumps about 15 m with 4.3 s in the air and the boost kite about 17.5 m with 4.9 s; the loop kite turns about 500 degrees in the time the boost kite turns 380.
+- **Kite model** (`UKiteComponent::SetKiteModel`, traits in `KiteGear.cpp`): the loop kite (3 strut) is the kite the simulation is tuned for. The boost kite (5 strut) has 12% more lift, 15% less induced drag, 20% more mass and a 30% wider turn. Each released a little before its send would pull the rider off the edge in 30 kn (the boost kite turns slower and loads up later), the loop kite jumps about 12 m with 3.6 s in the air and the boost kite about 13 m with 3.8 s (`KiteSurf.Gear.ChangesBehaviour`). The loop kite turns about 355 degrees in the time the boost kite turns 255.
 - **Board size** (`UBoardMovementComponent::SetBoardSize`): the 138 is the reference. The 132 has 20% more pop and turn rate, planes at 20% more speed, and has 10% less drag and 12% less grip. The 145 planes at 18% less speed with 15% more grip, and has 15% less pop and turn rate and 12% more drag. From a slow start in 12 kn the 145 gets up and planes while the 132 stays sunk.
 
 The board's size does not change how it looks yet.
@@ -150,9 +160,10 @@ The right stick is left unused while the motion bar is active. `kitesurf.MotionB
 `AKiteRiderPawn::PlayHaptic` asks the player's controller for one short buzz (`PlayDynamicForceFeedback`), behind the VIBRATION setting (`UKiteSurfGameInstance::bHaptics`, on by default). It is used for: the pop (a light tick, 0.1 s); a landing (`GetLandingHaptic`: 0.3 strength for a soft one up to full at 5 g, 0.12 to 0.32 s); a crash of any kind (full, 0.45 s); the kite hitting the water (0.6, 0.25 s); and a yank on the lines, once as the tension rises through `HapticYankTensionN` (2200 N) and not again for 0.8 s.
 
 ## Bar display
-The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite and match while looping.
+The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite, and while looping they match once the bar has had its dead time to reach the kite.
 
 ## Safety Guards & Telemetry
-- **NaN / Inf Guard**: `ensureAlwaysMsgf(!Velocity.ContainsNaN(), ...)` in `AKiteRiderPawn::Tick` and `UBoardMovementComponent::TickComponent`.
+- **NaN / Inf Guard**: `ensureAlwaysMsgf(!Velocity.ContainsNaN(), ...)` in `AKiteRiderPawn::Tick` and `UBoardMovementComponent::StepBoard`. The scenario tests check every frame that nothing goes NaN, the kite is never past line length and the tension never negative (`PhysicsScenarioTests.cpp`).
+- **Debug view**: `kite.Physics.Debug 1` draws the winds and forces at the kite and the rider, `2` also logs a `kitecsv` line per step (`docs/ARCHITECTURE.md`).
 - **Water Surface Clamp**: Board location Z is constrained within $\pm 20$ cm of water height while planing.
 - **HUD Telemetry**: `AKiteSurfHUD` renders normalized $0-360^\circ$ heading alongside knots speed.

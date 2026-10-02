@@ -88,11 +88,11 @@ of about a metre. The height comes from the kite. Hold the jump button to crouch
 back and load the edge: the board grips harder against the lines, the pull builds, and you are
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
-on too long and it rips you off your edge, which is a much lower jump. Timed well, that is 6 m
-in 15 kn, 15 m in 30 kn, 20 m in 40 kn and, in a 90 kn hurricane on a 2 m kite, 48 m up and
-300 m downwind. The HUD shows the height and distance of the jump as it happens and when it
-ends. Steering the kite up without an edge just plucks
-you off the water. (Weight back on S still holds you down too.) A kite looped through the
+on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
+7 m in 15 kn, 15 m in 30 kn, 20 m in 40 kn and, in a 90 kn hurricane on a 2 m kite, 30 m up
+and 260 m downwind. The HUD shows the height and distance of a jump as it happens and when
+it ends. Steering the kite up without an edge just
+plucks you off the water. (Weight back on S still holds you down too.) A kite looped through the
 middle of the window pulls several times harder than a parked one.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
@@ -114,8 +114,8 @@ landings, crashes, menu sounds) volume sliders. Everything is synthesised by scr
 `scripts/editor/`; see the Sound section of `docs/movement.md`.
 
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
-second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board
-speed); right in it pulls about seven times as hard (1100 N, 22 kn). The ride starts with it 70%
+second. Right out, the kite flags and barely pulls (about 170 N on the 9 m in 20 kn, 9 kn of board
+speed); right in it pulls six or seven times as hard (1100 N, 22 kn). The ride starts with it 70%
 in.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.

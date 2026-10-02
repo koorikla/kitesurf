@@ -15,6 +15,7 @@
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
+#include "KiteSurfUnits.h"
 #include "Capture/KiteSurfCinematicCamera.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/PlayerController.h"
@@ -88,7 +89,7 @@ public:
 					if (Wind && It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
 					{
 						const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
-						Wind->BaseWind = Direction * Knots * 51.44f;
+						Wind->BaseWind = Direction * KiteUnits::KnotsToCmS(Knots);
 					}
 				}
 			}),

@@ -67,7 +67,9 @@ bool FKiteSurfKiteZenithTension::RunTest(const FString& Parameters)
 				WindComp->DirectionDriftDeg = 0.0f;
 			}
 
-			// Set kite at zenith: Azimuth = 0, Elevation = 90
+			// Set kite at zenith: Azimuth = 0, Elevation = 90. The park-hold assist keeps the measurement
+			// as it was before the bar-centred kite drifted to 12 by default (it is at 12 here anyway).
+			Pawn->Kite->bParkHoldAssist = true;
 			Pawn->Kite->SetAzimuthDeg(0.0f);
 			Pawn->Kite->SetElevationDeg(90.0f);
 			Pawn->SheetKite(1.0f); // sheeted in
@@ -115,7 +117,9 @@ bool FKiteSurfKiteSheetMonotonic::RunTest(const FString& Parameters)
 				WindComp->DirectionDriftDeg = 0.0f;
 			}
 
-			// Parked overhead at the window edge, flown there before anything is measured.
+			// Parked overhead at the window edge, flown there before anything is measured, and held
+			// there by the park-hold assist so only the bar changes between measurements.
+			Pawn->Kite->bParkHoldAssist = true;
 			Pawn->Kite->SetWindowPosition(0.0f, 10.0f);
 			Pawn->SheetKite(1.0f);
 			for (int32 Step = 0; Step < 300; ++Step)

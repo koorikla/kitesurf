@@ -7,10 +7,13 @@
 #include "UI/KiteSurfGameInstance.h"
 #include "WindStreakComponent.h"
 #include "KiteSurfHUD.h"
+#include "KiteSurfUnits.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWave.h"
 #include "WindComponent.h"
 #include "KiteRiderPawn.h"
+#include "KiteComponent.h"
+#include "BoardMovementComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -26,12 +29,23 @@ bool FKiteSurfPawnClampsInputs::RunTest(const FString& Parameters)
 		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
 		TestNotNull(TEXT("Pawn spawned"), Pawn);
 
-	if (Pawn)
+	if (Pawn && Pawn->GetKite() && Pawn->GetBoardMovement())
 	{
-		Pawn->SteerKite(2.5f);
+		// The bar and the board take what they are given only within their travel.
+		Pawn->SteerKite(2.0f);
+		TestEqual(TEXT("SteerKite(2) clamps the bar to 1"), Pawn->GetCurrentSteerInput(), 1.0f);
+		TestEqual(TEXT("and the kite gets 1"), Pawn->GetKite()->Steer, 1.0f);
+		Pawn->SteerKite(-2.0f);
+		TestEqual(TEXT("SteerKite(-2) clamps the bar to -1"), Pawn->GetCurrentSteerInput(), -1.0f);
 		Pawn->SheetKite(1.5f);
-		Pawn->SheetKite(-0.5f);
-		TestTrue(TEXT("Pawn inputs clamped"), true);
+		TestEqual(TEXT("SheetKite(1.5) clamps the bar to 1"), Pawn->GetCurrentSheetInput(), 1.0f);
+		Pawn->SheetKite(-1.0f);
+		TestEqual(TEXT("SheetKite(-1) clamps the bar to 0"), Pawn->GetCurrentSheetInput(), 0.0f);
+		TestEqual(TEXT("and the kite gets 0"), Pawn->GetKite()->Sheet, 0.0f);
+		Pawn->EdgeBoard(5.0f);
+		TestEqual(TEXT("EdgeBoard(5) clamps the edge to 1"), Pawn->GetBoardMovement()->GetEdgeInput(), 1.0f);
+		Pawn->EdgeBoard(-5.0f);
+		TestEqual(TEXT("EdgeBoard(-5) clamps the edge to -1"), Pawn->GetBoardMovement()->GetEdgeInput(), -1.0f);
 	}
 
 		World->DestroyWorld(false);
@@ -199,6 +213,8 @@ bool FKiteSurfAudioMixFollowsTheRide::RunTest(const FString& Parameters)
 			Wind->BaseWind = FVector(20.0f * 51.44f, 0.0f, 0.0f);
 			Wind->GustStrength = 0.0f;
 		}
+		// Standing still in the wind: the rig is not stepped, so the kite does not drag the rider off downwind.
+		Pawn->bStepSimulation = false;
 		for (int32 Step = 0; Step < 120; ++Step)
 		{
 			Pawn->Tick(1.0f / 60.0f);
@@ -319,7 +335,7 @@ bool FKiteSurfWindStreaks::RunTest(const FString& Parameters)
 	}
 
 	// 20 kn blowing along +Y, steady.
-	Wind->BaseWind = FVector(0.0f, 20.0f * 51.44f, 0.0f);
+	Wind->BaseWind = FVector(0.0f, KiteUnits::KnotsToCmS(20.0f), 0.0f);
 	Wind->GustStrength = 0.0f;
 	Wind->DirectionDriftDeg = 0.0f;
 	const float DeltaTime = 1.0f / 60.0f;
@@ -381,7 +397,7 @@ bool FKiteSurfWindStreaks::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and after a reset a long way off"), AllInField());
 
 	// The wind turns: so do the streaks. It dies: they fade out.
-	Wind->BaseWind = FVector(-15.0f * 51.44f, 0.0f, 0.0f);
+	Wind->BaseWind = FVector(-KiteUnits::KnotsToCmS(15.0f), 0.0f, 0.0f);
 	Streaks->Simulate(DeltaTime);
 	TestNearlyEqual(TEXT("When the wind turns the streaks turn with it"), static_cast<float>(FMath::Abs(FRotator::NormalizeAxis(Streaks->GetStreakYawDeg() - 180.0f))), 0.0f, 0.5f);
 	Wind->BaseWind = FVector::ZeroVector;

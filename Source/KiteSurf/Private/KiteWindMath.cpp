@@ -1,8 +1,9 @@
 #include "KiteWindMath.h"
+#include "KiteSurfUnits.h"
 
 float UKiteWindMath::KnotsToCmPerSec(float Knots)
 {
-	return Knots * 51.44f;
+	return KiteUnits::KnotsToCmS(Knots);
 }
 
 FVector UKiteWindMath::ApparentWind(const FVector& TrueWind, const FVector& RiderVelocity)

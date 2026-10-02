@@ -195,7 +195,7 @@ def build_kite(strut_positions=KITE_STRUT_POSITIONS, canopy_material='KiteCanopy
     white = (0.93, 0.93, 0.93)
 
     # Canopy: the texture carries the colour blocking and the wordmark (u along the span, v along the chord).
-    span_segments, chord_segments = 32, 10
+    span_segments, chord_segments = 48, 16
     positions, uvs, triangles = [], [], []
     for i in range(span_segments + 1):
         s = -1.0 + 2.0 * i / span_segments
@@ -243,6 +243,9 @@ WHITE = (0.96, 0.96, 0.96)
 BLACK = (0.03, 0.03, 0.03)
 WETSUIT = (0.05, 0.07, 0.10)
 ACCENT = (0.1, 0.75, 0.9)
+ROBOT_METAL = (0.6, 0.62, 0.65)
+ROBOT_DARK = (0.2, 0.2, 0.22)
+ROBOT_ACCENT = (0.0, 0.8, 1.0)
 
 
 def _limb(mesh, material, color, points, radii):
@@ -253,10 +256,16 @@ def build_rider(variant):
     """The rider as one piece in a riding pose, used where it only has to be looked at (the gear
     screen's preview). In the ride itself the jointed parts below are posed every frame.
 
-    variant: 'santa' (shirtless, swim trunks, hat and beard) or 'wetsuit'."""
+    variant: 'santa', 'wetsuit', or 'robot'."""
     santa = variant == 'santa'
+    robot = variant == 'robot'
     mesh = Mesh()
-    body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
+    if santa:
+        body_material, body_color = 'RiderSkin', SKIN
+    elif robot:
+        body_material, body_color = 'RiderRobotMetal', ROBOT_METAL
+    else:
+        body_material, body_color = 'RiderWetsuit', WETSUIT
     belly = 1.0 if santa else 0.72
 
     for side in (-1.0, 1.0):
@@ -291,12 +300,20 @@ def build_rider(variant):
         add_ellipsoid(mesh, 'RiderWhite', WHITE, (-8.0, 0.0, 96.0), (20.5, 25.0, 3.5))     # waistband trim
         add_ellipsoid(mesh, 'RiderBlack', BLACK, (-7.0, 0.0, 91.0), (20.2, 25.2, 2.2))     # belt
         add_ellipsoid(mesh, 'RiderSkin', SKIN, (-2.0, 0.0, 109.0), (24.0, 25.0, 21.0))     # belly
+    elif robot:
+        add_ellipsoid(mesh, 'RiderRobotDark', ROBOT_DARK, (-9.0, 0.0, 87.0), (15.0, 19.0, 14.0), rings=12, segments=16)
+        add_ellipsoid(mesh, 'RiderRobotMetal', ROBOT_METAL, (-6.0, 0.0, 107.0), (14.0, 18.0, 19.0), rings=12, segments=16)
+        add_ellipsoid(mesh, 'RiderRobotAccent', ROBOT_ACCENT, (-6.0, 0.0, 99.0), (15.6, 19.6, 4.0), rings=8, segments=16)   # harness
+        add_ellipsoid(mesh, 'RiderRobotDark', ROBOT_DARK, (-6.0, 0.0, 129.0), (16.0, 22.0, 15.0), rings=12, segments=16)  # chest
     else:
         add_ellipsoid(mesh, body_material, body_color, (-9.0, 0.0, 87.0), (16.0, 20.0, 14.0))
         add_ellipsoid(mesh, body_material, body_color, (-6.0, 0.0, 107.0), (15.0, 19.0, 19.0))
         add_ellipsoid(mesh, 'RiderAccent', ACCENT, (-6.0, 0.0, 99.0), (15.6, 19.6, 3.0))   # harness
-    add_ellipsoid(mesh, body_material, body_color, (-6.0, 0.0, 129.0), (17.0, 23.0, 15.0))  # chest
-    _limb(mesh, 'RiderSkin', SKIN, [(-5.0, 0.0, 138.0), (-3.0, 0.0, 148.0)], [6.0, 5.5])     # neck
+        add_ellipsoid(mesh, body_material, body_color, (-6.0, 0.0, 129.0), (17.0, 23.0, 15.0))  # chest
+    if not robot:
+        add_ellipsoid(mesh, body_material, body_color, (-6.0, 0.0, 129.0), (17.0, 23.0, 15.0))  # chest
+
+    _limb(mesh, 'RiderRobotDark' if robot else 'RiderSkin', ROBOT_DARK if robot else SKIN, [(-5.0, 0.0, 138.0), (-3.0, 0.0, 148.0)], [6.0, 5.5])     # neck
 
     # Head
     head = (-2.0, 0.0, 156.0)
@@ -336,10 +353,16 @@ RIDER_PELVIS = (-10.0, 0.0, 82.0)   # where the pelvis is in build_rider()'s coo
 
 
 def build_rider_torso(variant):
-    """Pelvis, trunk, chest, neck and head: everything that is not a limb. variant: 'santa' or 'wetsuit'."""
+    """Pelvis, trunk, chest, neck and head: everything that is not a limb. variant: 'santa', 'wetsuit', or 'robot'."""
     santa = variant == 'santa'
+    robot = variant == 'robot'
     mesh = Mesh()
-    body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
+    if santa:
+        body_material, body_color = 'RiderSkin', SKIN
+    elif robot:
+        body_material, body_color = 'RiderRobotMetal', ROBOT_METAL
+    else:
+        body_material, body_color = 'RiderWetsuit', WETSUIT
     ox, oy, oz = RIDER_PELVIS
 
     def at(point):
@@ -350,17 +373,29 @@ def build_rider_torso(variant):
         add_ellipsoid(mesh, 'RiderWhite', WHITE, at((-8.0, 0.0, 96.0)), (20.5, 25.0, 3.5))     # waistband trim
         add_ellipsoid(mesh, 'RiderBlack', BLACK, at((-7.0, 0.0, 91.0)), (20.2, 25.2, 2.2))     # belt
         add_ellipsoid(mesh, 'RiderSkin', SKIN, at((-2.0, 0.0, 109.0)), (24.0, 25.0, 21.0))     # belly
+    elif robot:
+        add_ellipsoid(mesh, 'RiderRobotDark', ROBOT_DARK, at((-9.0, 0.0, 87.0)), (15.0, 19.0, 14.0), rings=12, segments=16)
+        add_ellipsoid(mesh, 'RiderRobotMetal', ROBOT_METAL, at((-6.0, 0.0, 107.0)), (14.0, 18.0, 19.0), rings=12, segments=16)
+        add_ellipsoid(mesh, 'RiderRobotAccent', ROBOT_ACCENT, at((-6.0, 0.0, 99.0)), (15.6, 19.6, 4.0), rings=8, segments=16)   # harness
+        add_ellipsoid(mesh, 'RiderRobotDark', ROBOT_DARK, at((-6.0, 0.0, 129.0)), (16.0, 22.0, 15.0), rings=12, segments=16)  # chest
     else:
         add_ellipsoid(mesh, body_material, body_color, at((-9.0, 0.0, 87.0)), (16.0, 20.0, 14.0))
         add_ellipsoid(mesh, body_material, body_color, at((-6.0, 0.0, 107.0)), (15.0, 19.0, 19.0))
         add_ellipsoid(mesh, 'RiderAccent', ACCENT, at((-6.0, 0.0, 99.0)), (15.6, 19.6, 3.0))   # harness
-    add_ellipsoid(mesh, body_material, body_color, at((-6.0, 0.0, 129.0)), (17.0, 23.0, 15.0))  # chest
-    _limb(mesh, 'RiderSkin', SKIN, [at((-5.0, 0.0, 138.0)), at((-3.0, 0.0, 148.0))], [6.0, 5.5])  # neck
+    
+    if not robot:
+        add_ellipsoid(mesh, body_material, body_color, at((-6.0, 0.0, 129.0)), (17.0, 23.0, 15.0))  # chest
 
-    add_ellipsoid(mesh, 'RiderSkin', SKIN, at((-2.0, 0.0, 156.0)), (11.5, 10.5, 12.5), rings=10, segments=14)  # head
-    add_ellipsoid(mesh, 'RiderSkin', SKIN, at((9.5, 0.0, 156.0)), (3.0, 2.6, 2.6), rings=6, segments=8)       # nose
-    for side in (-1.0, 1.0):
-        add_ellipsoid(mesh, 'RiderBlack', BLACK, at((8.0, side * 4.2, 160.0)), (1.6, 1.6, 1.8), rings=6, segments=8)
+    _limb(mesh, 'RiderRobotDark' if robot else 'RiderSkin', ROBOT_DARK if robot else SKIN, [at((-5.0, 0.0, 138.0)), at((-3.0, 0.0, 148.0))], [6.0, 5.5])  # neck
+
+    if robot:
+        add_ellipsoid(mesh, 'RiderRobotMetal', ROBOT_METAL, at((-2.0, 0.0, 156.0)), (11.0, 10.0, 12.0), rings=12, segments=16)  # head
+        add_ellipsoid(mesh, 'RiderRobotAccent', ROBOT_ACCENT, at((9.5, 0.0, 156.0)), (3.5, 3.0, 3.0), rings=8, segments=12)       # robot nose/visor
+    else:
+        add_ellipsoid(mesh, 'RiderSkin', SKIN, at((-2.0, 0.0, 156.0)), (11.5, 10.5, 12.5), rings=10, segments=14)  # head
+        add_ellipsoid(mesh, 'RiderSkin', SKIN, at((9.5, 0.0, 156.0)), (3.0, 2.6, 2.6), rings=6, segments=8)       # nose
+        for side in (-1.0, 1.0):
+            add_ellipsoid(mesh, 'RiderBlack', BLACK, at((8.0, side * 4.2, 160.0)), (1.6, 1.6, 1.8), rings=6, segments=8)
 
     if santa:
         add_ellipsoid(mesh, 'RiderWhite', WHITE, at((5.0, 0.0, 147.5)), (9.5, 11.0, 10.5))
@@ -372,7 +407,7 @@ def build_rider_torso(variant):
               [at((-2.0, 0.0, 165.0)), at((-6.0, 2.0, 176.0)), at((-14.0, 6.0, 184.0)), at((-24.0, 10.0, 184.0)), at((-30.0, 12.0, 176.0))],
               [11.5, 9.0, 6.0, 3.5, 2.0])
         add_ellipsoid(mesh, 'RiderWhite', WHITE, at((-31.0, 12.5, 172.5)), (4.5, 4.5, 4.5), rings=6, segments=8)
-    else:
+    elif not robot:
         add_ellipsoid(mesh, 'RiderBlack', BLACK, at((-4.0, 0.0, 160.0)), (11.8, 10.9, 10.5), rings=8, segments=14)  # hair
     return mesh
 
@@ -380,12 +415,18 @@ def build_rider_torso(variant):
 def build_rider_limb(variant, part):
     """part: 'thigh', 'shin', 'upper_arm' or 'forearm'. Bone along +X from the origin."""
     santa = variant == 'santa'
+    robot = variant == 'robot'
     mesh = Mesh()
-    body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
+    if santa:
+        body_material, body_color = 'RiderSkin', SKIN
+    elif robot:
+        body_material, body_color = 'RiderRobotMetal', ROBOT_METAL
+    else:
+        body_material, body_color = 'RiderWetsuit', WETSUIT
     if part == 'thigh':
         length = RIDER_THIGH_LENGTH
         _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [10.5, 7.5])
-        add_ellipsoid(mesh, body_material, body_color, (length, 0.0, 0.0), (7.8, 7.8, 7.8), rings=6, segments=10)  # knee
+        add_ellipsoid(mesh, 'RiderRobotDark' if robot else body_material, ROBOT_DARK if robot else body_color, (length, 0.0, 0.0), (7.8, 7.8, 7.8), rings=6, segments=10)  # knee
         if santa:
             add_ellipsoid(mesh, 'RiderRed', RED, (0.28 * length, 0.0, 0.0), (9.0, 11.5, 11.5), rings=6, segments=12)   # trouser leg
             add_ellipsoid(mesh, 'RiderWhite', WHITE, (0.55 * length, 0.0, 0.0), (3.2, 10.5, 10.5), rings=6, segments=12)  # hem
@@ -393,16 +434,16 @@ def build_rider_limb(variant, part):
         length = RIDER_SHIN_LENGTH
         _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [7.5, 5.5])
         # The foot, pointing the way the knee bends.
-        add_ellipsoid(mesh, 'RiderSkin', SKIN, (length + 1.0, 0.0, 6.0), (4.5, 6.0, 13.0))
+        add_ellipsoid(mesh, 'RiderRobotDark' if robot else 'RiderSkin', ROBOT_DARK if robot else SKIN, (length + 1.0, 0.0, 6.0), (4.5, 6.0, 13.0))
     elif part == 'upper_arm':
         length = RIDER_UPPER_ARM_LENGTH
-        add_ellipsoid(mesh, body_material, body_color, (0.0, 0.0, 0.0), (7.5, 7.5, 7.5), rings=6, segments=10)  # shoulder
+        add_ellipsoid(mesh, 'RiderRobotDark' if robot else body_material, ROBOT_DARK if robot else body_color, (0.0, 0.0, 0.0), (7.5, 7.5, 7.5), rings=6, segments=10)  # shoulder
         _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [6.5, 5.5])
     elif part == 'forearm':
         length = RIDER_FOREARM_LENGTH
-        add_ellipsoid(mesh, body_material, body_color, (0.0, 0.0, 0.0), (5.6, 5.6, 5.6), rings=6, segments=10)  # elbow
+        add_ellipsoid(mesh, 'RiderRobotDark' if robot else body_material, ROBOT_DARK if robot else body_color, (0.0, 0.0, 0.0), (5.6, 5.6, 5.6), rings=6, segments=10)  # elbow
         _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [5.5, 4.5])
-        add_ellipsoid(mesh, 'RiderSkin', SKIN, (length, 0.0, 0.0), (5.5, 5.0, 5.0), rings=6, segments=10)       # hand
+        add_ellipsoid(mesh, 'RiderRobotDark' if robot else 'RiderSkin', ROBOT_DARK if robot else SKIN, (length, 0.0, 0.0), (5.5, 5.0, 5.0), rings=6, segments=10)       # hand
     else:
         raise ValueError(part)
     return mesh
@@ -415,7 +456,7 @@ def generate_rider_parts(output_dir):
     """Writes the jointed riders' OBJs and returns {asset name: path}."""
     os.makedirs(output_dir, exist_ok=True)
     paths = {}
-    for variant, label in (('santa', 'Santa'), ('wetsuit', 'Wetsuit')):
+    for variant, label in (('santa', 'Santa'), ('wetsuit', 'Wetsuit'), ('robot', 'Robot')):
         for part_label, part in RIDER_PARTS:
             name = f'SM_Rider{label}_{part_label}'
             path = os.path.join(output_dir, f'rider_{variant}_{part_label.lower()}.obj')
@@ -432,8 +473,8 @@ def generate_board_obj(filepath):
     width_half = 21.0
     thickness_half = 1.25
     rocker = 4.0
-    x_segs = 14
-    y_segs = 6
+    x_segs = 28
+    y_segs = 12
     
     vertices = []
     uvs = []
@@ -549,8 +590,8 @@ def generate_bar_obj(filepath):
     # Cylinder oriented along Y axis
     length_half = 27.5
     radius = 1.5
-    segments = 12
-    y_segs = 4
+    segments = 24
+    y_segs = 8
     
     vertices = []
     uvs = []
@@ -706,17 +747,23 @@ def generate_all(output_dir):
     paths = {
         'SM_Kite': os.path.join(output_dir, 'kite.obj'),
         'SM_KiteBoost': os.path.join(output_dir, 'kite_boost.obj'),
+        'SM_KiteWave': os.path.join(output_dir, 'kite_wave.obj'),
+        'SM_KiteFreestyle': os.path.join(output_dir, 'kite_freestyle.obj'),
         'SM_KiteBoard': os.path.join(output_dir, 'board.obj'),
         'SM_ControlBar': os.path.join(output_dir, 'control_bar.obj'),
         'SM_RiderSanta': os.path.join(output_dir, 'rider_santa.obj'),
         'SM_RiderWetsuit': os.path.join(output_dir, 'rider_wetsuit.obj'),
+        'SM_RiderRobot': os.path.join(output_dir, 'rider_robot.obj'),
     }
     build_kite().write(paths['SM_Kite'])
     build_kite(KITE_BOOST_STRUT_POSITIONS, 'KiteCanopyBoost').write(paths['SM_KiteBoost'])
+    build_kite(KITE_STRUT_POSITIONS, 'KiteCanopyWave').write(paths['SM_KiteWave'])
+    build_kite(KITE_STRUT_POSITIONS, 'KiteCanopyFreestyle').write(paths['SM_KiteFreestyle'])
     generate_board_obj(paths['SM_KiteBoard'])
     generate_bar_obj(paths['SM_ControlBar'])
     build_rider('santa').write(paths['SM_RiderSanta'])
     build_rider('wetsuit').write(paths['SM_RiderWetsuit'])
+    build_rider('robot').write(paths['SM_RiderRobot'])
     return paths
 
 

@@ -25,6 +25,8 @@ obj_paths = generate_mesh_objs.generate_all(output_dir)
 canopy_textures = {
     'T_KiteCanopy': (os.path.join(output_dir, 'kite_canopy.png'), 'loop'),
     'T_KiteCanopyBoost': (os.path.join(output_dir, 'kite_canopy_boost.png'), 'boost'),
+    'T_KiteCanopyWave': (os.path.join(output_dir, 'kite_canopy_wave.png'), 'wave'),
+    'T_KiteCanopyFreestyle': (os.path.join(output_dir, 'kite_canopy_freestyle.png'), 'freestyle'),
 }
 for texture_path, scheme in canopy_textures.values():
     subprocess.run([os.path.join(SCRIPT_DIR, 'make_kite_texture.sh'), texture_path, scheme], check=True)

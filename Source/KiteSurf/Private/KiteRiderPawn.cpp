@@ -89,26 +89,6 @@ AKiteRiderPawn::AKiteRiderPawn()
 		BoardMesh->SetStaticMesh(BoardMeshFinder.Object);
 	}
 
-	// RiderMesh attached to BoardMesh (standing on board)
-	RiderMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RiderMesh"));
-	RiderMesh->SetupAttachment(RootComponent);
-	RiderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-	RiderMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f)); // Face across the board in kitesurf stance
-
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(RiderCharacter::MannequinMeshPath);
-	if (RiderMeshFinder.Succeeded())
-	{
-		RiderMesh->SetSkeletalMesh(RiderMeshFinder.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(RiderCharacter::MannequinIdlePath);
-	if (RiderAnimFinder.Succeeded())
-	{
-		RiderMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-		RiderMesh->SetAnimation(RiderAnimFinder.Object);
-		RiderMesh->Play(true);
-	}
-
 	// The jointed riders: a torso and eight limb parts placed in world space every frame by
 	// UpdateRiderPose. Which rider's parts they show is set by SetRiderCharacter.
 	auto MakeRiderPart = [this](const TCHAR* Name) -> UStaticMeshComponent*
@@ -160,7 +140,6 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// The rider stands across the board and turns with it, but stays upright and leans against the kite
 	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
-	RiderMesh->SetUsingAbsoluteRotation(true);
 	ControlBarMesh->SetUsingAbsoluteLocation(true);
 	ControlBarMesh->SetUsingAbsoluteRotation(true);
 
@@ -980,29 +959,20 @@ void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
 {
 	RiderCharacter = RiderCharacter::FromIndex(static_cast<int32>(InCharacter));
 
-	// Riders without a posed static mesh are the animated mannequin.
-	const bool bRobot = RiderCharacter::GetStaticMeshPath(RiderCharacter) == nullptr;
-	if (RiderMesh)
-	{
-		RiderMesh->SetVisibility(bRobot);
-	}
 	// The jointed riders share a rig; each has its own torso and limb parts.
-	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : TEXT("Santa");
-	auto SetPart = [RiderName, bRobot](UStaticMeshComponent* Component, const TCHAR* PartName)
+	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : (RiderCharacter == ERiderCharacter::Robot ? TEXT("Robot") : TEXT("Santa"));
+	auto SetPart = [RiderName](UStaticMeshComponent* Component, const TCHAR* PartName)
 	{
 		if (!Component)
 		{
 			return;
 		}
-		if (!bRobot)
+		const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
+		if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
 		{
-			const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
-			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
-			{
-				Component->SetStaticMesh(Mesh);
-			}
+			Component->SetStaticMesh(Mesh);
 		}
-		Component->SetVisibility(!bRobot);
+		Component->SetVisibility(true);
 	};
 	SetPart(RiderTorso, TEXT("Torso"));
 	static const TCHAR* LimbPartNames[] = { TEXT("Thigh"), TEXT("Shin"), TEXT("UpperArm"), TEXT("Forearm") };
@@ -1121,11 +1091,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RigInput.Crouch = Load;
 	RiderPose = RiderRig::SolveBody(RigInput);
 
-	if (RiderMesh)
-	{
-		// The mannequin's front is +Y in mesh space.
-		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
-	}
+
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them
 	// just beyond the hook, further out the more it is sheeted out, and always in front of the

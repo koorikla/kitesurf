@@ -337,7 +337,9 @@ void UKiteSurfMainMenuWidget::StartRide()
 	}
 	if (UWorld* World = GetWorld())
 	{
-		UGameplayStatics::OpenLevel(World, FName(TEXT("L_OpenWater")));
+		const TArray<FName> Maps = { FName(TEXT("L_OpenWater")), FName(TEXT("L_FlatWater")), FName(TEXT("L_StormWater")) };
+		int32 RandomIndex = FMath::RandRange(0, Maps.Num() - 1);
+		UGameplayStatics::OpenLevel(World, Maps[RandomIndex]);
 	}
 }
 

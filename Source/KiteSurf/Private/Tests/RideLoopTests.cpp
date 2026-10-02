@@ -968,16 +968,14 @@ bool FKiteSurfPawnRiderCharacterSelection::RunTest(const FString& Parameters)
 	FStandingFixture Standing;
 	AKiteRiderPawn* Pawn = Standing.Pawn;
 	TestNotNull(TEXT("Pawn created"), Pawn);
-	if (!Pawn || !Pawn->GetRiderStaticMesh() || !Pawn->GetRiderMesh())
+	if (!Pawn || !Pawn->GetRiderStaticMesh())
 	{
 		return false;
 	}
 	const UStaticMeshComponent* Posed = Pawn->GetRiderStaticMesh();
-	const USkeletalMeshComponent* Robot = Pawn->GetRiderMesh();
 
 	TestEqual(TEXT("Santa is the default rider"), Pawn->GetRiderCharacter(), ERiderCharacter::Santa);
 	TestTrue(TEXT("Santa is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderSanta_Torso"));
-	TestFalse(TEXT("The robot is hidden behind Santa"), Robot->IsVisible());
 
 	Pawn->SetRiderCharacter(ERiderCharacter::Wetsuit);
 	TestTrue(TEXT("The wetsuit rider is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderWetsuit_Torso"));
@@ -991,14 +989,13 @@ bool FKiteSurfPawnRiderCharacterSelection::RunTest(const FString& Parameters)
 	TestTrue(TEXT("and they are the wetsuit rider's"), bLimbsAreWetsuit);
 
 	Pawn->SetRiderCharacter(ERiderCharacter::Robot);
-	bool bLimbsHidden = true;
+	TestTrue(TEXT("The robot is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderRobot_Torso"));
+	bool bLimbsAreRobot = Pawn->GetRiderLimbs().Num() == 8;
 	for (const UStaticMeshComponent* Limb : Pawn->GetRiderLimbs())
 	{
-		bLimbsHidden = bLimbsHidden && Limb && !Limb->IsVisible();
+		bLimbsAreRobot = bLimbsAreRobot && Limb && Limb->IsVisible() && Limb->GetStaticMesh() && Limb->GetStaticMesh()->GetName().StartsWith(TEXT("SM_RiderRobot_"));
 	}
-	TestTrue(TEXT("The jointed rider's limbs are hidden behind the robot"), bLimbsHidden);
-	TestTrue(TEXT("The robot is shown"), Robot->IsVisible());
-	TestFalse(TEXT("The posed rider is hidden behind the robot"), Posed->IsVisible());
+	TestTrue(TEXT("and they are the robot's"), bLimbsAreRobot);
 
 	// The settings button steps through every rider and comes back round.
 	ERiderCharacter Character = ERiderCharacter::Santa;

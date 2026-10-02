@@ -185,6 +185,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
 
+	/** Tail-first speed at which the board swaps nose and tail (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float SwitchStanceSpeedCmS;
+
+	/** Heel angle away from the kite at full sideways load (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float AutoHeelDeg;
+
+	/** Sideways line force that gives the full AutoHeelDeg (kg*cm/s^2). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float AutoHeelFullLoadForce;
+
 	// Jump tunables (Spec)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float BaseJumpImpulse;

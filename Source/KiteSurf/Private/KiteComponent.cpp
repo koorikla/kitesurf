@@ -20,12 +20,22 @@ UKiteComponent::UKiteComponent()
 	Sheet = 0.0f;
 	Steer = 0.0f;
 	SteerSensitivity = 10.0f;
-	DepowerDriftRate = 10.0f;
+	MaxSteerRateDegPerSec = 90.0f;
+	MinElevationDeg = 12.0f;
+	EdgeDepthDeg = 5.0f;
+	PowerDepthDeg = 9.0f;
+	DepthRateDegPerSec = 15.0f;
+	WindowAxisResponse = 2.0f;
+	WindowRiderVelocity = FVector::ZeroVector;
+	bSnapWindowRiderVelocity = true;
+	MaxWindowSwingDeg = 75.0f;
+	MaxKiteAirspeedCmS = 2500.0f;
 	bDrawDebug = false;
 
 	KiteWorldPosition = FVector::ZeroVector;
 	KiteWorldRotation = FRotator::ZeroRotator;
 	LastKitePosition = FVector::ZeroVector;
+	LastKiteOffset = FVector::ZeroVector;
 	KiteVelocity = FVector::ZeroVector;
 	bHasLastPosition = false;
 
@@ -155,8 +165,8 @@ void UKiteComponent::UpdateVisuals()
 	}
 
 	// Update line attachments: connecting from rider control bar to kite wing tips
-	const FVector LeftBarPos = RiderPos + Owner->GetActorRotation().RotateVector(FVector(40.0f, -25.0f, 100.0f));
-	const FVector RightBarPos = RiderPos + Owner->GetActorRotation().RotateVector(FVector(40.0f, 25.0f, 100.0f));
+	const FVector LeftBarPos = GetBarEndWorldPosition(true);
+	const FVector RightBarPos = GetBarEndWorldPosition(false);
 
 	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, -200.0f, -40.0f));
 	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, 200.0f, -40.0f));
@@ -233,17 +243,121 @@ void UKiteComponent::SetAzimuthDeg(float InAzimuthDeg)
 {
 	AzimuthDeg = FMath::Clamp(InAzimuthDeg, -90.0f, 90.0f);
 	bHasLastPosition = false;
+	bSnapWindowRiderVelocity = true;
 }
 
 void UKiteComponent::SetElevationDeg(float InElevationDeg)
 {
 	ElevationDeg = FMath::Clamp(InElevationDeg, 0.0f, 90.0f);
 	bHasLastPosition = false;
+	bSnapWindowRiderVelocity = true;
 }
 
 void UKiteComponent::SetWindComponent(UWindComponent* InWindComponent)
 {
 	WindComponent = InWindComponent;
+}
+
+namespace
+{
+	/** Kite direction split into clock position around the wind axis and depth into the window, both in degrees. */
+	void ToClockAndDepth(float AzimuthDeg, float ElevationDeg, float& OutClockDeg, float& OutDepthDeg)
+	{
+		const float Azimuth = FMath::DegreesToRadians(AzimuthDeg);
+		const float Elevation = FMath::DegreesToRadians(ElevationDeg);
+		const float Downwind = FMath::Cos(Elevation) * FMath::Cos(Azimuth);
+		const float Right = FMath::Cos(Elevation) * FMath::Sin(Azimuth);
+		const float Up = FMath::Sin(Elevation);
+		OutClockDeg = FMath::RadiansToDegrees(FMath::Atan2(Right, Up));
+		OutDepthDeg = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(Downwind, -1.0f, 1.0f)));
+	}
+
+	void FromClockAndDepth(float ClockDeg, float DepthDeg, float& OutAzimuthDeg, float& OutElevationDeg)
+	{
+		const float Clock = FMath::DegreesToRadians(ClockDeg);
+		const float Depth = FMath::DegreesToRadians(DepthDeg);
+		const float Downwind = FMath::Sin(Depth);
+		const float Right = FMath::Cos(Depth) * FMath::Sin(Clock);
+		const float Up = FMath::Cos(Depth) * FMath::Cos(Clock);
+		OutAzimuthDeg = FMath::RadiansToDegrees(FMath::Atan2(Right, Downwind));
+		OutElevationDeg = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(Up, -1.0f, 1.0f)));
+	}
+}
+
+void UKiteComponent::SetWindowPosition(float ClockDeg, float DepthDeg)
+{
+	float NewAzimuthDeg = 0.0f;
+	float NewElevationDeg = 0.0f;
+	FromClockAndDepth(FMath::Clamp(ClockDeg, -90.0f, 90.0f), FMath::Clamp(DepthDeg, 0.0f, 90.0f), NewAzimuthDeg, NewElevationDeg);
+	SetAzimuthDeg(NewAzimuthDeg);
+	SetElevationDeg(NewElevationDeg);
+}
+
+float UKiteComponent::GetClockDeg() const
+{
+	float ClockDeg = 0.0f;
+	float DepthDeg = 0.0f;
+	ToClockAndDepth(AzimuthDeg, ElevationDeg, ClockDeg, DepthDeg);
+	return ClockDeg;
+}
+
+float UKiteComponent::GetWindowDepthDeg() const
+{
+	float ClockDeg = 0.0f;
+	float DepthDeg = 0.0f;
+	ToClockAndDepth(AzimuthDeg, ElevationDeg, ClockDeg, DepthDeg);
+	return DepthDeg;
+}
+
+FVector UKiteComponent::GetDownwindDir() const
+{
+	const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+	const FVector DownwindDir = GetWindAt(RiderPos).GetSafeNormal2D();
+	return DownwindDir.IsNearlyZero() ? FVector::ForwardVector : DownwindDir;
+}
+
+FVector UKiteComponent::GetRiderVelocity2D() const
+{
+	const AActor* Owner = GetOwner();
+	return Owner ? FVector(Owner->GetVelocity().X, Owner->GetVelocity().Y, 0.0f) : FVector::ZeroVector;
+}
+
+FVector UKiteComponent::GetWindowAxis() const
+{
+	const FVector TrueDir = GetDownwindDir();
+	const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+	const FVector TrueWind = GetWindAt(RiderPos);
+	const FVector RiderVelocity = bSnapWindowRiderVelocity ? GetRiderVelocity2D() : WindowRiderVelocity;
+	const FVector ApparentWind = UKiteWindMath::ApparentWind(FVector(TrueWind.X, TrueWind.Y, 0.0f), RiderVelocity);
+
+	// How far the window has swung away from the true wind. Running downwind near wind speed leaves
+	// too little apparent wind to define a direction, so the swing fades out there, and it is capped
+	// so that outrunning the wind cannot flip the window behind the rider.
+	const float TrueSpeed = TrueWind.Size2D();
+	const float ApparentSpeed = ApparentWind.Size2D();
+	if (TrueSpeed < KINDA_SMALL_NUMBER || ApparentSpeed < KINDA_SMALL_NUMBER)
+	{
+		return TrueDir;
+	}
+	const FVector ApparentDir = ApparentWind / ApparentSpeed;
+	const float SwingDeg = FMath::RadiansToDegrees(FMath::Atan2(
+		TrueDir.X * ApparentDir.Y - TrueDir.Y * ApparentDir.X,
+		FVector::DotProduct(TrueDir, ApparentDir)));
+	const float Confidence = FMath::Clamp(ApparentSpeed / (0.3f * TrueSpeed), 0.0f, 1.0f);
+	const float ClampedSwingDeg = FMath::Clamp(SwingDeg, -MaxWindowSwingDeg, MaxWindowSwingDeg) * Confidence;
+	return TrueDir.RotateAngleAxis(ClampedSwingDeg, FVector::UpVector);
+}
+
+FVector UKiteComponent::GetBarEndWorldPosition(bool bLeft) const
+{
+	const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+	FVector TowardsKite = (KiteWorldPosition - RiderPos).GetSafeNormal2D();
+	if (TowardsKite.IsNearlyZero())
+	{
+		TowardsKite = GetWindowAxis();
+	}
+	const FVector BarRight = FVector::CrossProduct(FVector::UpVector, TowardsKite);
+	return RiderPos + TowardsKite * 40.0f + FVector(0.0f, 0.0f, 100.0f) + BarRight * (bLeft ? -25.0f : 25.0f);
 }
 
 FVector UKiteComponent::GetWindAt(const FVector& Location) const
@@ -265,12 +379,7 @@ FVector UKiteComponent::GetWindAt(const FVector& Location) const
 void UKiteComponent::ComputeKiteTransform(FVector& OutKitePos, FVector& OutLineDir) const
 {
 	const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
-	const FVector TrueWind = GetWindAt(RiderPos);
-	FVector DownwindDir = TrueWind.GetSafeNormal2D();
-	if (DownwindDir.IsNearlyZero())
-	{
-		DownwindDir = FVector::ForwardVector;
-	}
+	const FVector DownwindDir = GetWindowAxis();
 
 	// Shared wind-window geometry lives in KiteWindMath (clamps azimuth/elevation itself).
 	OutKitePos = UKiteWindMath::KitePositionInWindow(RiderPos, DownwindDir, AzimuthDeg, ElevationDeg, LineLengthCm);
@@ -283,18 +392,31 @@ void UKiteComponent::ComputeKiteTransform(FVector& OutKitePos, FVector& OutLineD
 
 void UKiteComponent::UpdateKite(float DeltaTime)
 {
+	// 0. Let the window follow the rider's velocity
+	const FVector RiderVelocity = GetRiderVelocity2D();
+	if (bSnapWindowRiderVelocity || DeltaTime <= 0.0f)
+	{
+		WindowRiderVelocity = RiderVelocity;
+		bSnapWindowRiderVelocity = false;
+	}
+	else
+	{
+		WindowRiderVelocity = FMath::VInterpTo(WindowRiderVelocity, RiderVelocity, DeltaTime, WindowAxisResponse);
+	}
+
 	// 1. Initial position & wind estimate
 	FVector CurrentPos, LineDir;
 	ComputeKiteTransform(CurrentPos, LineDir);
 
-	// Velocity calculation
+	// Kite velocity: the rider's own velocity plus the kite's motion around the rider. The second
+	// part comes from a position difference, so it is capped to stay sane when the kite is repositioned.
+	const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+	const FVector RiderVelocity3D = GetOwner() ? GetOwner()->GetVelocity() : FVector::ZeroVector;
+	FVector CurrentOffset = CurrentPos - RiderPos;
+	KiteVelocity = RiderVelocity3D;
 	if (bHasLastPosition && DeltaTime > 0.0f)
 	{
-		KiteVelocity = (CurrentPos - LastKitePosition) / DeltaTime;
-	}
-	else
-	{
-		KiteVelocity = FVector::ZeroVector;
+		KiteVelocity += ((CurrentOffset - LastKiteOffset) / DeltaTime).GetClampedToMaxSize(MaxKiteAirspeedCmS);
 	}
 
 	// Apparent wind: true wind at kite position - kite velocity
@@ -306,39 +428,41 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 	// 2. Dynamics: steering & depower drift
 	if (DeltaTime > 0.0f)
 	{
-		// Steering moves azimuth at a rate proportional to steer input * apparent wind speed
-		const float DeltaAzimuth = Steer * SteerSensitivity * ApparentWindSpeedMps * DeltaTime;
-		AzimuthDeg = FMath::Clamp(AzimuthDeg + DeltaAzimuth, -90.0f, 90.0f);
+		// Steering flies the kite around the wind axis like a clock hand: right from the zenith
+		// down to the right horizon, left down to the left horizon. Rate scales with apparent wind.
+		float ClockDeg = 0.0f;
+		float DepthDeg = 0.0f;
+		ToClockAndDepth(AzimuthDeg, ElevationDeg, ClockDeg, DepthDeg);
 
-		// Kite drifts to the edge of the window when sheeted out
-		const float Depower = 1.0f - FMath::Clamp(Sheet, 0.0f, 1.0f);
-		if (Depower > 0.0f)
-		{
-			// Zenith edge drift (towards 85 degrees)
-			const float TargetElev = 85.0f;
-			if (ElevationDeg < TargetElev)
-			{
-				ElevationDeg = FMath::Min(ElevationDeg + Depower * DepowerDriftRate * DeltaTime, TargetElev);
-			}
+		const float SteerRate = FMath::Min(SteerSensitivity * ApparentWindSpeedMps, MaxSteerRateDegPerSec);
+		ClockDeg += Steer * SteerRate * DeltaTime;
 
-			// Lateral edge drift if already angled away from center
-			if (FMath::Abs(AzimuthDeg) > 5.0f)
-			{
-				const float TargetAz = FMath::Sign(AzimuthDeg) * 85.0f;
-				AzimuthDeg = FMath::FInterpTo(AzimuthDeg, TargetAz, DeltaTime, Depower * 0.5f);
-			}
-		}
+		// Sheeting in pulls the kite deeper into the window; sheeting out lets it sit at the edge.
+		const float TargetDepthDeg = FMath::Lerp(EdgeDepthDeg, PowerDepthDeg, FMath::Clamp(Sheet, 0.0f, 1.0f));
+		DepthDeg = FMath::FInterpConstantTo(DepthDeg, TargetDepthDeg, DeltaTime, DepthRateDegPerSec);
+
+		// Keep the kite off the water: limit the clock angle so elevation stays above the minimum.
+		const float MinUp = FMath::Sin(FMath::DegreesToRadians(MinElevationDeg));
+		const float RingRadius = FMath::Cos(FMath::DegreesToRadians(DepthDeg));
+		const float MaxClockDeg = RingRadius > MinUp ? FMath::RadiansToDegrees(FMath::Acos(MinUp / RingRadius)) : 0.0f;
+		ClockDeg = FMath::Clamp(ClockDeg, -MaxClockDeg, MaxClockDeg);
+
+		FromClockAndDepth(ClockDeg, DepthDeg, AzimuthDeg, ElevationDeg);
+		AzimuthDeg = FMath::Clamp(AzimuthDeg, -90.0f, 90.0f);
+		ElevationDeg = FMath::Clamp(ElevationDeg, 0.0f, 90.0f);
 
 		// Recompute transform after angle update
 		ComputeKiteTransform(CurrentPos, LineDir);
+		CurrentOffset = CurrentPos - RiderPos;
 		if (bHasLastPosition)
 		{
-			KiteVelocity = (CurrentPos - LastKitePosition) / DeltaTime;
+			KiteVelocity = RiderVelocity3D + ((CurrentOffset - LastKiteOffset) / DeltaTime).GetClampedToMaxSize(MaxKiteAirspeedCmS);
 		}
 	}
 
 	KiteWorldPosition = CurrentPos;
 	LastKitePosition = CurrentPos;
+	LastKiteOffset = CurrentOffset;
 	bHasLastPosition = true;
 
 	// 3. Aerodynamics calculations
@@ -349,9 +473,10 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 		return;
 	}
 
-	// Angle of attack from sheet (depower: 4 deg .. 18 deg)
+	// Angle of attack from sheet. The lift coefficient reaches its 1.2 clamp at 11 deg, so power
+	// rises over the first 80% of bar travel; 1.5 deg leaves a depowered kite just flying.
 	const float ClampedSheet = FMath::Clamp(Sheet, 0.0f, 1.0f);
-	const float AlphaDeg = FMath::Lerp(4.0f, 18.0f, ClampedSheet);
+	const float AlphaDeg = FMath::Lerp(1.5f, 13.0f, ClampedSheet);
 	const float AlphaRad = FMath::DegreesToRadians(AlphaDeg);
 
 	// Cl = 2*PI*sin(alpha) clamped to 1.2
@@ -399,7 +524,6 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug && GetWorld())
 	{
-		const FVector RiderPos = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
 		DrawDebugLine(GetWorld(), RiderPos, KiteWorldPosition, FColor::Yellow, false, -1.0f, 0, 2.0f);
 
 		const FString DebugText = FString::Printf(TEXT("Tension: %.1f N\nForce: (%.0f, %.0f, %.0f)\nAz: %.1f, El: %.1f\nSheet: %.2f"),

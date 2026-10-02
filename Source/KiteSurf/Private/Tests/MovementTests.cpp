@@ -9,7 +9,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Test 1: Speed envelope: 15 kn wind, 9m kite, steady state between 12 and 25 kn, clamped at MaxBoardSpeed
+// Test 1: Speed envelope: 15 kn wind, 12 m2 kite, beam reach from a standstill settles between 12 and 25 kn
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfMovementSpeedEnvelope, "KiteSurf.Movement.SpeedEnvelope", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
@@ -36,19 +36,16 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 				WindComp->BaseWind = FVector(771.6f, 0.0f, 0.0f);
 			}
 
-			KiteComp->AreaM2 = 9.0f;
-			TestEqual(TEXT("Kite area is 9 m2"), KiteComp->AreaM2, 9.0f);
-
-			// Set kite in power zone (azimuth 45 deg, elevation 30 deg), sheeted in
+			// Board across the wind, kite powered up low on that side, no edge input: holding an
+			// edge key carves the board, so a steady course is ridden with the edge neutral.
 			Pawn->SetActorLocation(FVector::ZeroVector);
-			Pawn->SetActorRotation(FRotator(0.0f, 45.0f, 0.0f)); // heading 45 deg across wind
-			KiteComp->SetAzimuthDeg(40.0f);
-			KiteComp->SetElevationDeg(25.0f);
+			Pawn->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+			KiteComp->SetWindowPosition(65.0f, 8.0f);
 			Pawn->SheetKite(0.8f);
-			Pawn->EdgeBoard(0.6f);
+			Pawn->EdgeBoard(0.0f);
 
 			const float DeltaTime = 0.0333f;
-			for (int32 i = 0; i < 300; ++i) // 10 seconds of simulation
+			for (int32 i = 0; i < 600; ++i) // 20 seconds of simulation
 			{
 				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
@@ -128,7 +125,7 @@ bool FKiteSurfMovementDepowerToStop::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Test 3: Upwind progress possible up to ~45 deg off true wind at 15 kn
+// Test 3: Upwind progress: holding a course 30 deg above a beam reach gains ground against the wind at 15 kn
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfMovementUpwindAngle, "KiteSurf.Movement.UpwindAngle", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
@@ -149,36 +146,34 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 		{
 			if (WindComp)
 			{
-				// Wind blowing along +X (towards east)
+				// Wind blowing along +X, so upwind is -X and a beam reach to the right is yaw 90
 				WindComp->BaseWind = FVector(771.6f, 0.0f, 0.0f);
 			}
 
-			// Heading 45 deg off wind (upwind component = -X direction when wind is +X)
-			// True wind origin is -X, blowing towards +X. Upwind heading is 135 deg (pointing back towards wind)
-			// Or if board is edging hard into wind: board heading is oriented 45 deg relative to cross-wind.
+			const FRotator UpwindHeading(0.0f, 120.0f, 0.0f);
 			Pawn->SetActorLocation(FVector::ZeroVector);
-			Pawn->SetActorRotation(FRotator(0.0f, 45.0f, 0.0f));
-			BoardComp->Velocity = FVector(400.0f, 400.0f, 0.0f); // already planing
-			Pawn->EdgeBoard(0.85f); // Edging hard upwind
-			Pawn->SheetKite(0.9f);
-			KiteComp->SetAzimuthDeg(60.0f);
-			KiteComp->SetElevationDeg(25.0f);
+			Pawn->SetActorRotation(UpwindHeading);
+			BoardComp->Velocity = UpwindHeading.Vector() * 600.0f; // already planing
+			KiteComp->SetWindowPosition(65.0f, 8.0f);
+			Pawn->SheetKite(0.6f);
+			Pawn->EdgeBoard(0.0f); // course held by the fins; an edge input would carve
 
 			const float DeltaTime = 0.0333f;
-			for (int32 i = 0; i < 90; ++i) // 3 seconds
+			for (int32 i = 0; i < 450; ++i) // 15 seconds
 			{
 				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
 				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
-			// Test that board maintains forward planing momentum and lateral drift is controlled
 			const float ForwardSpeed = BoardComp->GetForwardSpeed();
 			const float LateralSpeed = FMath::Abs(BoardComp->GetLateralSpeed());
-			UE_LOG(LogKiteSurf, Log, TEXT("UpwindAngle: Forward = %.1f cm/s, Lateral = %.1f cm/s, IsPlaning = %d"),
-				ForwardSpeed, LateralSpeed, BoardComp->IsPlaning());
-			TestTrue(TEXT("Board maintains planing forward speed while edging upwind"), ForwardSpeed >= BoardComp->PlaningThresholdCmS);
-			TestTrue(TEXT("Edge grip keeps lateral leeway smaller than forward speed"), LateralSpeed < ForwardSpeed);
+			const float UpwindSpeed = -BoardComp->Velocity.X;
+			UE_LOG(LogKiteSurf, Log, TEXT("UpwindAngle: Forward = %.1f cm/s, Lateral = %.1f cm/s, Upwind = %.1f cm/s, IsPlaning = %d"),
+				ForwardSpeed, LateralSpeed, UpwindSpeed, BoardComp->IsPlaning());
+			TestTrue(TEXT("Board maintains planing forward speed while pointing upwind"), ForwardSpeed >= BoardComp->PlaningThresholdCmS);
+			TestTrue(TEXT("Grip keeps lateral leeway smaller than forward speed"), LateralSpeed < ForwardSpeed);
+			TestTrue(TEXT("Board gains at least 1 m/s against the wind"), UpwindSpeed >= 100.0f);
 		}
 	}
 

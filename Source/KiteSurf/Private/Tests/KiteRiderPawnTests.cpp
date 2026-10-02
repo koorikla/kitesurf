@@ -1,5 +1,7 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "BoardMovementComponent.h"
+#include "UI/KiteSurfMenuStyle.h"
 #include "KiteMotionBar.h"
 #include "KiteComponent.h"
 #include "UI/KiteSurfGameInstance.h"
@@ -53,6 +55,19 @@ bool FKiteSurfAudioSoundsAreReal::RunTest(const FString& Parameters)
 		{ TEXT("/Game/Audio/SW_Landing"), false, 0.4f },
 		{ TEXT("/Game/Audio/SW_Crash"), false, 1.0f },
 		{ TEXT("/Game/Audio/SW_ResetCue"), false, 0.2f },
+		{ TEXT("/Game/Audio/SW_SprayLoop"), true, 2.0f },
+		{ TEXT("/Game/Audio/SW_KiteLoop"), true, 2.0f },
+		{ TEXT("/Game/Audio/SW_FlutterLoop"), true, 1.5f },
+		{ TEXT("/Game/Audio/SW_KiteCrash"), false, 0.5f },
+		{ TEXT("/Game/Audio/SW_Relaunch"), false, 0.5f },
+		{ TEXT("/Game/Audio/SW_Aground"), false, 0.5f },
+		{ TEXT("/Game/Audio/SW_Shark"), false, 0.8f },
+		{ TEXT("/Game/Audio/SW_UIMove"), false, 0.05f },
+		{ TEXT("/Game/Audio/SW_UISelect"), false, 0.2f },
+		{ TEXT("/Game/Audio/SW_UIBack"), false, 0.2f },
+		{ TEXT("/Game/Audio/MU_Menu"), true, 15.0f },
+		{ TEXT("/Game/Audio/MU_RideBase"), true, 30.0f },
+		{ TEXT("/Game/Audio/MU_RideAir"), true, 30.0f },
 	};
 	for (const FExpectedSound& Sound : Expected)
 	{
@@ -71,6 +86,18 @@ bool FKiteSurfAudioSoundsAreReal::RunTest(const FString& Parameters)
 		}
 	}
 
+	// The ride's two music loops are played in step, so they must be exactly as long as each other, and stereo.
+	const USoundWave* RideBase = LoadObject<USoundWave>(nullptr, TEXT("/Game/Audio/MU_RideBase"));
+	const USoundWave* RideAir = LoadObject<USoundWave>(nullptr, TEXT("/Game/Audio/MU_RideAir"));
+	if (RideBase && RideAir)
+	{
+		TestEqual(TEXT("The two ride music loops are the same length"), RideBase->Duration, RideAir->Duration);
+		TestTrue(TEXT("and stereo"), RideBase->NumChannels == 2 && RideAir->NumChannels == 2);
+	}
+	TestNotNull(TEXT("The menus have their sounds"), KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound::Move));
+	TestTrue(TEXT("three different ones"), KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound::Move) != KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound::Select)
+		&& KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound::Select) != KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound::Back));
+
 	// The pawn uses them.
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
@@ -84,6 +111,9 @@ bool FKiteSurfAudioSoundsAreReal::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Landing sound"), Pawn->GetLandingSound());
 		TestNotNull(TEXT("Crash sound"), Pawn->GetCrashSound());
 		TestNotNull(TEXT("Reset sound"), Pawn->GetResetSound());
+		TestTrue(TEXT("The spray, kite and flutter loops have their sounds"), Pawn->GetSprayLoop() && Pawn->GetSprayLoop()->GetSound() && Pawn->GetKiteLoop() && Pawn->GetKiteLoop()->GetSound() && Pawn->GetFlutterLoop() && Pawn->GetFlutterLoop()->GetSound());
+		TestTrue(TEXT("The ride has its two music loops"), Pawn->GetMusicBase() && Pawn->GetMusicBase()->GetSound() && Pawn->GetMusicAir() && Pawn->GetMusicAir()->GetSound());
+		TestTrue(TEXT("and the music plays through a pause"), Pawn->GetMusicBase() && Pawn->GetMusicBase()->bIsUISound && Pawn->GetMusicAir()->bIsUISound);
 	}
 	if (World)
 	{
@@ -116,6 +146,49 @@ bool FKiteSurfAudioMixFollowsTheRide::RunTest(const FString& Parameters)
 	TestEqual(TEXT("In the air the water goes quiet"), Airborne.WaterVolume, 0.0f);
 	TestEqual(TEXT("and the wind carries on"), Airborne.WindVolume, Riding.WindVolume);
 
+	// A parked kite and no edge: none of the extra sounds.
+	TestTrue(TEXT("Riding quietly there is no spray, kite roar, flutter or air music"), Riding.SprayVolume == 0.0f && Riding.KiteVolume == 0.0f && Riding.FlutterVolume == 0.0f && Riding.AirMusic == 0.0f);
+
+	// The kite roars when it is flown fast, as through a loop.
+	FRideAudioState Looping;
+	Looping.ApparentWindKnots = 22.0f;
+	Looping.BoardSpeedKnots = 16.0f;
+	Looping.LineTensionN = 2500.0f;
+	Looping.KiteAirspeedMS = 14.0f;
+	TestEqual(TEXT("A parked kite is not heard"), AKiteRiderPawn::ComputeAudioMix(Looping).KiteVolume, 0.0f);
+	Looping.KiteAirspeedMS = 28.0f;
+	const FRideAudioMix Fast = AKiteRiderPawn::ComputeAudioMix(Looping);
+	Looping.KiteAirspeedMS = 42.0f;
+	const FRideAudioMix Faster = AKiteRiderPawn::ComputeAudioMix(Looping);
+	TestTrue(FString::Printf(TEXT("A kite flown fast roars, more and higher the faster it goes (%.2f, %.2f)"), Fast.KiteVolume, Faster.KiteVolume), Fast.KiteVolume > 0.2f && Faster.KiteVolume > Fast.KiteVolume && Faster.KitePitch > Fast.KitePitch && Faster.KiteVolume <= 1.0f);
+
+	// Spray comes off a driven edge at speed, and only on the water.
+	FRideAudioState Carving;
+	Carving.ApparentWindKnots = 22.0f;
+	Carving.BoardSpeedKnots = 18.0f;
+	Carving.EdgeEffort = 1.0f;
+	const FRideAudioMix Sprayed = AKiteRiderPawn::ComputeAudioMix(Carving);
+	TestTrue(FString::Printf(TEXT("A hard edge at speed throws spray (%.2f)"), Sprayed.SprayVolume), Sprayed.SprayVolume > 0.4f);
+	Carving.EdgeEffort = 0.4f;
+	TestTrue(TEXT("less of it for less edge"), AKiteRiderPawn::ComputeAudioMix(Carving).SprayVolume < Sprayed.SprayVolume);
+	Carving.EdgeEffort = 1.0f;
+	Carving.BoardSpeedKnots = 0.0f;
+	TestEqual(TEXT("none standing still"), AKiteRiderPawn::ComputeAudioMix(Carving).SprayVolume, 0.0f);
+	Carving.BoardSpeedKnots = 18.0f;
+	Carving.bOnWater = false;
+	Carving.bAirborne = true;
+	const FRideAudioMix InTheAir = AKiteRiderPawn::ComputeAudioMix(Carving);
+	TestEqual(TEXT("and none in the air"), InTheAir.SprayVolume, 0.0f);
+	TestEqual(TEXT("In the air the music's second layer comes in"), InTheAir.AirMusic, 1.0f);
+
+	// A canopy with no load in it flaps, if there is wind to flap it.
+	FRideAudioState Luffing;
+	Luffing.ApparentWindKnots = 20.0f;
+	Luffing.KiteLuff = 1.0f;
+	TestTrue(TEXT("A slack kite flaps"), AKiteRiderPawn::ComputeAudioMix(Luffing).FlutterVolume > 0.3f);
+	Luffing.ApparentWindKnots = 0.0f;
+	TestEqual(TEXT("but not in a calm"), AKiteRiderPawn::ComputeAudioMix(Luffing).FlutterVolume, 0.0f);
+
 	// The pawn eases towards that mix as it ticks.
 	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
 	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
@@ -130,8 +203,58 @@ bool FKiteSurfAudioMixFollowsTheRide::RunTest(const FString& Parameters)
 		{
 			Pawn->Tick(1.0f / 60.0f);
 		}
-		TestTrue(FString::Printf(TEXT("After two seconds in 20 kn the wind loop is up (%.2f)"), Pawn->GetAudioMix().WindVolume), Pawn->GetAudioMix().WindVolume > 0.2f);
+		TestTrue(FString::Printf(TEXT("After two seconds in 20 kn the wind loop is up (%.2f)"), Pawn->GetAudioMix().WindVolume), Pawn->GetAudioMix().WindVolume > 0.15f);
 		TestNearlyEqual(TEXT("and the component is playing at that volume"), Pawn->GetWindLoop()->VolumeMultiplier, Pawn->GetAudioMix().WindVolume, 0.001f);
+
+		// Music: the base layer follows the music volume, and the air layer comes in when the rider leaves the water.
+		Pawn->SetMusicVolume(0.8f);
+		Pawn->Tick(1.0f / 60.0f);
+		TestTrue(FString::Printf(TEXT("The base layer plays at a level set by the music volume (%.2f)"), Pawn->GetMusicBase()->VolumeMultiplier), Pawn->GetMusicBase()->VolumeMultiplier > 0.2f && Pawn->GetMusicBase()->VolumeMultiplier < 0.8f);
+		TestEqual(TEXT("On the water the air layer is silent"), Pawn->GetMusicAir()->VolumeMultiplier, 0.0f);
+		TestEqual(TEXT("Neither layer is pitched, so they stay in step"), Pawn->GetMusicBase()->PitchMultiplier, Pawn->GetMusicAir()->PitchMultiplier);
+		Pawn->GetBoardMovement()->SetBoardState(EBoardState::Airborne);
+		for (int32 Step = 0; Step < 60; ++Step)
+		{
+			Pawn->Tick(1.0f / 60.0f);
+		}
+		TestTrue(FString::Printf(TEXT("A second in the air and the air layer is up (%.2f)"), Pawn->GetMusicAir()->VolumeMultiplier), Pawn->GetMusicAir()->VolumeMultiplier > 0.3f);
+		Pawn->GetBoardMovement()->SetBoardState(EBoardState::Planing);
+		Pawn->Tick(1.0f / 60.0f);
+		TestTrue(TEXT("It lingers after landing rather than cutting off"), Pawn->GetMusicAir()->VolumeMultiplier > 0.25f);
+		for (int32 Step = 0; Step < 240; ++Step)
+		{
+			Pawn->Tick(1.0f / 60.0f);
+		}
+		TestEqual(TEXT("and has gone four seconds later"), Pawn->GetMusicAir()->VolumeMultiplier, 0.0f);
+		Pawn->SetMusicVolume(0.0f);
+		Pawn->Tick(1.0f / 60.0f);
+		TestEqual(TEXT("Music volume at nothing silences the base layer"), Pawn->GetMusicBase()->VolumeMultiplier, 0.0f);
+
+		// The ambient volume scales what the loops play, not what the ride calls for.
+		Pawn->SetAmbientVolume(0.5f);
+		Pawn->Tick(1.0f / 60.0f);
+		TestTrue(TEXT("There is wind to hear"), Pawn->GetAudioMix().WindVolume > 0.05f);
+		TestNearlyEqual(TEXT("Ambient volume at half halves the wind loop"), Pawn->GetWindLoop()->VolumeMultiplier, 0.5f * Pawn->GetAudioMix().WindVolume, 0.001f);
+		Pawn->SetAmbientVolume(0.0f);
+		Pawn->Tick(1.0f / 60.0f);
+		TestEqual(TEXT("and at nothing silences it"), Pawn->GetWindLoop()->VolumeMultiplier, 0.0f);
+		Pawn->SetAmbientVolume(1.0f);
+
+		// The effects volume scales the one-shots.
+		Pawn->PlayRideSound(ERideSound::KiteCrash);
+		const float FullVolume = Pawn->GetLastOneShotVolume();
+		Pawn->SetEffectsVolume(0.5f);
+		Pawn->PlayRideSound(ERideSound::KiteCrash);
+		TestTrue(TEXT("A one-shot is played"), FullVolume > 0.0f);
+		TestNearlyEqual(TEXT("Effects volume at half halves a one-shot"), Pawn->GetLastOneShotVolume(), 0.5f * FullVolume, 0.001f);
+		Pawn->SetEffectsVolume(1.0f);
+
+		// The kite hitting the water and coming back up have their own sounds.
+		const int32 Before = Pawn->GetRideSoundCount();
+		Pawn->PlayRideSound(ERideSound::KiteCrash);
+		Pawn->PlayRideSound(ERideSound::Relaunch);
+		TestEqual(TEXT("Ride sounds are played when asked for"), Pawn->GetRideSoundCount(), Before + 2);
+		TestTrue(TEXT("the last being the relaunch"), Pawn->GetLastRideSound() == ERideSound::Relaunch);
 	}
 	if (World)
 	{

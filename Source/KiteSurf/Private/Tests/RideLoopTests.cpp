@@ -1412,6 +1412,7 @@ bool FKiteSurfSpotSand::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Riding onto the sandbar is a crash"), bCrashed);
 	TestEqual(TEXT("and the spot says why"), Spot->GetLastEvent(), FString(TEXT("Ran aground")));
+	TestTrue(TEXT("with the sound of the board on sand"), Ride.Pawn->GetRideSoundCount() > 0 && Ride.Pawn->GetLastRideSound() == ERideSound::Aground);
 	TestTrue(FString::Printf(TEXT("The rider is back in the water (sand %.0f cm)"), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation())), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation()) <= 0.0f);
 	TestTrue(TEXT("on the side they came from"), FVector::DotProduct(Ride.Pawn->GetActorLocation() - BarCentre, Across) < 0.0f);
 
@@ -1505,6 +1506,7 @@ bool FKiteSurfSpotSharks::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The shark goes for a rider floating nearby"), bHunted);
 	TestTrue(FString::Printf(TEXT("and reaches them (from %.0f m, in %.1f s)"), DistanceBefore / 100.0f, Seconds), bBitten);
 	TestEqual(TEXT("The spot says what happened"), Spot->GetLastEvent(), FString(TEXT("Shark!")));
+	TestTrue(TEXT("with the shark's sound"), Ride.Pawn->GetLastRideSound() == ERideSound::Shark);
 
 	// Having had its bite it leaves the rider alone for a while.
 	Spot->StepSpot(RideDeltaTime);

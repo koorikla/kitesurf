@@ -627,7 +627,7 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
     if (Settings)
     {
         FKiteMenuNavigator& Navigator = Settings->GetNavigator();
-        TestEqual(TEXT("Settings has eight items"), Navigator.Num(), 8);
+        TestEqual(TEXT("Settings has eleven items"), Navigator.Num(), 11);
         TestEqual(TEXT("and opens on the first"), Navigator.GetSelected(), 0);
 
         Settings->OnVolumeSliderChanged(1.0f);
@@ -639,19 +639,40 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         Navigator.HandleKey(EKeys::Right);
         TestNearlyEqual(TEXT("Right turns it up, stopping at full"), Settings->CurrentVolume, 1.0f, 0.001f);
 
+        // Music volume is the second row.
+        Navigator.Select(1);
+        Settings->OnMusicSliderChanged(0.5f);
+        Navigator.HandleKey(EKeys::Right);
+        TestNearlyEqual(TEXT("Right on MUSIC VOLUME turns it up a step"), Settings->CurrentMusicVolume, 0.55f, 0.001f);
+        Navigator.HandleKey(EKeys::Left);
+        Navigator.HandleKey(EKeys::Left);
+        TestNearlyEqual(TEXT("and left turns it down"), Settings->CurrentMusicVolume, 0.45f, 0.001f);
+
+        // Ambient and effects volume follow it.
+        Settings->OnAmbientSliderChanged(1.0f);
+        Settings->OnEffectsSliderChanged(1.0f);
+        Navigator.Select(2);
+        Navigator.HandleKey(EKeys::Left);
+        TestNearlyEqual(TEXT("Left on AMBIENT VOLUME turns it down a step"), Settings->CurrentAmbientVolume, 0.95f, 0.001f);
         Navigator.Select(3);
+        Navigator.HandleKey(EKeys::Left);
+        Navigator.HandleKey(EKeys::Left);
+        TestNearlyEqual(TEXT("and on EFFECTS VOLUME"), Settings->CurrentEffectsVolume, 0.9f, 0.001f);
+        TestNearlyEqual(TEXT("leaving the others alone"), Settings->CurrentAmbientVolume, 0.95f, 0.001f);
+
+        Navigator.Select(6);
         const bool bMotionBefore = Settings->bMotionBar;
         Navigator.HandleKey(EKeys::Enter);
         TestNotEqual(TEXT("Accept on MOTION BAR switches it"), Settings->bMotionBar, bMotionBefore);
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("and so does right"), Settings->bMotionBar, bMotionBefore);
 
-        Navigator.Select(4);
+        Navigator.Select(7);
         const bool bHapticsBefore = Settings->bHaptics;
         Navigator.HandleKey(EKeys::Enter);
         TestNotEqual(TEXT("Accept on VIBRATION switches it"), Settings->bHaptics, bHapticsBefore);
 
-        Navigator.Select(6);
+        Navigator.Select(9);
         Settings->SetQualityPreset(1);
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("Right on QUALITY steps it up"), Settings->CurrentQualityPreset, 2);

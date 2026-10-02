@@ -67,7 +67,7 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    - `kitesurf.Load <0|1>` holds or lets go of the jump button: held is the loaded crouch, letting go pops. `kitesurf.Jump` is an immediate pop.
    - `kitesurf.MenuKey <key>` sends a key press through the UI (`Down`, `Enter`, `Gamepad_DPad_Up`, `Gamepad_FaceButton_Bottom`, ...) and logs whether a menu handled it, so menu navigation can be driven and captured in an offscreen run.
    - `kitesurf.MotionBar <0|1>` switches the motion-sensor bar and logs the controller, its raw readings and the resulting steer and bar position. It works in offscreen runs if a controller with sensors is connected.
-   - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
+   - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays, on a ride or in the menus, to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
 6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh

@@ -7,8 +7,24 @@
 class UTexture2D;
 
 /** Shared look of the full-screen menus: the key art behind a dark panel that holds the content. */
+class USoundBase;
+
+/** The menus' sounds. */
+enum class EKiteMenuSound : uint8
+{
+	Move,
+	Select,
+	Back
+};
+
 namespace KiteSurfMenuStyle
 {
+	/** The sound asset for a menu sound, or null if it has not been imported. */
+	KITESURF_API USoundBase* GetMenuSound(EKiteMenuSound Sound);
+
+	/** Plays a menu sound. It is heard with the game paused. */
+	KITESURF_API void PlayMenuSound(const UObject* WorldContext, EKiteMenuSound Sound);
+
 	/** The key art drawn by scripts/editor/make_splash.sh, or null if it has not been imported. */
 	KITESURF_API UTexture2D* LoadBackgroundTexture();
 

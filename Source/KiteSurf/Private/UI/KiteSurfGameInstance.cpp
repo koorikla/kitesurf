@@ -6,6 +6,9 @@
 UKiteSurfGameInstance::UKiteSurfGameInstance()
 	: PendingWindKnots(20.0f)
 	, MasterVolume(1.0f)
+	, MusicVolume(0.6f)
+	, AmbientVolume(1.0f)
+	, EffectsVolume(1.0f)
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
 	, RiderCharacter(ERiderCharacter::Santa)
@@ -33,6 +36,9 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 	{
 		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 40.0f);
 		MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
+		MusicVolume = FMath::Clamp(SaveGame->MusicVolume, 0.0f, 1.0f);
+		AmbientVolume = FMath::Clamp(SaveGame->AmbientVolume, 0.0f, 1.0f);
+		EffectsVolume = FMath::Clamp(SaveGame->EffectsVolume, 0.0f, 1.0f);
 		bSkipOnboarding = SaveGame->bSkipOnboarding;
 		bOnboardingCompleted = SaveGame->bOnboardingCompleted;
 		RiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
@@ -53,6 +59,9 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 	{
 		SaveGame->WindStrengthKnots = FMath::Clamp(PendingWindKnots, 8.0f, 40.0f);
 		SaveGame->MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
+		SaveGame->MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
+		SaveGame->AmbientVolume = FMath::Clamp(AmbientVolume, 0.0f, 1.0f);
+		SaveGame->EffectsVolume = FMath::Clamp(EffectsVolume, 0.0f, 1.0f);
 		SaveGame->bSkipOnboarding = bSkipOnboarding;
 		SaveGame->bOnboardingCompleted = bOnboardingCompleted;
 		SaveGame->RiderCharacterIndex = static_cast<int32>(RiderCharacter);
@@ -130,4 +139,19 @@ void UKiteSurfGameInstance::SetMotionBar(bool bEnabled)
 void UKiteSurfGameInstance::SetHaptics(bool bEnabled)
 {
 	bHaptics = bEnabled;
+}
+
+void UKiteSurfGameInstance::SetMusicVolume(float InVolume)
+{
+	MusicVolume = FMath::Clamp(InVolume, 0.0f, 1.0f);
+}
+
+void UKiteSurfGameInstance::SetAmbientVolume(float InVolume)
+{
+	AmbientVolume = FMath::Clamp(InVolume, 0.0f, 1.0f);
+}
+
+void UKiteSurfGameInstance::SetEffectsVolume(float InVolume)
+{
+	EffectsVolume = FMath::Clamp(InVolume, 0.0f, 1.0f);
 }

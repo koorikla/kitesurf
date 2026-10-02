@@ -1,10 +1,11 @@
-"""Synthesises the game's sounds and imports them as SoundWave assets in /Game/Audio.
+"""Synthesises the game's sound effects and music and imports them as SoundWave assets in /Game/Audio.
 
     scripts/run-python.sh scripts/editor/make_sound_assets.py
 
-The audio comes from make_sound_wavs.py, written to Saved/GeneratedAudio and imported from there.
-The loops are marked looping and set to keep playing while silent, because the game fades them
-right down (no wind, board in the air) and they must come back.
+The effects come from make_sound_wavs.py (SW_*) and the music from make_music_wavs.py (MU_*),
+written to Saved/GeneratedAudio and imported from there. The loops are marked looping and set to
+keep playing while silent: the game fades them right down (no wind, board in the air, the
+music's in-the-air layer on the water) and they must come back, in step.
 """
 import os
 import sys
@@ -13,12 +14,15 @@ import unreal
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
+import make_music_wavs  # noqa: E402
 import make_sound_wavs  # noqa: E402
 
 print('=== Generating and importing sounds ===')
 
 output_dir = os.path.join(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()), 'GeneratedAudio')
 wav_paths = make_sound_wavs.generate_all(output_dir)
+wav_paths.update(make_music_wavs.generate_all(output_dir))
+loops = set(make_sound_wavs.LOOPS) | set(make_music_wavs.TRACKS)
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 editor_assets = unreal.EditorAssetLibrary
@@ -36,7 +40,7 @@ for asset_name, wav_path in wav_paths.items():
     wave = editor_assets.load_asset(f'/Game/Audio/{asset_name}')
     if not wave:
         raise RuntimeError(f'Import of {wav_path} did not produce /Game/Audio/{asset_name}')
-    is_loop = asset_name in make_sound_wavs.LOOPS
+    is_loop = asset_name in loops
     wave.set_editor_property('looping', is_loop)
     if is_loop:
         wave.set_editor_property('virtualization_mode', unreal.VirtualizationMode.PLAY_WHEN_SILENT)

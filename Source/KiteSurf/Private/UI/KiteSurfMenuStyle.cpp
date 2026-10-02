@@ -2,6 +2,10 @@
 #include "Engine/GameInstance.h"
 #include "UI/KiteSurfMenuVideo.h"
 #include "Engine/Texture2D.h"
+#include "Kismet/GameplayStatics.h"
+#include "UI/KiteSurfGameInstance.h"
+#include "Engine/World.h"
+#include "Sound/SoundBase.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -95,4 +99,28 @@ TSharedRef<SWidget> KiteSurfMenuStyle::BuildPanel(const TSharedRef<SWidget>& Con
 		[
 			Content
 		];
+}
+
+USoundBase* KiteSurfMenuStyle::GetMenuSound(EKiteMenuSound Sound)
+{
+	switch (Sound)
+	{
+	case EKiteMenuSound::Move:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UIMove"));
+	case EKiteMenuSound::Back:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UIBack"));
+	default:
+		return LoadObject<USoundBase>(nullptr, TEXT("/Game/Audio/SW_UISelect"));
+	}
+}
+
+void KiteSurfMenuStyle::PlayMenuSound(const UObject* WorldContext, EKiteMenuSound Sound)
+{
+	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	const UKiteSurfGameInstance* GI = World ? Cast<UKiteSurfGameInstance>(World->GetGameInstance()) : nullptr;
+	const float Volume = 0.7f * (GI ? GI->EffectsVolume : 1.0f);
+	if (USoundBase* Asset = World && Volume > 0.0f ? GetMenuSound(Sound) : nullptr)
+	{
+		UGameplayStatics::PlaySound2D(WorldContext, Asset, Volume);
+	}
 }

@@ -30,8 +30,10 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    - `scripts/editor/make_open_water_level.py` builds `/Game/Maps/L_OpenWater`.
    - `scripts/editor/make_input_assets.py` builds `IA_*`, `IMC_Default` and `BP_KiteRider`
      defaults.
-   - `scripts/editor/make_sound_assets.py` synthesises the sounds (`make_sound_wavs.py`, standard
-     library only) and imports them as `SW_*` sound waves in `/Game/Audio`.
+   - `scripts/editor/make_sound_assets.py` synthesises the sound effects (`make_sound_wavs.py`) and
+     the music (`make_music_wavs.py`, the tunes written out as notes), both standard library only,
+     and imports them as `SW_*` and `MU_*` sound waves in `/Game/Audio`. Either generator also runs
+     on its own (`python3 scripts/editor/make_music_wavs.py <dir>`) to listen before importing.
    - `scripts/editor/import_menu_art.py` draws the startup splash (`Content/Splash/`, loose PNGs the
      engine reads directly) and the menu background (`T_MenuBackground`) with `make_splash.sh`.
      Keep the art 8 bits per channel: a 16-bit PNG imports as linear data and looks washed out.

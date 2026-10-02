@@ -99,14 +99,11 @@ public:
 			TEXT("Starts recording everything the game plays. Finish with kitesurf.AudioRecordStop."),
 			FConsoleCommandDelegate::CreateLambda([]()
 			{
-				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				// Any game world will do: the menus have no rider.
+				if (const UWorld* World = FindGameWorld())
 				{
-					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
-					{
-						UAudioMixerBlueprintLibrary::StartRecordingOutput(*It, 0.0f);
-						UE_LOG(LogKiteSurf, Log, TEXT("Audio recording started"));
-						break;
-					}
+					UAudioMixerBlueprintLibrary::StartRecordingOutput(World, 0.0f);
+					UE_LOG(LogKiteSurf, Log, TEXT("Audio recording started"));
 				}
 			}),
 			ECVF_Default
@@ -117,14 +114,10 @@ public:
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 			{
 				const FString Name = Args.IsValidIndex(0) ? Args[0] : TEXT("kitesurf");
-				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				if (const UWorld* World = FindGameWorld())
 				{
-					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
-					{
-						UAudioMixerBlueprintLibrary::StopRecordingOutput(*It, EAudioRecordingExportType::WavFile, Name, FString());
-						UE_LOG(LogKiteSurf, Log, TEXT("Audio recording written as %s.wav"), *Name);
-						break;
-					}
+					UAudioMixerBlueprintLibrary::StopRecordingOutput(World, EAudioRecordingExportType::WavFile, Name, FString());
+					UE_LOG(LogKiteSurf, Log, TEXT("Audio recording written as %s.wav"), *Name);
 				}
 			}),
 			ECVF_Default
@@ -395,6 +388,22 @@ private:
 
 	// Frames before exit at which the screenshot is requested, leaving time for it to be written.
 	static constexpr int32 ScreenshotLeadFrames = 30;
+
+	/** The world the game is being played in, menu or ride. */
+	static const UWorld* FindGameWorld()
+	{
+		if (GEngine)
+		{
+			for (const FWorldContext& Context : GEngine->GetWorldContexts())
+			{
+				if (Context.World() && Context.World()->IsGameWorld())
+				{
+					return Context.World();
+				}
+			}
+		}
+		return nullptr;
+	}
 
 	void HandleSmokeFrames(const TArray<FString>& Args)
 	{

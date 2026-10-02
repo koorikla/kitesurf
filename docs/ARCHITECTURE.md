@@ -20,7 +20,11 @@
 | `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
 | `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
 | `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering. Towards the other side of the window: the kite is flown there over the top (right = clockwise looking downwind). Towards the kite's own side: the bar turns it directly, which loops it. |
-| `AKiteRiderPawn` | `static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)` | Volume and pitch for the wind, water and line loops. The pawn eases its three looping audio components towards it every tick. |
+| `AKiteRiderPawn` | `static FRideAudioMix ComputeAudioMix(const FRideAudioState& State)` | Volume and pitch for the wind, water, spray, line, kite and flutter loops, and how much of the music's in-the-air layer to play. The pawn eases its looping audio components towards it every tick. |
+| `AKiteRiderPawn` | `void PlayRideSound(ERideSound Sound)` | The one-shot for the kite hitting the water, a relaunch, running aground or a shark. |
+| `AKiteRiderPawn` | `void SetAmbientVolume(float Volume)`, `void SetEffectsVolume(float Volume)` | 0..1; scale the loops and the one-shots. Set from the game instance at the start of a ride and live from Settings. |
+| `AKiteRiderPawn` | `void SetMusicVolume(float Volume)` | 0..1; the ride's two music loops follow it at once. `AKiteSurfMainMenuGameMode::SetMusicVolume` does the same for the menu music. |
+| `KiteSurfMenuStyle` | `void PlayMenuSound(const UObject* WorldContext, EKiteMenuSound Sound)` | Move, select and back sounds for the menus. |
 | `UKiteComponent` | `bool IsLooping() const` | True while the bar is going straight to the kite and turning it round. |
 | `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | Forces raw steering from any position. Not bound to a key; for scripted input and tests. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |

@@ -152,28 +152,36 @@ bool FKiteMenuNavigator::Adjust(int32 Direction)
 
 bool FKiteMenuNavigator::HandleKey(const FKey& Key)
 {
-	if (IsUp(Key))
+	// The callback is copied first: pressing an item may close the menu and take this navigator with it.
+	const TFunction<void(EAction)> Notify = OnAction;
+	auto Did = [&Notify](EAction Action)
 	{
-		Move(-1);
+		if (Notify)
+		{
+			Notify(Action);
+		}
+	};
+	if (IsUp(Key) || IsDown(Key))
+	{
+		Did(EAction::Moved);
+		Move(IsUp(Key) ? -1 : 1);
 		return true;
 	}
-	if (IsDown(Key))
+	if (IsLeft(Key) || IsRight(Key))
 	{
-		Move(1);
-		return true;
-	}
-	if (IsLeft(Key))
-	{
-		Adjust(-1);
-		return true;
-	}
-	if (IsRight(Key))
-	{
-		Adjust(1);
+		if (Items.IsValidIndex(Selected) && Items[Selected].Adjust)
+		{
+			Did(EAction::Adjusted);
+		}
+		Adjust(IsLeft(Key) ? -1 : 1);
 		return true;
 	}
 	if (IsAccept(Key))
 	{
+		if (Items.IsValidIndex(Selected) && Items[Selected].Activate)
+		{
+			Did(EAction::Activated);
+		}
 		Activate();
 		return true;
 	}

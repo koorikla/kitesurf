@@ -20,6 +20,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float MasterVolume;
 
+	/** Music volume (0.0 to 1.0, default 0.6) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float MusicVolume;
+
+	/** Ambient volume (0.0 to 1.0, default 1.0) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float AmbientVolume;
+
+	/** Effects volume (0.0 to 1.0, default 1.0) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float EffectsVolume;
+
 	/** Whether onboarding prompts should be skipped */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSkipOnboarding;

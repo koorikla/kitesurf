@@ -71,6 +71,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void OnVolumeSliderChanged(float Value);
 
+	/** Music volume, 0..1. Whatever music is playing follows it at once. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentMusicVolume = 0.6f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnMusicSliderChanged(float Value);
+
+	/** Ambient volume, 0..1: wind, water, spray, lines and the kite. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentAmbientVolume = 1.0f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnAmbientSliderChanged(float Value);
+
+	/** Effects volume, 0..1: the pop, landings, crashes and the menus' sounds. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentEffectsVolume = 1.0f;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void OnEffectsSliderChanged(float Value);
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void OnBackClicked();
 
@@ -209,6 +230,16 @@ private:
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;
+
+	TSharedPtr<SSlider> SlateMusicSlider;
+	TSharedPtr<STextBlock> SlateMusicText;
+	TSharedPtr<SSlider> SlateAmbientSlider;
+	TSharedPtr<STextBlock> SlateAmbientText;
+	TSharedPtr<SSlider> SlateEffectsSlider;
+	TSharedPtr<STextBlock> SlateEffectsText;
+
+	/** Shows a volume on its slider and percentage, when the keys moved it rather than the mouse. */
+	static void ShowVolume(const TSharedPtr<SSlider>& Slider, const TSharedPtr<STextBlock>& Text, float Volume);
 
 	TSharedPtr<SButton> SlateHapticsButton;
 	TSharedPtr<STextBlock> SlateHapticsText;

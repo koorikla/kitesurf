@@ -59,6 +59,12 @@ public:
 	/** Routes a key press. True if it was a navigation key and was used. */
 	bool HandleKey(const FKey& Key);
 
+	/** What a key press did, for the menu to make a sound for. */
+	enum class EAction : uint8 { Moved, Adjusted, Activated };
+
+	/** Called by HandleKey when a key did something. */
+	TFunction<void(EAction)> OnAction;
+
 	/** The index of the item selected when the menu opens. */
 	int32 DefaultIndex = 0;
 

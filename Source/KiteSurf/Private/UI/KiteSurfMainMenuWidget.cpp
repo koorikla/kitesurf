@@ -412,6 +412,10 @@ FKiteMenuNavigator& UKiteSurfMainMenuWidget::GetNavigator()
 void UKiteSurfMainMenuWidget::BuildNavigation()
 {
 	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
 	Navigator.AddButton(SlatePlayButton, [this]() { OnPlayClicked(); });
 	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
 	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });

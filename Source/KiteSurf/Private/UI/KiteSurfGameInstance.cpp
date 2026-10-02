@@ -9,6 +9,7 @@ UKiteSurfGameInstance::UKiteSurfGameInstance()
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
 	, RiderCharacter(ERiderCharacter::Santa)
+	, bMotionBar(false)
 	, bSpotIslands(true)
 	, bSpotSandbars(true)
 	, bSpotSharks(true)
@@ -36,6 +37,7 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 		RiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
 		SetKiteSizeM2(SaveGame->KiteSizeM2);
 		KiteModel = KiteGear::KiteModelFromIndex(SaveGame->KiteModelIndex);
+		bMotionBar = SaveGame->bMotionBar;
 		SetSpotFeatures(SaveGame->bSpotIslands, SaveGame->bSpotSandbars, SaveGame->bSpotSharks);
 		BoardSize = KiteGear::BoardSizeFromIndex(SaveGame->BoardSizeIndex);
 		FApp::SetVolumeMultiplier(MasterVolume);
@@ -54,6 +56,7 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 		SaveGame->RiderCharacterIndex = static_cast<int32>(RiderCharacter);
 		SaveGame->KiteSizeM2 = KiteSizeM2;
 		SaveGame->KiteModelIndex = static_cast<int32>(KiteModel);
+		SaveGame->bMotionBar = bMotionBar;
 		SaveGame->bSpotIslands = bSpotIslands;
 		SaveGame->bSpotSandbars = bSpotSandbars;
 		SaveGame->bSpotSharks = bSpotSharks;
@@ -114,4 +117,9 @@ void UKiteSurfGameInstance::SetSpotFeatures(bool bIslands, bool bSandbars, bool 
 	bSpotIslands = bIslands;
 	bSpotSandbars = bSandbars;
 	bSpotSharks = bSharks;
+}
+
+void UKiteSurfGameInstance::SetMotionBar(bool bEnabled)
+{
+	bMotionBar = bEnabled;
 }

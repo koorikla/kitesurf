@@ -60,6 +60,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			bSkipOnboarding = GI->bSkipOnboarding;
 			CurrentRiderCharacter = GI->RiderCharacter;
 			CurrentKiteSizeM2 = GI->KiteSizeM2;
+			bMotionBar = GI->bMotionBar;
 		}
 		else
 		{
@@ -366,6 +367,52 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						]
 					]
 				]
+				// Motion bar row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("MOTION BAR:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateMotionBarButton, SButton)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleMotionBar();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateMotionBarText, STextBlock)
+							.Text(FText::FromString(bMotionBar ? TEXT("ON") : TEXT("OFF")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(200.0f, 0.0f, 20.0f, 6.0f)
+				[
+					SAssignNew(SlateMotionBarNote, STextBlock)
+					.Text(FText::FromString(GetMotionBarNote()))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					.ColorAndOpacity(FLinearColor(0.55f, 0.75f, 0.9f))
+					.AutoWrapText(true)
+				]
 				// VSync row
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -519,6 +566,44 @@ void UKiteSurfSettingsWidget::SetResolutionByIndex(int32 Index)
 	{
 		SetResolution(SupportedResolutions[Index]);
 	}
+}
+
+void UKiteSurfSettingsWidget::ToggleMotionBar()
+{
+	bMotionBar = !bMotionBar;
+
+	// Straight away, so the note can say which controller it found.
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetMotionBarEnabled(bMotionBar);
+		}
+	}
+	UpdateTextDisplays();
+}
+
+FString UKiteSurfSettingsWidget::GetMotionBarNote() const
+{
+	if (!bMotionBar)
+	{
+		return TEXT("Hold the controller like a bar: tilt to steer, tip it towards you for power. Needs a controller with motion sensors (PlayStation, Switch); Xbox controllers have none.");
+	}
+	FString Device;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (const AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Device = Rider->IsMotionBarActive() ? Rider->GetMotionDeviceName() : FString();
+		}
+	}
+	if (!Device.IsEmpty())
+	{
+		return FString::Printf(TEXT("Using %s. However you are holding it when you start is level; reset [R] re-centres."), *Device);
+	}
+	return TEXT("On. With no motion sensors found the right stick still works. However you hold the controller when the ride starts is level; reset [R] re-centres.");
 }
 
 void UKiteSurfSettingsWidget::ToggleVSync()
@@ -675,6 +760,15 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 		SlateRiderText->SetText(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)));
 	}
 
+	if (SlateMotionBarText.IsValid())
+	{
+		SlateMotionBarText->SetText(FText::FromString(bMotionBar ? TEXT("ON") : TEXT("OFF")));
+	}
+	if (SlateMotionBarNote.IsValid())
+	{
+		SlateMotionBarNote->SetText(FText::FromString(GetMotionBarNote()));
+	}
+
 	const FString VSyncStr = bCurrentVSync ? TEXT("ENABLED") : TEXT("DISABLED");
 	if (VSyncValueText)
 	{
@@ -704,6 +798,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			GI->SetSkipOnboarding(bSkipOnboarding);
 			GI->SetRiderCharacter(CurrentRiderCharacter);
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
+			GI->SetMotionBar(bMotionBar);
 			GI->SaveSettingsToDisk();
 
 			// A ride that is already under way gets the new wind and kite straight away.

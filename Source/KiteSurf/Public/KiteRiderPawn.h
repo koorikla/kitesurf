@@ -4,6 +4,7 @@
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
 #include "RiderCharacter.h"
+#include "KiteMotionBar.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -95,6 +96,41 @@ public:
 
 	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
 	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
+
+	/**
+	 * Uses the controller's motion sensors as the bar: tilt it like a bar to steer, tip its top
+	 * towards you to pull the bar in. While it is on and a controller with sensors is found, the
+	 * right stick, triggers and bar keys no longer move the bar; without one they carry on working.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void SetMotionBarEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	bool IsMotionBarEnabled() const { return bMotionBarEnabled; }
+
+	/** True while the bar is actually following a controller's motion sensors. */
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	bool IsMotionBarActive() const { return bMotionBarActive; }
+
+	/** Takes the way the controller is held now as "bar level, where it is". Done when the motion bar is switched on and on reset. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void RecentreMotionBar();
+
+	/** The controller being read, for the settings screen; empty if none. */
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	FString GetMotionDeviceName() const;
+
+	/** How the controller is being held, as the motion bar sees it: roll right and pitch towards the player (deg). */
+	FVector2D GetMotionTiltDeg() const { return FVector2D(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg()); }
+
+	/** The last reading taken from the controller. */
+	const FKiteMotionSample& GetLastMotionSample() const { return LastMotionSample; }
+
+	/** Where motion readings come from. Tests put a scripted controller here; otherwise it is the platform's. */
+	void SetMotionSource(TSharedPtr<IKiteMotionSource> InSource);
+
+	/** How tilt becomes steering and bar position. */
+	FMotionBarMapping MotionBarMapping;
 
 	/** How loud and at what pitch each loop should play for what the rider is doing. Volumes 0..1, pitch 1 = as recorded. */
 	static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN);
@@ -316,6 +352,14 @@ private:
 
 	void UpdateAudioModulation(float DeltaTime);
 	FRideAudioMix AudioMix;
+
+	void UpdateMotionBar(float DeltaTime);
+	TSharedPtr<IKiteMotionSource> MotionSource;
+	FMotionBarFilter MotionFilter;
+	FKiteMotionSample LastMotionSample;
+	bool bMotionBarEnabled = false;
+	bool bMotionBarActive = false;
+	bool bMotionRecentrePending = false;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);
 

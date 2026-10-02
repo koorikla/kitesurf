@@ -63,6 +63,7 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    - `kitesurf.Input <steer> <sheet rate> <turn> <weight shift> <raw steer 0|1>` holds inputs on the rider. The last flag sends the bar straight to the kite from any position; players loop by steering towards the kite's own side instead.
    - `kitesurf.Jump`, `kitesurf.TogglePause`, `kitesurf.OpenSettings` and `kitesurf.OpenGear` do what the keys and buttons do.
    - `kitesurf.Wind <knots>` sets the base wind speed, e.g. `kitesurf.After 200 kitesurf.Wind 2` to drop the kite and leave the rider floating.
+   - `kitesurf.MotionBar <0|1>` switches the motion-sensor bar and logs the controller, its raw readings and the resulting steer and bar position. It works in offscreen runs if a controller with sensors is connected.
    - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
 6. **Package a Linux Shipping build.**
    ```bash

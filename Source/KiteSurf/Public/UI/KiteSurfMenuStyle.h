@@ -21,6 +21,15 @@ namespace KiteSurfMenuStyle
 	 */
 	KITESURF_API TSharedRef<SWidget> BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, const TSharedRef<SWidget>& Content);
 
+	/**
+	 * As above, with the menu video drawn over the still art. The still shows until the video has
+	 * frames, and stays if there is no video (VideoBrush returns null).
+	 */
+	KITESURF_API TSharedRef<SWidget> BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, TAttribute<const FSlateBrush*> VideoBrush, const TSharedRef<SWidget>& Content);
+
+	/** The menu loop video's brush from the game's menu video subsystem, or null when there is no video. */
+	KITESURF_API TAttribute<const FSlateBrush*> MenuLoopBrush(class UGameInstance* GameInstance);
+
 	/** A dark, slightly see-through panel for menu content to sit on over the background. */
 	KITESURF_API TSharedRef<SWidget> BuildPanel(const TSharedRef<SWidget>& Content);
 }

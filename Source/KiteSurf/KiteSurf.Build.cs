@@ -24,7 +24,11 @@ public class KiteSurf : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"AudioMixer",
-			"MetasoundEngine"
+			"MetasoundEngine",
+			"MediaAssets",
+			"MoviePlayer",
+			"Projects",
+			"RHI"
 		});
 	}
 }

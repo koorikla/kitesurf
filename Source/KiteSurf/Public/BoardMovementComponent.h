@@ -201,7 +201,7 @@ public:
 	float MaxEdgeAngleDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float MaxBoardSpeed;
+	float MaxBoardSpeedCmS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LinearDisplacementDragCoef;
@@ -334,7 +334,7 @@ public:
 	float CrashRespawnDelay;
 
 	UFUNCTION(BlueprintPure, Category = "Tuning")
-	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeed <= 100.0f ? (MaxBoardSpeed * 51.44f) : MaxBoardSpeed; }
+	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeedCmS; }
 
 protected:
 	virtual void BeginPlay() override;

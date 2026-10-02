@@ -7,9 +7,10 @@
 #include "UI/KiteSurfGameInstance.h"
 #include "KiteSurfSpot.h"
 #include "EngineUtils.h"
+#include "KiteSurfUnits.h"
 
 AKiteSurfGameMode::AKiteSurfGameMode()
-	: InitialSpawnSpeedCmPerSec(12.0f * 51.44f) // 12 knots = ~617.28 cm/s
+	: InitialSpawnSpeedCmPerSec(KiteUnits::KnotsToCmS(12.0f))
 {
 	DefaultPawnClass = AKiteRiderPawn::StaticClass();
 	HUDClass = AKiteSurfHUD::StaticClass();
@@ -30,7 +31,7 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 			if (UWindComponent* WindComp = RiderPawn->GetWind())
 			{
 				const float BaseKnots = GI->PendingWindKnots;
-				WindComp->BaseWind = FVector(BaseKnots * 51.44f, 0.0f, 0.0f);
+				WindComp->BaseWind = FVector(KiteUnits::KnotsToCmS(BaseKnots), 0.0f, 0.0f);
 			}
 			// Rig the chosen kite, or the one a rider would pick for this wind.
 			if (UKiteComponent* KiteComp = RiderPawn->GetKite())

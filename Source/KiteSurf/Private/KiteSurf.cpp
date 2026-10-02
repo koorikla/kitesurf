@@ -12,6 +12,7 @@
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
+#include "KiteSurfUnits.h"
 
 DEFINE_LOG_CATEGORY(LogKiteSurf);
 
@@ -79,7 +80,7 @@ public:
 					if (Wind && It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
 					{
 						const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
-						Wind->BaseWind = Direction * Knots * 51.44f;
+						Wind->BaseWind = Direction * KiteUnits::KnotsToCmS(Knots);
 					}
 				}
 			}),

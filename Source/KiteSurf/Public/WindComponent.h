@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "KiteSurfUnits.h"
 #include "WindComponent.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -22,9 +23,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	float GetGustFactorAt(const FVector& WorldLocation) const;
 
-	/** Reference base wind speed at 10 m elevation in knots (un-sheared baseline, 1 kn = 51.44 cm/s) */
+	/** Reference base wind speed at the reference height in knots. */
 	UFUNCTION(BlueprintCallable, Category = "Wind")
-	float GetReferenceWindSpeedKnots() const { return BaseWind.Size() / 51.44f; }
+	float GetReferenceWindSpeedKnots() const { return KiteUnits::CmSToKnots(BaseWind.Size()); }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind")
 	FVector BaseWind;

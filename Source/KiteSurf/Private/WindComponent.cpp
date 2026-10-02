@@ -1,12 +1,13 @@
 #include "WindComponent.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Engine/World.h"
+#include "KiteSurfUnits.h"
 
 UWindComponent::UWindComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	// Default base wind: 15 knots ≈ 772 cm/s in +X direction (1 knot = 51.44 cm/s)
-	BaseWind = FVector(772.0f, 0.0f, 0.0f);
+	// Default base wind: 15 knots along +X
+	BaseWind = FVector(KiteUnits::KnotsToCmS(15.0f), 0.0f, 0.0f);
 	GustStrength = 0.3f;
 	GustPuffRate = 3.5f;
 	GustPuffShare = 0.4f;
@@ -27,7 +28,7 @@ void UWindComponent::BeginPlay()
 		{
 			if (GI->PendingWindKnots > 0.0f)
 			{
-				const float SpeedCmPerSec = GI->PendingWindKnots * 51.44f;
+				const float SpeedCmPerSec = KiteUnits::KnotsToCmS(GI->PendingWindKnots);
 				FVector Dir = BaseWind.GetSafeNormal();
 				if (Dir.IsNearlyZero())
 				{

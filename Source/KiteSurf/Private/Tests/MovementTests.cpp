@@ -56,7 +56,7 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			UE_LOG(LogKiteSurf, Log, TEXT("SpeedEnvelope: Final Speed = %.2f kn (Expected 12..25 kn)"), SpeedKnots);
 			TestTrue(TEXT("Steady-state board speed reaches at least 12 kn"), SpeedKnots >= 12.0f);
 			TestTrue(TEXT("Steady-state board speed does not exceed 25 kn under standard power"), SpeedKnots <= 25.0f);
-			TestTrue(TEXT("Speed does not exceed MaxBoardSpeed (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
+			TestTrue(TEXT("Speed does not exceed MaxBoardSpeedCmS (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
 
 			// Sheet out (depower) and simulate for 10 s to verify decay below 10 kn
 			Pawn->SheetKite(0.0f);

@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
+#include "KiteSurfUnits.h"
 
 UBoardMovementComponent::UBoardMovementComponent()
 {
@@ -23,7 +24,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	PlaningQuadraticDragCoef = 0.03f; // mostly quadratic, so board speed scales with wind speed
 	EdgeGripCoef = 2000.0f;
 	MaxEdgeAngleDeg = 35.0f;
-	MaxBoardSpeed = 35.0f * 51.44f; // 1800.4 cm/s (35 kn)
+	MaxBoardSpeedCmS = KiteUnits::KnotsToCmS(35.0f);
 	LinearDisplacementDragCoef = 8.0f;
 	EdgeDriveEfficiency = 0.35f;
 
@@ -175,8 +176,8 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 		return EJumpRejectReason::NotPlaning;
 	}
 
-	// Board speed >= 8 kn (1 kn = 51.44 cm/s)
-	const float SpeedKnots = Velocity.Size2D() / 51.44f;
+	// Board speed must be at least JumpMinSpeedKnots
+	const float SpeedKnots = KiteUnits::CmSToKnots(Velocity.Size2D());
 	if (SpeedKnots < JumpMinSpeedKnots - KINDA_SMALL_NUMBER)
 	{
 		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::TooSlow);
@@ -377,7 +378,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		const FVector ExternalForce2D(AccumulatedExternalForce.X, AccumulatedExternalForce.Y, 0.0f);
 		AccumulatedExternalForce = FVector::ZeroVector;
 
-		const float GravityZ = GetGravityZ(); // -980 cm/s^2
+		const float GravityZ = -KiteUnits::GravityCmS2; // the same g the kite uses, whatever the world settings say
 		const float GravityForceZ = MassKg * GravityZ; // negative in kg*cm/s^2
 		TotalForce.Z += GravityForceZ;
 
@@ -393,7 +394,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 			bLiftedByKite = true;
 			bIsAirborne = true;
 			Velocity.Z = FMath::Max(Velocity.Z, 0.0f);
-			UE_LOG(LogKiteSurf, Log, TEXT("Board lifted off by the kite: upward force %.0f N against %.0f N of weight"), (TotalForce.Z - GravityForceZ) / 100.0f, -GravityForceZ / 100.0f);
+			UE_LOG(LogKiteSurf, Log, TEXT("Board lifted off by the kite: upward force %.0f N against %.0f N of weight"), KiteUnits::UnrealForceToN(TotalForce.Z - GravityForceZ), KiteUnits::UnrealForceToN(-GravityForceZ));
 		}
 
 		// 3. Buoyancy & Vertical Dynamics (disabled while above water surface + 10 cm)
@@ -407,7 +408,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 			const float DampingForceZ = -BuoyancyDamping * Velocity.Z;
 
 			float BuoyancyForceZ = BuoyancyBalance + SpringForceZ + DampingForceZ;
-			const float MaxBuoyancyForce = BuoyancyN * 100.0f;
+			const float MaxBuoyancyForce = KiteUnits::NToUnrealForce(BuoyancyN);
 			BuoyancyForceZ = FMath::Clamp(BuoyancyForceZ, 0.0f, MaxBuoyancyForce);
 
 			TotalForce.Z += BuoyancyForceZ;
@@ -656,11 +657,11 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 					CurrentBoardState = EBoardState::Landing;
 					LandingStateTimer = 0.25f;
 
-					const float LandingG = FMath::Clamp(VerticalSpeed / 980.0f, 1.0f, 10.0f);
+					const float LandingG = FMath::Clamp(VerticalSpeed / KiteUnits::GravityCmS2, 1.0f, 10.0f);
 					OnBoardLanding.Broadcast(LandingG);
 
 					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn, LandingG: %.2f"),
-						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, Velocity.Size2D() / 51.44f, LandingG);
+						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, KiteUnits::CmSToKnots(Velocity.Size2D()), LandingG);
 				}
 				else
 				{
@@ -754,13 +755,13 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	SampleWaterSurface(Location, WaterHeight, WaterNormal);
 
 	// On the surface if the reset speed planes, floating if it does not.
-	CurrentFloatDepthCm = GetFloatDepthForSpeed(SpeedKnots * 51.44f);
+	CurrentFloatDepthCm = GetFloatDepthForSpeed(KiteUnits::KnotsToCmS(SpeedKnots));
 	FVector RespawnLoc = Location;
 	RespawnLoc.Z = WaterHeight - CurrentFloatDepthCm;
 	UpdatedComponent->SetWorldLocation(RespawnLoc);
 
 	// 4. Set velocity on tack (8 knots = 411.52 cm/s)
-	const float SpeedCmS = SpeedKnots * 51.44f;
+	const float SpeedCmS = KiteUnits::KnotsToCmS(SpeedKnots);
 	Velocity = Forward2D * SpeedCmS;
 
 	// 5. Clear crash and set rideable state

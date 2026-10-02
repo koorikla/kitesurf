@@ -1,4 +1,5 @@
 #include "UI/KiteSurfSettingsWidget.h"
+#include "KiteSurfUnits.h"
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
 #include "WindComponent.h"
@@ -713,7 +714,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 				if (UWindComponent* Wind = Rider->GetWind())
 				{
 					const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
-					Wind->BaseWind = Direction * GI->PendingWindKnots * 51.44f;
+					Wind->BaseWind = Direction * KiteUnits::KnotsToCmS(GI->PendingWindKnots);
 				}
 				if (UKiteComponent* Kite = Rider->GetKite())
 				{

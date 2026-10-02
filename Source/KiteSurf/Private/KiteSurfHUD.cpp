@@ -1,4 +1,5 @@
 #include "KiteSurfHUD.h"
+#include "KiteSurfUnits.h"
 #include "KiteRiderPawn.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
@@ -92,12 +93,12 @@ void AKiteSurfHUD::HidePauseMenu()
 
 float AKiteSurfHUD::CmPerSecToKnots(float SpeedCmPerSec)
 {
-	return SpeedCmPerSec / 51.44f;
+	return KiteUnits::CmSToKnots(SpeedCmPerSec);
 }
 
 float AKiteSurfHUD::KnotsToCmPerSec(float Knots)
 {
-	return Knots * 51.44f;
+	return KiteUnits::KnotsToCmS(Knots);
 }
 
 FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)

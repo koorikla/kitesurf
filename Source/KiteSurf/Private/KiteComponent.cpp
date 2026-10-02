@@ -7,12 +7,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "CableComponent.h"
 #include "Engine/World.h"
+#include "KiteSurfUnits.h"
 
 namespace
 {
-	const float AirDensityKgM3 = 1.225f;
-	const float GravityMS2 = 9.81f;
-	const float CmPerM = 100.0f;
+	constexpr float AirDensityKgM3 = KiteUnits::AirDensityKgM3;
+	constexpr float GravityMS2 = KiteUnits::GravityMS2;
+	constexpr float CmPerM = KiteUnits::CmPerM;
 	// The flight dynamics are stepped at least this often, whatever the frame rate.
 	const float MaxFlightStepSeconds = 1.0f / 240.0f;
 	const int32 MaxFlightStepsPerUpdate = 24;
@@ -880,7 +881,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 	// The rider feels the average pull over the frame, along the lines.
 	LineTensionN = FMath::Min(TensionSum / NumSteps, MaxLineTensionN);
-	LineForce = KiteDir * (LineTensionN * 100.0f); // 1 N = 100 kg*cm/s^2
+	LineForce = KiteDir * KiteUnits::NToUnrealForce(LineTensionN);
 
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug && GetWorld())
@@ -889,7 +890,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 		DrawDebugLine(GetWorld(), KiteWorldPosition, KiteWorldPosition + KiteHeading * 300.0f, FColor::Red, false, -1.0f, 0, 2.0f);
 
 		const FString DebugText = FString::Printf(TEXT("Tension: %.0f N%s\nAirspeed: %.1f m/s\nAngle of attack: %.1f\nAz: %.1f, El: %.1f\nSheet: %.2f"),
-			LineTensionN, bLinesTaut ? TEXT("") : TEXT(" (slack)"), AirspeedCmS / 100.0f, AngleOfAttackDeg, AzimuthDeg, ElevationDeg, Sheet);
+			LineTensionN, bLinesTaut ? TEXT("") : TEXT(" (slack)"), AirspeedCmS / CmPerM, AngleOfAttackDeg, AzimuthDeg, ElevationDeg, Sheet);
 		DrawDebugString(GetWorld(), KiteWorldPosition + FVector(0.0f, 0.0f, 50.0f), DebugText, nullptr, FColor::White, 0.0f, true);
 	}
 #endif

@@ -1,4 +1,5 @@
 #include "BoardWakeComponent.h"
+#include "KiteSurfUnits.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -8,8 +9,8 @@
 
 namespace
 {
-	const float SprayGravityCmS2 = -980.0f;
-	const float FullSpraySpeedCmS = 20.0f * 51.44f;
+	const float SprayGravityCmS2 = -KiteUnits::GravityCmS2;
+	const float FullSpraySpeedCmS = KiteUnits::KnotsToCmS(20.0f);
 	// Basic shape meshes are 100 cm across.
 	const float BasicShapeSizeCm = 100.0f;
 	// Foam sits just above the surface so it does not z-fight with the water.

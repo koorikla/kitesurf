@@ -18,6 +18,7 @@
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "KiteSurfUnits.h"
 
 AKiteRiderPawn::AKiteRiderPawn()
 {
@@ -730,11 +731,11 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 {
 	const FVector Vel = GetBoardVelocity();
 	const FVector TrueWind = Wind ? Wind->GetWindAt(GetActorLocation()) : FVector::ZeroVector;
-	const float ApparentWindKnots = (TrueWind - Vel).Size() / 51.44f;
+	const float ApparentWindKnots = KiteUnits::CmSToKnots((TrueWind - Vel).Size());
 	const bool bOnWater = BoardMovement && BoardMovement->GetBoardState() != EBoardState::Airborne;
 	const float LineTensionN = Kite ? Kite->GetLineTensionN() : 0.0f;
 
-	const FRideAudioMix Target = ComputeAudioMix(ApparentWindKnots, Vel.Size2D() / 51.44f, bOnWater, LineTensionN);
+	const FRideAudioMix Target = ComputeAudioMix(ApparentWindKnots, KiteUnits::CmSToKnots(Vel.Size2D()), bOnWater, LineTensionN);
 
 	// Eased so that a gust or the board leaving the water is heard as a swell, not a switch.
 	const float Ease = 6.0f;

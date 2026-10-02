@@ -58,59 +58,45 @@ def build_assets():
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
         imc.unmap_all()
 
-        # Helper to map key and optional modifiers in UE 5.8 (where map_key returns a struct copy)
-        def add_imc_mapping(action, key_str, negate=False):
+        mappings_spec = [
+            # Steer
+            (ia_steer, 'D', False),
+            (ia_steer, 'A', True),
+            (ia_steer, 'Right', False),
+            (ia_steer, 'Left', True),
+            (ia_steer, 'Gamepad_LeftX', False),
+            # Sheet
+            (ia_sheet, 'W', False),
+            (ia_sheet, 'S', True),
+            (ia_sheet, 'Up', False),
+            (ia_sheet, 'Down', True),
+            (ia_sheet, 'Gamepad_RightTriggerAxis', False),
+            # Edge
+            (ia_edge, 'E', False),
+            (ia_edge, 'Q', True),
+            (ia_edge, 'Gamepad_LeftY', False),
+            # Jump
+            (ia_jump, 'SpaceBar', False),
+            (ia_jump, 'Gamepad_FaceButton_Bottom', False),
+            # Pause
+            (ia_pause, 'Escape', False),
+            (ia_pause, 'Gamepad_Special_Right', False),
+        ]
+
+        for action, key_str, _ in mappings_spec:
             k = unreal.Key()
             k.import_text(key_str)
             imc.map_key(action, k)
-            dkm = imc.get_editor_property('default_key_mappings')
-            mappings = list(dkm.get_editor_property('mappings'))
+
+        dkm = imc.get_editor_property('default_key_mappings')
+        mappings = list(dkm.get_editor_property('mappings'))
+        for i, (action, key_str, negate) in enumerate(mappings_spec):
             if negate:
                 neg = unreal.new_object(unreal.InputModifierNegate, outer=imc)
-                mappings[-1].set_editor_property('modifiers', [neg])
-            dkm.set_editor_property('mappings', mappings)
-            imc.set_editor_property('default_key_mappings', dkm)
+                mappings[i].set_editor_property('modifiers', [neg])
 
-        # Map Steer
-        add_imc_mapping(ia_steer, 'D', negate=False)
-        add_imc_mapping(ia_steer, 'A', negate=True)
-        add_imc_mapping(ia_steer, 'Right', negate=False)
-        add_imc_mapping(ia_steer, 'Left', negate=True)
-        add_imc_mapping(ia_steer, 'Gamepad_LeftX', negate=False)
-
-        # Map Sheet
-        add_imc_mapping(ia_sheet, 'W', negate=False)
-        add_imc_mapping(ia_sheet, 'S', negate=True)
-        add_imc_mapping(ia_sheet, 'Up', negate=False)
-        add_imc_mapping(ia_sheet, 'Down', negate=True)
-        add_imc_mapping(ia_sheet, 'Gamepad_RightTriggerAxis', negate=False)
-
-        # Map Edge
-        add_imc_mapping(ia_edge, 'E', negate=False)
-        add_imc_mapping(ia_edge, 'Q', negate=True)
-        add_imc_mapping(ia_edge, 'Gamepad_LeftY', negate=False)
-
-        # Map Jump
-        # Key SpaceBar
-        key_space = unreal.Key()
-        key_space.import_text('SpaceBar')
-        imc.map_key(ia_jump, key_space)
-
-        # Gamepad Face Button Bottom
-        key_gp_jump = unreal.Key()
-        key_gp_jump.import_text('Gamepad_FaceButton_Bottom')
-        imc.map_key(ia_jump, key_gp_jump)
-
-        # Map Pause
-        # Key Escape
-        key_esc = unreal.Key()
-        key_esc.import_text('Escape')
-        imc.map_key(ia_pause, key_esc)
-
-        # Gamepad Special Right
-        key_gp_pause = unreal.Key()
-        key_gp_pause.import_text('Gamepad_Special_Right')
-        imc.map_key(ia_pause, key_gp_pause)
+        dkm.set_editor_property('mappings', mappings)
+        imc.set_editor_property('default_key_mappings', dkm)
 
         editor_asset_lib.save_loaded_asset(imc)
         editor_asset_lib.save_asset('/Game/Input/IMC_Default', False)

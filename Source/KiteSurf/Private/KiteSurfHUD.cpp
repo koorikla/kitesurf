@@ -159,7 +159,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 0:
 		return TEXT("Steer the kite: steer away from it to fly it over the top; keep steering towards its own side to loop it [Left / Right or Right Stick]");
 	case 1:
-		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [Up / Down or Right Stick]");
+		return TEXT("Sheet in for power: pull the bar in [Down]. Sheet out to slow down [Up]. The bar stays where you leave it [or Right Stick]");
 	case 2:
 		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:

@@ -85,8 +85,9 @@ def build_assets():
             (ia_steer, 'Left', True),
             (ia_steer, 'Gamepad_RightX', False),
             # Sheet the bar in / out
-            (ia_sheet, 'Up', False),
-            (ia_sheet, 'Down', True),
+            # Down pulls the bar in towards the rider (power), up lets it out, as the HUD bar moves.
+            (ia_sheet, 'Down', False),
+            (ia_sheet, 'Up', True),
             (ia_sheet, 'Gamepad_RightY', False),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
             (ia_sheet, 'Gamepad_LeftTriggerAxis', True),

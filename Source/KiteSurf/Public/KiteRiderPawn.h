@@ -65,6 +65,17 @@ public:
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
+	/** World yaw the rider's body faces (deg). Always square across the board: the feet are in the straps. */
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	float GetRiderFacingYawDeg() const { return RiderFacingYawDeg; }
+
+	/** +1 when the rider faces the board's right rail, -1 when they face its left. */
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	float GetRiderStanceSide() const { return RiderStanceSide; }
+
+	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
+	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
+
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSteerInput() const { return CurrentSteerInput; }
 
@@ -265,6 +276,12 @@ private:
 	float CameraYawDeg;
 	float CameraLookPitchDeg;
 	float RiderFacingYawDeg;
+	float RiderStanceSide;
+	/** Time left in which a rider who has just got on the board picks the rail that faces the kite (s). */
+	float StanceChoiceSecondsLeft;
+	static constexpr float StanceChoiceWindowSeconds = 0.3f;
+	/** The board's reset count when the stance was last chosen for a reset. */
+	int32 SeenBoardResetCount;
 	bool bViewInitialized;
 	uint64 LastPauseToggleFrame;
 	float KiteAzimuthDeg;

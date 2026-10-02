@@ -860,4 +860,81 @@ bool FKiteSurfKiteAppliedSteer::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The rider's feet are in the straps: they stand square across the board and turn with it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRiderSpinsWithBoard, "KiteSurf.Rider.SpinsWithBoard", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("A preferred facing on the board's right picks the right rail"), AKiteRiderPawn::ChooseStanceSide(0.0f, 80.0f), 1.0f);
+	TestEqual(TEXT("and one on its left picks the left rail"), AKiteRiderPawn::ChooseStanceSide(0.0f, -100.0f), -1.0f);
+	TestEqual(TEXT("across the +-180 seam too"), AKiteRiderPawn::ChooseStanceSide(170.0f, -110.0f), 1.0f);
+
+	FRideFixture Ride;
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	AKiteRiderPawn* Pawn = Ride.Pawn;
+	auto FacingOffBoardDeg = [Pawn]() -> float { return FRotator::NormalizeAxis(Pawn->GetRiderFacingYawDeg() - static_cast<float>(Pawn->GetActorRotation().Yaw)); };
+	auto FacingTowardsKite = [Pawn, &Ride]() -> float
+	{
+		const FVector ToKite = (Ride.Kite->GetKiteWorldPosition() - Pawn->GetActorLocation()).GetSafeNormal2D();
+		return FVector::DotProduct(FRotator(0.0f, Pawn->GetRiderFacingYawDeg(), 0.0f).Vector(), ToKite);
+	};
+
+	// Riding: square across the board, on the rail that faces the kite.
+	Ride.Simulate(2.0f);
+	TestNearlyEqual(TEXT("The rider stands square across the board"), FMath::Abs(FacingOffBoardDeg()), 90.0f, 0.02f);
+	TestTrue(FString::Printf(TEXT("and faces the kite (%.2f)"), FacingTowardsKite()), FacingTowardsKite() > 0.3f);
+	const float Side = Pawn->GetRiderStanceSide();
+	const float OffBoardDeg = FacingOffBoardDeg();
+
+	// Spin the board one full turn, as an air spin does. The rider goes round with it, the same
+	// rail under their toes the whole way, and so ends up with their back to the kite half way.
+	float RiderTurnedDeg = 0.0f;
+	float PreviousFacingDeg = Pawn->GetRiderFacingYawDeg();
+	float FacingKiteAtHalfTurn = 1.0f;
+	bool bStayedSquare = true;
+	const float SpinStepDeg = 5.0f;
+	const int32 SpinSteps = 72;
+	for (int32 Step = 1; Step <= SpinSteps; ++Step)
+	{
+		Pawn->SetActorRotation(FRotator(0.0f, Pawn->GetActorRotation().Yaw + SpinStepDeg, 0.0f));
+		Pawn->Tick(RideDeltaTime);
+		RiderTurnedDeg += FRotator::NormalizeAxis(Pawn->GetRiderFacingYawDeg() - PreviousFacingDeg);
+		PreviousFacingDeg = Pawn->GetRiderFacingYawDeg();
+		bStayedSquare = bStayedSquare && FMath::IsNearlyEqual(FacingOffBoardDeg(), OffBoardDeg, 0.01f);
+		if (Step == SpinSteps / 2)
+		{
+			FacingKiteAtHalfTurn = FacingTowardsKite();
+		}
+	}
+	TestTrue(TEXT("Through the spin the rider keeps the same stance on the board"), bStayedSquare && Pawn->GetRiderStanceSide() == Side);
+	TestNearlyEqual(TEXT("The rider turned as far as the board did"), RiderTurnedDeg, 360.0f, 0.1f);
+	TestTrue(FString::Printf(TEXT("Half way round the rider has their back to the kite (%.2f)"), FacingKiteAtHalfTurn), FacingKiteAtHalfTurn < -0.3f);
+
+	// A twin-tip swapping ends is the board's heading flipping, not the rider turning round.
+	const float FacingBeforeSwapDeg = Pawn->GetRiderFacingYawDeg();
+	Pawn->SetActorRotation(FRotator(0.0f, Pawn->GetActorRotation().Yaw + 180.0f, 0.0f));
+	Pawn->Tick(RideDeltaTime);
+	TestNearlyEqual(TEXT("When the board swaps ends the rider stays facing the same way"), static_cast<float>(FRotator::NormalizeAxis(Pawn->GetRiderFacingYawDeg() - FacingBeforeSwapDeg)), 0.0f, 0.01f);
+	TestEqual(TEXT("which is the other rail of the renamed board"), Pawn->GetRiderStanceSide(), -Side);
+
+	// Carve half a turn so the rider is riding toeside, back to the kite, and stays that way.
+	for (int32 Step = 0; Step < 60; ++Step)
+	{
+		Pawn->SetActorRotation(FRotator(0.0f, Pawn->GetActorRotation().Yaw + 3.0f, 0.0f));
+		Pawn->Tick(RideDeltaTime);
+	}
+	TestTrue(FString::Printf(TEXT("After carving half a turn the rider is toeside, back to the kite (%.2f)"), FacingTowardsKite()), FacingTowardsKite() < -0.3f);
+
+	// A reset puts the rider back on the board facing the kite.
+	Ride.Board->ResetToTack(12.0f);
+	Ride.Simulate(1.0f);
+	TestNearlyEqual(TEXT("After a reset the rider is square across the board"), FMath::Abs(FacingOffBoardDeg()), 90.0f, 0.02f);
+	TestTrue(FString::Printf(TEXT("and faces the kite again (%.2f)"), FacingTowardsKite()), FacingTowardsKite() > 0.3f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

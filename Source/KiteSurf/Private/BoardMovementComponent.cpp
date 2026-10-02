@@ -772,5 +772,6 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	}
 
 	// 7. Broadcast reset event
+	++ResetCount;
 	OnBoardReset.Broadcast();
 }

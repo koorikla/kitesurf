@@ -79,6 +79,9 @@ All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Ca
 | `BuoyancyDamping` | `800.0f` | Vertical damping constant. |
 | `PlaningLiftCoef` | `50.0f` | Planing hydrodynamic lift force coefficient. |
 
+## Rider stance
+The rider's feet are in the straps, so the body always stands square across the board and turns with it: through carves, and through every spin in the air (`AKiteRiderPawn::UpdateRiderPose`). Which rail they face is chosen to face the kite only when they get on the board (start, reset, or while floating). After that it is whichever rail keeps them facing the way they were, so carving round onto the other tack leaves them riding toeside with their back to the kite, and a twin-tip swapping ends under them does not turn them round. The lean is always away from the kite's pull, whichever way the body faces. Board-off tricks, where the feet leave the straps, are not modelled yet.
+
 ## Bar display
 The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite and match while looping.
 

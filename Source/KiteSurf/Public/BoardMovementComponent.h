@@ -128,6 +128,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	float GetBestJumpHeight() const { return BestJumpHeight; }
 
+	/** How many times the rider has been put back on the board by ResetToTack. Polled by code that cannot rely on OnBoardReset being bound. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	int32 GetResetCount() const { return ResetCount; }
+
 	/** How far below the water surface the board is riding now (cm): 0 when planing, FloatSubmersionCm when floating. */
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	float GetFloatDepthCm() const { return CurrentFloatDepthCm; }
@@ -333,6 +337,7 @@ private:
 	float CurrentEdgeInput;
 	float CurrentWeightShift;
 	float CurrentFloatDepthCm;
+	int32 ResetCount = 0;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
 

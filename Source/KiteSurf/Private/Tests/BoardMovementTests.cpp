@@ -46,8 +46,9 @@ bool FKiteSurfBoardSettlesAtRest::RunTest(const FString& Parameters)
 
 				UE_LOG(LogKiteSurf, Log, TEXT("SettlesAtRest: Final Z = %.2f cm, Velocity.Z = %.2f cm/s"), FinalLocation.Z, FinalVelocity.Z);
 
-				// Board settles to Z ≈ 0 within 3 s simulated
-				TestNearlyEqual(TEXT("Board settles to Z ≈ 0 cm"), FinalLocation.Z, 0.0, 2.0);
+				// With no speed the board does not carry the rider: it settles at the floating depth within 3 s simulated
+				TestNearlyEqual(TEXT("Board settles at the floating depth"), FinalLocation.Z, static_cast<double>(-BoardComp->FloatSubmersionCm), 2.0);
+				TestTrue(TEXT("The rider is floating"), BoardComp->IsFloating());
 				TestNearlyEqual(TEXT("Vertical velocity settles to 0 cm/s"), FinalVelocity.Z, 0.0, 5.0);
 			}
 		}
@@ -689,7 +690,8 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 
 				const FVector FinalCrestLoc = Pawn->GetActorLocation();
 				UE_LOG(LogKiteSurf, Log, TEXT("Board on wave crest: Final Z = %.2f cm (target ≈ 80 cm)"), FinalCrestLoc.Z);
-				TestNearlyEqual(TEXT("Board settles near wave crest (Z ≈ 80 cm)"), (double)FinalCrestLoc.Z, 80.0, 5.0);
+				// At rest the rider floats, so the board rides the wave at the floating depth below its surface.
+				TestNearlyEqual(TEXT("Board settles at the floating depth below the wave crest"), (double)FinalCrestLoc.Z, 80.0 - BoardComp->FloatSubmersionCm, 5.0);
 
 				// Place board at wave trough and simulate settling
 				Pawn->SetActorLocation(FVector(1500.0f, 0.0f, -60.0f));
@@ -702,7 +704,7 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 
 				const FVector FinalTroughLoc = Pawn->GetActorLocation();
 				UE_LOG(LogKiteSurf, Log, TEXT("Board on wave trough: Final Z = %.2f cm (target ≈ -80 cm)"), FinalTroughLoc.Z);
-				TestNearlyEqual(TEXT("Board settles near wave trough (Z ≈ -80 cm)"), (double)FinalTroughLoc.Z, -80.0, 5.0);
+				TestNearlyEqual(TEXT("Board settles at the floating depth below the wave trough"), (double)FinalTroughLoc.Z, -80.0 - BoardComp->FloatSubmersionCm, 5.0);
 			}
 		}
 

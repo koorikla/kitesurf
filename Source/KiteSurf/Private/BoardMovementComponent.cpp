@@ -38,6 +38,10 @@ UBoardMovementComponent::UBoardMovementComponent()
 	LowSpeedPivotMaxSpeedCmS = 400.0f; // the planing threshold: a planing board holds its own course
 	LowSpeedPivotRate = 120.0f;
 	LowSpeedPivotMinForce = 8000.0f; // 80 N
+	FloatSubmersionCm = 85.0f;
+	FloatUntilSpeedFraction = 0.45f;
+	FloatResponse = 2.5f;
+	CurrentFloatDepthCm = 0.0f;
 	TailWeightGripScale = 2.5f;
 	TailWeightDrag = 0.35f;
 	NoseWeightDragSaving = 0.15f;
@@ -222,6 +226,13 @@ void UBoardMovementComponent::BeginAirborne()
 	LandingStateTimer = 0.0f;
 }
 
+float UBoardMovementComponent::GetFloatDepthForSpeed(float SpeedCmS) const
+{
+	// Fully sunk below FloatUntilSpeedFraction of planing speed, on the surface at planing speed.
+	const float Planing = FMath::SmoothStep(PlaningThresholdCmS * FloatUntilSpeedFraction, PlaningThresholdCmS, SpeedCmS);
+	return FloatSubmersionCm * (1.0f - Planing);
+}
+
 void UBoardMovementComponent::SetWeightShift(float Value)
 {
 	CurrentWeightShift = FMath::Clamp(Value, -1.0f, 1.0f);
@@ -314,6 +325,14 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		SampleWaterSurface(Location, WaterHeight, WaterNormal);
 
 		bool bIsAirborne = (CurrentBoardState == EBoardState::Airborne);
+
+		// Without planing speed the board does not carry the rider: they float, sunk to the chest,
+		// and rise onto the surface as the board gets up to speed (the water start). A rider in
+		// the air comes down onto the surface first and sinks from there.
+		const float TargetFloatDepthCm = bIsAirborne ? 0.0f : GetFloatDepthForSpeed(Velocity.Size2D());
+		CurrentFloatDepthCm = FMath::FInterpTo(CurrentFloatDepthCm, TargetFloatDepthCm, DeltaTime, FloatResponse);
+		const float RideHeight = WaterHeight - CurrentFloatDepthCm;
+
 		const float HeightAboveWater = Location.Z - WaterHeight;
 		bool bHydrodynamicsDisabled = bIsAirborne && (HeightAboveWater > 10.0f);
 
@@ -358,7 +377,9 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		}
 
 		// 3. Buoyancy & Vertical Dynamics (disabled while above water surface + 10 cm)
-		const float Submersion = WaterHeight - Location.Z;
+		// How far below its riding height the board is: that height is the surface when planing
+		// and the floating depth when not.
+		const float Submersion = RideHeight - Location.Z;
 		if (!bHydrodynamicsDisabled && Submersion >= -15.0f)
 		{
 			const float BuoyancyBalance = -GravityForceZ; // exactly balances gravity at rest
@@ -640,20 +661,20 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		if (CurrentBoardState != EBoardState::Airborne)
 		{
 			const FVector NewLocation = UpdatedComponent->GetComponentLocation();
-			const float CurrentSubmersion = WaterHeight - NewLocation.Z;
+			const float CurrentSubmersion = RideHeight - NewLocation.Z;
 			if (FMath::Abs(CurrentSubmersion) > 20.0f)
 			{
 				FVector ClampedLocation = NewLocation;
-				ClampedLocation.Z = FMath::Clamp(NewLocation.Z, WaterHeight - 19.99f, WaterHeight + 19.99f);
+				ClampedLocation.Z = FMath::Clamp(NewLocation.Z, RideHeight - 19.99f, RideHeight + 19.99f);
 				UpdatedComponent->SetWorldLocation(ClampedLocation);
 				Velocity.Z = 0.0f;
 			}
 
 			if (CurrentBoardState == EBoardState::Planing)
 			{
-				ensureAlwaysMsgf(FMath::Abs(WaterHeight - UpdatedComponent->GetComponentLocation().Z) <= 20.0f + KINDA_SMALL_NUMBER,
+				ensureAlwaysMsgf(FMath::Abs(RideHeight - UpdatedComponent->GetComponentLocation().Z) <= 20.0f + KINDA_SMALL_NUMBER,
 					TEXT("BoardMovement: Planing pawn out of water contact: Submersion = %.2f cm (expected within +/- 20 cm)"),
-					WaterHeight - UpdatedComponent->GetComponentLocation().Z);
+					RideHeight - UpdatedComponent->GetComponentLocation().Z);
 			}
 		}
 
@@ -712,8 +733,10 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	FVector WaterNormal = FVector::UpVector;
 	SampleWaterSurface(Location, WaterHeight, WaterNormal);
 
+	// On the surface if the reset speed planes, floating if it does not.
+	CurrentFloatDepthCm = GetFloatDepthForSpeed(SpeedKnots * 51.44f);
 	FVector RespawnLoc = Location;
-	RespawnLoc.Z = WaterHeight;
+	RespawnLoc.Z = WaterHeight - CurrentFloatDepthCm;
 	UpdatedComponent->SetWorldLocation(RespawnLoc);
 
 	// 4. Set velocity on tack (8 knots = 411.52 cm/s)

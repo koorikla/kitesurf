@@ -128,6 +128,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	float GetBestJumpHeight() const { return BestJumpHeight; }
 
+	/** How far below the water surface the board is riding now (cm): 0 when planing, FloatSubmersionCm when floating. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	float GetFloatDepthCm() const { return CurrentFloatDepthCm; }
+
+	/** True while the rider is in the water rather than up on the board: more than half sunk. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	bool IsFloating() const { return CurrentFloatDepthCm > 0.5f * FloatSubmersionCm; }
+
+	/** The depth the board settles to at a given speed (cm). */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	float GetFloatDepthForSpeed(float SpeedCmS) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	float GetForwardSpeed() const;
 
@@ -200,6 +212,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
+
+	/** How deep the board sits below the surface with the rider floating (cm): about chest deep. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float FloatSubmersionCm;
+
+	/** The rider floats fully sunk below this fraction of planing speed and is on the surface at planing speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "0.99"))
+	float FloatUntilSpeedFraction;
+
+	/** How quickly the rider sinks or rises as the speed changes (1/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float FloatResponse;
 
 	/** Below this speed the board pivots to point along the kite's pull (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -308,6 +332,7 @@ private:
 
 	float CurrentEdgeInput;
 	float CurrentWeightShift;
+	float CurrentFloatDepthCm;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
 

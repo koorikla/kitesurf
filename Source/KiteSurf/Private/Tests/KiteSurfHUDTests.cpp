@@ -270,4 +270,52 @@ bool FKiteSurfHUDOnboardingFlow::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The bar display must move the way a bar does: down the throw as it is pulled in, and tilted
+// towards the hand that is pulling.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDBarDisplay, "KiteSurf.HUD.BarDisplay", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfHUDBarDisplay::RunTest(const FString& Parameters)
+{
+	const FVector2D ThrowTop(500.0, 100.0);
+	const float ThrowLength = 80.0f;
+	const float HalfWidth = 60.0f;
+	const float MaxTiltDeg = 24.0f;
+	FVector2D Left;
+	FVector2D Right;
+
+	// Centred and fully sheeted out: level, at the top of the throw.
+	AKiteSurfHUD::GetBarEnds(0.0f, 0.0f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestNearlyEqual(TEXT("A centred bar is level"), Left.Y, Right.Y, 0.01);
+	TestNearlyEqual(TEXT("Sheeted out it sits at the top of the throw"), Left.Y, 100.0, 0.01);
+	TestNearlyEqual(TEXT("and is centred on the throw"), (Left.X + Right.X) * 0.5, 500.0, 0.01);
+
+	// Pulled right in: at the bottom of the throw (screen Y grows downwards, towards the rider).
+	AKiteSurfHUD::GetBarEnds(0.0f, 1.0f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestNearlyEqual(TEXT("Pulled in it sits at the bottom of the throw"), Left.Y, 180.0, 0.01);
+
+	// Half in
+	AKiteSurfHUD::GetBarEnds(0.0f, 0.5f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestNearlyEqual(TEXT("Half pulled in it sits half way"), Left.Y, 140.0, 0.01);
+
+	// Steering right pulls the right hand in: the right end drops towards the rider.
+	AKiteSurfHUD::GetBarEnds(1.0f, 0.5f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestTrue(TEXT("Steering right lowers the right end"), Right.Y > Left.Y + 10.0);
+	TestTrue(TEXT("The left end stays on the left"), Left.X < Right.X);
+	TestNearlyEqual(TEXT("The bar keeps its length when tilted"), FVector2D::Distance(Left, Right), 2.0 * HalfWidth, 0.01);
+	TestNearlyEqual(TEXT("and stays centred on the throw"), (Left.Y + Right.Y) * 0.5, 140.0, 0.01);
+	const double FullRightDrop = Right.Y - Left.Y;
+
+	// Steering left mirrors it.
+	AKiteSurfHUD::GetBarEnds(-1.0f, 0.5f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestNearlyEqual(TEXT("Steering left lowers the left end by the same amount"), Left.Y - Right.Y, FullRightDrop, 0.01);
+
+	// Half steer tilts less, and out-of-range input does not tilt or slide it further.
+	AKiteSurfHUD::GetBarEnds(0.5f, 0.5f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestTrue(TEXT("Half steer tilts less than full steer"), Right.Y - Left.Y > 0.0 && Right.Y - Left.Y < FullRightDrop);
+	AKiteSurfHUD::GetBarEnds(3.0f, 2.0f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
+	TestNearlyEqual(TEXT("Steer is clamped"), Right.Y - Left.Y, FullRightDrop, 0.01);
+	TestNearlyEqual(TEXT("Sheet is clamped to the throw"), (Left.Y + Right.Y) * 0.5, 180.0, 0.01);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

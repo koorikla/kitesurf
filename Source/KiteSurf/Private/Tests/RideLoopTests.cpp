@@ -777,4 +777,87 @@ bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A rider without planing speed floats sunk in the water, and comes up onto the surface as the kite gets them going.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideFloatsUntilPlaning, "KiteSurf.Ride.FloatsUntilPlaning", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideFloatsUntilPlaning::RunTest(const FString& Parameters)
+{
+	FRideFixture Ride;
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	UBoardMovementComponent* Board = Ride.Board;
+
+	TestNearlyEqual(TEXT("At planing speed the board rides on the surface"), Board->GetFloatDepthForSpeed(Board->PlaningThresholdCmS), 0.0f, 0.01f);
+	TestNearlyEqual(TEXT("Stopped, it floats at the full depth"), Board->GetFloatDepthForSpeed(0.0f), Board->FloatSubmersionCm, 0.01f);
+
+	// Planing at the start of a ride: on the surface.
+	Ride.Simulate(3.0f);
+	TestFalse(TEXT("A planing rider is not floating"), Board->IsFloating());
+	TestTrue(FString::Printf(TEXT("and rides at the surface (Z %.0f cm)"), Ride.Pawn->GetActorLocation().Z), Ride.Pawn->GetActorLocation().Z > -20.0f);
+
+	// Bar right out with the kite parked overhead: the board stops and the rider sinks to floating depth.
+	Ride.Pawn->SheetKite(0.0f);
+	Ride.Kite->SetWindowPosition(0.0f, 10.0f);
+	Ride.Simulate(15.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("FloatsUntilPlaning: stopped at %.1f kn, Z %.0f cm, float depth %.0f cm"), Ride.SpeedKnots(), Ride.Pawn->GetActorLocation().Z, Board->GetFloatDepthCm());
+	TestTrue(FString::Printf(TEXT("Depowered under a parked kite the board slows right down (%.1f kn)"), Ride.SpeedKnots()), Ride.SpeedKnots() < 3.5f);
+	TestTrue(TEXT("The rider is floating"), Board->IsFloating());
+	TestTrue(FString::Printf(TEXT("sunk towards the floating depth (Z %.0f cm)"), Ride.Pawn->GetActorLocation().Z), Ride.Pawn->GetActorLocation().Z < -0.6f * Board->FloatSubmersionCm);
+
+	// Kite back down to the side and the bar in: a water start.
+	Ride.Pawn->SheetKite(0.8f);
+	Ride.Kite->SetWindowPosition(65.0f, 8.0f);
+	Ride.Simulate(20.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("FloatsUntilPlaning: water start reached %.1f kn, Z %.0f cm"), Ride.SpeedKnots(), Ride.Pawn->GetActorLocation().Z);
+	TestTrue(TEXT("The kite pulls the rider back onto the plane"), Board->IsPlaning());
+	TestFalse(TEXT("and out of the water"), Board->IsFloating());
+	TestTrue(FString::Printf(TEXT("riding at the surface again (Z %.0f cm)"), Ride.Pawn->GetActorLocation().Z), Ride.Pawn->GetActorLocation().Z > -20.0f);
+	return true;
+}
+
+// The HUD shows the steering that reaches the kite next to the rider's bar: the bar itself while
+// looping, the assist's correction otherwise, and nothing while the kite is in the water.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteAppliedSteer, "KiteSurf.Kite.AppliedSteer", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteAppliedSteer::RunTest(const FString& Parameters)
+{
+	FStandingFixture Standing;
+	UKiteComponent* Kite = Standing.Kite;
+	TestNotNull(TEXT("Kite created"), Kite);
+	if (!Kite)
+	{
+		return false;
+	}
+
+	// Parked and settled with the bar centred, the assist has little left to do.
+	Kite->SetWindowPosition(45.0f, 10.0f);
+	FKiteFlight Parked;
+	Parked.Fly(Kite, 0.0f, 6.0f);
+	TestTrue(FString::Printf(TEXT("A settled, parked kite needs little steering (%.2f)"), Kite->GetAppliedSteer()), FMath::Abs(Kite->GetAppliedSteer()) < 0.5f);
+
+	// Looping, the rider's bar goes straight to the kite.
+	Kite->SetLoopHeld(true);
+	FKiteFlight Loop;
+	Loop.Fly(Kite, 0.6f, 0.2f);
+	TestNearlyEqual(TEXT("With loop held the kite gets exactly the bar"), Kite->GetAppliedSteer(), 0.6f, 0.001f);
+	Loop.Fly(Kite, -1.0f, 0.1f);
+	TestNearlyEqual(TEXT("in both directions"), Kite->GetAppliedSteer(), -1.0f, 0.001f);
+	Kite->SetLoopHeld(false);
+
+	// Bar hard over without the loop: the assist steers the kite that way to start it travelling.
+	Kite->SetWindowPosition(0.0f, 10.0f);
+	FKiteFlight Travel;
+	Travel.Fly(Kite, 1.0f, 0.3f);
+	const float TravelRight = Kite->GetAppliedSteer();
+	Kite->SetWindowPosition(0.0f, 10.0f);
+	Travel.Fly(Kite, -1.0f, 0.3f);
+	const float TravelLeft = Kite->GetAppliedSteer();
+	TestTrue(FString::Printf(TEXT("Bar right and bar left steer the kite opposite ways (%.2f, %.2f)"), TravelRight, TravelLeft), TravelRight * TravelLeft < 0.0f);
+	TestTrue(TEXT("Applied steering stays within -1..1"), FMath::Abs(TravelRight) <= 1.0f && FMath::Abs(TravelLeft) <= 1.0f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

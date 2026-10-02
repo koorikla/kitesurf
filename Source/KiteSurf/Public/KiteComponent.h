@@ -8,6 +8,21 @@ class UWindComponent;
 class UStaticMeshComponent;
 class UCableComponent;
 
+/**
+ * The kite, flown on the sphere of its lines.
+ *
+ * The kite has a position on the sphere and a heading along it. It flies forward along its
+ * heading at an airspeed of (glide ratio x the wind blowing along the lines), and drifts with
+ * the wind blowing across them. With its nose pointing out of the window the two cancel and the
+ * kite parks at the window edge.
+ *
+ * Steering asks for a direction of travel round the window; the kite stops where the bar is
+ * centred. With the loop input held, steering turns the kite directly at a rate proportional to
+ * its airspeed, so holding the bar over flies a loop.
+ *
+ * Line tension follows the kite's airspeed squared, so a kite diving through the middle of the
+ * window pulls several times harder than a parked one.
+ */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
 {
@@ -30,6 +45,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SheetKite(float Amount /* 0..1 */);
 
+	/** While held, steering turns the kite directly instead of choosing a direction of travel, so holding the bar over flies a loop. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void SetLoopHeld(bool bHeld);
+
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	bool IsLoopHeld() const { return bLoopHeld; }
+
 	// Outputs
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetLineForce() const; // Force on rider in kg*cm/s^2 (1 N = 100 kg*cm/s^2)
@@ -40,9 +62,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetKiteWorldPosition() const;
 
+	/** Angle of the kite to the right of straight downwind (true wind), -90..90. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetAzimuthDeg() const;
 
+	/** Angle of the kite above the horizon, 0..90. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetElevationDeg() const;
 
@@ -52,9 +76,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FRotator GetKiteRotation() const;
 
+	/** Unit vector along the sphere in the direction the kite's nose points. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	FVector GetKiteHeading() const { return KiteHeading; }
+
+	/** Speed of the kite through the air along its heading (cm/s). */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	float GetAirspeedCmS() const { return AirspeedCmS; }
+
+	/** Degrees the kite has turned under the current steering input; 360 is one loop. Positive to the right. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	float GetTurnDeg() const { return TurnDeg; }
+
+	/** Place the kite parked at this azimuth (keeps elevation). */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetAzimuthDeg(float InAzimuthDeg);
 
+	/** Place the kite parked at this elevation (keeps azimuth). */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetElevationDeg(float InElevationDeg);
 
@@ -62,18 +100,19 @@ public:
 	void SetWindComponent(UWindComponent* InWindComponent);
 
 	/**
-	 * Place the kite by clock position and window depth.
+	 * Place the kite by clock position and window depth, measured from the true wind.
 	 * ClockDeg: angle from the zenith around the wind axis, positive to the right looking downwind (90 = right horizon).
 	 * DepthDeg: angle from the window edge towards straight downwind.
+	 * The kite then settles to the depth its glide ratio gives it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetWindowPosition(float ClockDeg, float DepthDeg);
 
-	/** Clock position of the kite around the wind axis, positive to the right looking downwind. */
+	/** Clock position of the kite around the window axis, positive to the right looking downwind. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetClockDeg() const;
 
-	/** Angle of the kite from the window edge towards straight downwind. */
+	/** Angle of the kite from the window edge towards the middle of the window. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetWindowDepthDeg() const;
 
@@ -81,11 +120,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetDownwindDir() const;
 
-	/**
-	 * Axis of the wind window: the direction the apparent wind (true wind minus the rider's
-	 * smoothed velocity) blows towards. Azimuth, elevation, clock and depth are measured from it,
-	 * so the kite falls back in the window as the rider speeds up, which is what limits board speed.
-	 */
+	/** Horizontal unit vector the apparent wind (true wind minus rider velocity) blows towards: the axis of the window the rider feels. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	FVector GetWindowAxis() const;
 
@@ -97,10 +132,11 @@ public:
 	UCableComponent* GetLeftLine() const { return LeftLine; }
 	UCableComponent* GetRightLine() const { return RightLine; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "-90.0", ClampMax = "90.0"))
+	/** Derived from the kite's position each update; use the setters to place the kite. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Kite|State")
 	float AzimuthDeg;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Kite|State")
 	float ElevationDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Config", meta = (ClampMin = "100.0"))
@@ -118,32 +154,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|State", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float Steer; // -1..1
 
+	/** Lift to drag with the bar out. Sets how fast the kite flies and how far forward it parks. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float SteerSensitivity; // Steering rate multiplier (deg / (s * (m/s)))
+	float GlideRatioSheetedOut;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float MaxSteerRateDegPerSec; // Cap on how fast steering moves the kite around the window
+	float GlideRatioSheetedIn;
 
+	/** Radius of the tightest loop, at full steering (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float MinElevationDeg; // Steering cannot fly the kite lower than this
+	float MinTurnRadiusCm;
 
+	/** Cap on the kite's airspeed, standing in for line drag (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float EdgeDepthDeg; // Window depth the kite settles at when sheeted out
+	float MaxAirspeedCmS;
 
+	/** How quickly the kite reaches its airspeed (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float PowerDepthDeg; // Window depth the kite settles at when sheeted in
+	float AirspeedResponse;
 
+	/** Heading at full steering, measured from nose-out: just past along-the-edge, so the kite also dips into the window and gains power as it travels. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float DepthRateDegPerSec; // How fast the kite moves towards its settled depth
+	float TravelHeadingDeg;
 
+	/** The kite turns towards the heading the bar asks for at this gain (1/s)... */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float WindowAxisResponse; // How quickly the window follows changes in rider velocity (1/s)
+	float SteerAssistGain;
 
+	/** ...up to this rate (deg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float MaxWindowSwingDeg; // Largest angle between the window axis and the true wind
+	float SteerAssistMaxRateDegPerSec;
 
+	/** The kite is kept at least this far above the water. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float MaxKiteAirspeedCmS; // Cap on the kite's own speed around the rider when computing apparent wind
+	float MinElevationDeg;
+
+	/** Cap on line tension, standing in for line stretch and the rider letting go (N). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
+	float MaxLineTensionN;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Debug")
 	bool bDrawDebug;
@@ -165,19 +213,33 @@ protected:
 	void UpdateVisuals();
 
 	FVector GetWindAt(const FVector& Location) const;
-	FVector GetRiderVelocity2D() const;
+	FVector GetRiderPosition() const;
+	FVector GetRiderVelocity() const;
 
-	/** Rider velocity as seen by the wind window; lags the real velocity so the kite does not twitch. */
-	FVector WindowRiderVelocity;
-	bool bSnapWindowRiderVelocity;
-	FVector LastKiteOffset;
-	void ComputeKiteTransform(FVector& OutKitePos, FVector& OutLineDir) const;
+	/** Direction from the rider for an azimuth and elevation measured from the true wind. */
+	FVector DirectionFromAngles(float InAzimuthDeg, float InElevationDeg) const;
+
+	/** Rebuilds the flight state from AzimuthDeg / ElevationDeg: parked there, nose out of the window. */
+	void PlaceParked();
+
+	/** Updates AzimuthDeg / ElevationDeg from KiteDir. */
+	void UpdateAngles();
+
+	/** Unit vector from the rider to the kite. */
+	FVector KiteDir;
+
+	/** Unit vector along the sphere in the direction of the kite's nose. */
+	FVector KiteHeading;
+
+	float AirspeedCmS;
+	float TurnDeg;
+	float CentredBarSeconds;
+	bool bPlacementPending;
+	bool bLoopHeld;
 
 	FVector KiteWorldPosition;
 	FRotator KiteWorldRotation;
-	FVector LastKitePosition;
 	FVector KiteVelocity;
-	bool bHasLastPosition;
 
 	float LineTensionN;
 	FVector LineForce;

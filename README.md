@@ -61,7 +61,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Sheet in / out (the bar holds its position) | Up / Down | Right stick up / down, triggers |
+| Bar in / out: power (the bar holds its position) | Down / Up | Right stick up / down, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
@@ -69,6 +69,12 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Pop (hold S and send the kite first for a real jump) | Space | Bottom face button |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
+
+**The spot.** The gear screen also switches what is in the water. Sandbars lie across your
+reach, about 260 m out on the first run: jump them, because riding onto sand is a crash.
+Islands with palms sit further off to ride round. Sharks patrol in circles; they leave a rider
+who is up and riding alone unless you run one over, and come for you when you are down in the
+water. Anything you are above, you clear.
 
 **Steering and loops.** The bar works like a real one, with no extra key. Steer away from the
 side the kite is on and it flies up over the top to the other side; let go and it parks where it
@@ -83,11 +89,16 @@ rips you off your edge, which is a much lower jump. Timed well, that is 5 m in 1
 30 kn and 25 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
 water. A kite looped through the middle of the window pulls several times harder than a parked one.
 
+**Power.** The bar is the throttle, and it moves through its whole throw in under half a
+second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board
+speed); right in it pulls about seven times as hard (1100 N, 22 kn). The ride starts with it 70%
+in.
+
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 40 kn), then rig for it:
 
-- *Kite size*: AUTO is what a rider would rig for that wind (12 m in 15 kn, 6 m in 30 kn), or
-  choose from 5 to 17 m. Small kites turn and loop faster; big ones pull harder and are a
+- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 5 to 17 m, or AUTO
+  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn). Small kites turn and loop faster; big ones pull harder and are a
   handful when it blows.
 - *Kite*: the 3-strut loop kite turns tight and fast; the 5-strut boost kite has more lift and
   glide for height and hangtime, and turns slower.
@@ -99,6 +110,11 @@ Without enough speed the board does not carry you: you float chest-deep until th
 back up onto the plane. The BAR panel at the bottom right shows what your hands are doing: the bar
 slides down as you pull it in and tilts as you steer, with a marker for the steering that actually
 reaches the kite.
+
+**Reading the wind.** White streaks on the water lie along the wind and drift down it. The WIND
+dial at the top right is a flag seen from above, with the top of the dial the way you are
+looking: the flag streams the way the wind blows, and the line under it says where the wind is
+coming from ("from the right", "from behind left").
 
 The wind gusts and drops (the HUD calls out GUST and LULL). The kite only pulls while its lines
 are tight: in a hole in the wind, or if you outrun the wind, the lines go slack and the kite

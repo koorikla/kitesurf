@@ -37,6 +37,8 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
      Keep the art 8 bits per channel: a 16-bit PNG imports as linear data and looks washed out.
      When `scripts/render-menu-video.sh` has filmed the menu videos (`Content/Movies/*.webm`), the
      stills use a frame of the film, so run that first, then this.
+   - `scripts/editor/import_spot_assets.py` generates and imports the island, sandbar and shark
+     meshes and their materials. Their sand shapes are mirrored in `KiteSurfSpot.cpp`.
    - `scripts/editor/import_geometry.py` generates and imports the kite, board, bar and rider
      meshes (`generate_mesh_objs.py`) and the kite canopy texture (`make_kite_texture.sh`,
      needs ImageMagick); run `scripts/editor/create_materials.py` after it to assign materials.

@@ -159,7 +159,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 0:
 		return TEXT("Steer the kite: steer away from it to fly it over the top; keep steering towards its own side to loop it [Left / Right or Right Stick]");
 	case 1:
-		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [Up / Down or Right Stick]");
+		return TEXT("Sheet in for power: pull the bar in [Down]. Sheet out to slow down [Up]. The bar stays where you leave it [or Right Stick]");
 	case 2:
 		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:
@@ -182,6 +182,12 @@ void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
 	}
 }
 
+void AKiteSurfHUD::ShowNotice(const FString& Text)
+{
+	JumpRejectionText = Text;
+	JumpRejectionRemainingTime = Text.IsEmpty() ? 0.0f : 2.5f;
+}
+
 void AKiteSurfHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -201,6 +207,8 @@ void AKiteSurfHUD::DrawHUD()
 	if (RiderPawn)
 	{
 		DrawTelemetry(RiderPawn);
+		// Top right, under the frame rate: which way the wind blows across the view.
+		DrawWindFlag(RiderPawn, ScreenW - 170.0f, 64.0f, 150.0f);
 		// Bottom left: the rider is in the bottom centre of the view.
 		DrawWindWindowArc(RiderPawn, 180.0f, ScreenH - 50.0f, 110.0f);
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
@@ -269,8 +277,6 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	FString WindStr = FString::Printf(TEXT("WIND:  %s%s%s"), *FormatKnots(WindVec.Size()), *KiteSizeStr, GustLabel);
 	DrawText(WindStr, WindColor, 32.0f, 94.0f, nullptr, 1.1f);
 
-	DrawWindCompass(WindVec, 255.0f, 96.0f, 18.0f);
-
 	if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
 	{
 		const EBoardState BoardState = BoardMove->GetBoardState();
@@ -323,24 +329,103 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	}
 }
 
-void AKiteSurfHUD::DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius)
+FVector2D AKiteSurfHUD::GetWindOnScreen(const FVector& Wind, float CameraYawDeg)
 {
-	FVector2D Dir(WindVec.X, -WindVec.Y);
-	Dir.Normalize();
-	if (Dir.IsNearlyZero())
+	const FVector Wind2D = Wind.GetSafeNormal2D();
+	if (Wind2D.IsNearlyZero())
 	{
-		Dir = FVector2D(1.0f, 0.0f);
+		return FVector2D::ZeroVector;
+	}
+	const FVector Forward = FRotator(0.0f, CameraYawDeg, 0.0f).Vector();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+	// Screen y grows downwards, and "up" is the way the camera looks.
+	return FVector2D(FVector::DotProduct(Wind2D, Right), -FVector::DotProduct(Wind2D, Forward));
+}
+
+FString AKiteSurfHUD::DescribeWindSource(const FVector2D& WindOnScreen)
+{
+	if (WindOnScreen.IsNearlyZero())
+	{
+		return TEXT("calm");
+	}
+	// The wind comes from the opposite side to the one it blows towards.
+	const FVector2D From = -WindOnScreen;
+	const float AngleDeg = FMath::RadiansToDegrees(FMath::Atan2(From.X, -From.Y)); // 0 ahead, 90 right
+	if (FMath::Abs(AngleDeg) <= 30.0f)
+	{
+		return TEXT("from ahead");
+	}
+	if (FMath::Abs(AngleDeg) >= 150.0f)
+	{
+		return TEXT("from behind");
+	}
+	const TCHAR* Side = AngleDeg > 0.0f ? TEXT("right") : TEXT("left");
+	if (FMath::Abs(AngleDeg) < 60.0f)
+	{
+		return FString::Printf(TEXT("from ahead %s"), Side);
+	}
+	if (FMath::Abs(AngleDeg) > 120.0f)
+	{
+		return FString::Printf(TEXT("from behind %s"), Side);
+	}
+	return FString::Printf(TEXT("from the %s"), Side);
+}
+
+void AKiteSurfHUD::DrawWindFlag(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Size)
+{
+	const UWindComponent* WindComp = RiderPawn ? RiderPawn->GetWind() : nullptr;
+	const APlayerController* PC = GetOwningPlayerController();
+	if (!WindComp || !PC || !PC->PlayerCameraManager)
+	{
+		return;
 	}
 
-	FVector2D Tip = FVector2D(CenterX, CenterY) + Dir * Radius;
-	FVector2D Tail = FVector2D(CenterX, CenterY) - Dir * (Radius * 0.7f);
-	DrawLine(Tail.X, Tail.Y, Tip.X, Tip.Y, FLinearColor(0.3f, 0.85f, 1.0f), 2.5f);
+	// The same wind the telemetry reads: at the reference height, not slowed by the water.
+	const FVector Wind = WindComp->GetWindAt(RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp->ShearHeightCm));
+	const FVector2D OnScreen = GetWindOnScreen(Wind, PC->PlayerCameraManager->GetCameraRotation().Yaw);
+	const float Knots = Wind.Size2D() / 51.44f;
 
-	FVector2D Perp(-Dir.Y, Dir.X);
-	FVector2D Wing1 = Tip - Dir * (Radius * 0.45f) + Perp * (Radius * 0.35f);
-	FVector2D Wing2 = Tip - Dir * (Radius * 0.45f) - Perp * (Radius * 0.35f);
-	DrawLine(Tip.X, Tip.Y, Wing1.X, Wing1.Y, FLinearColor(0.3f, 0.85f, 1.0f), 2.5f);
-	DrawLine(Tip.X, Tip.Y, Wing2.X, Wing2.Y, FLinearColor(0.3f, 0.85f, 1.0f), 2.5f);
+	// A flag on a pole seen from above, with the top of the dial the way you are looking. The
+	// flag streams the way the wind blows, longer the harder it blows.
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), ScreenX, ScreenY, Size, Size + 44.0f);
+	DrawText(TEXT("WIND"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + 10.0f, ScreenY + 6.0f, nullptr, 1.0f);
+	DrawText(FormatKnots(Wind.Size2D()), FLinearColor(0.3f, 0.8f, 1.0f), ScreenX + Size - 62.0f, ScreenY + 6.0f, nullptr, 1.0f);
+
+	const FVector2D Centre(ScreenX + Size * 0.5f, ScreenY + 28.0f + (Size - 28.0f) * 0.5f);
+	const float Radius = (Size - 44.0f) * 0.5f;
+	const int32 Segments = 32;
+	for (int32 Index = 0; Index < Segments; ++Index)
+	{
+		const float A0 = 2.0f * UE_PI * Index / Segments;
+		const float A1 = 2.0f * UE_PI * (Index + 1) / Segments;
+		DrawLine(Centre.X + Radius * FMath::Cos(A0), Centre.Y + Radius * FMath::Sin(A0), Centre.X + Radius * FMath::Cos(A1), Centre.Y + Radius * FMath::Sin(A1), FLinearColor(0.4f, 0.7f, 1.0f, 0.6f), 1.5f);
+	}
+	// The way you are looking
+	DrawLine(Centre.X, Centre.Y - Radius - 5.0f, Centre.X, Centre.Y - Radius + 7.0f, FLinearColor(1.0f, 1.0f, 1.0f, 0.8f), 2.0f);
+
+	if (!OnScreen.IsNearlyZero())
+	{
+		const FVector2D Across(-OnScreen.Y, OnScreen.X);
+		const float FlagLength = Radius * FMath::Clamp(0.45f + 0.55f * Knots / 30.0f, 0.45f, 1.0f);
+		const float Seconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+		const float Flutter = FMath::Sin(Seconds * (4.0f + Knots * 0.25f)) * 0.12f;
+		const FVector2D Tip = Centre + (OnScreen + Across * Flutter).GetSafeNormal() * FlagLength;
+		const FLinearColor FlagColor(1.0f, 0.45f, 0.15f);
+		// A filled pennant: lines fanned from its root across the pole to its tip.
+		const float RootHalfWidth = 9.0f;
+		for (float T = -1.0f; T <= 1.0f; T += 0.2f)
+		{
+			const FVector2D Root = Centre + Across * RootHalfWidth * T;
+			DrawLine(Root.X, Root.Y, Tip.X, Tip.Y, FlagColor, 2.5f);
+		}
+		DrawRect(FLinearColor::White, Centre.X - 3.0f, Centre.Y - 3.0f, 6.0f, 6.0f); // the pole
+	}
+
+	const FString Source = DescribeWindSource(OnScreen);
+	float TextW = 0.0f;
+	float TextH = 0.0f;
+	GetTextSize(Source, TextW, TextH, nullptr, 0.9f);
+	DrawText(Source, FLinearColor::White, ScreenX + (Size - TextW) * 0.5f, ScreenY + Size + 20.0f, nullptr, 0.9f);
 }
 
 void AKiteSurfHUD::DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius)

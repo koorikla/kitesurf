@@ -32,7 +32,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 RiderCharacterIndex;
 
-	/** Chosen kite size in m^2; 0 means the size recommended for the wind */
+	/** Chosen kite size in m^2 (default 9); 0 means the size recommended for the wind */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float KiteSizeM2;
 
@@ -43,6 +43,16 @@ public:
 	/** Chosen board, as an EBoardSize index (default 1, the 138) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 BoardSizeIndex;
+
+	/** What is in the water at the spot (all on by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotIslands;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSandbars;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSharks;
 
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;

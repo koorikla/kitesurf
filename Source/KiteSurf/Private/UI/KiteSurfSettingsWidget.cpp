@@ -25,7 +25,7 @@
 
 UKiteSurfSettingsWidget::UKiteSurfSettingsWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, CurrentWindKnots(15.0f)
+	, CurrentWindKnots(20.0f)
 	, CurrentVolume(1.0f)
 	, CurrentWindowMode(EWindowMode::Windowed)
 	, CurrentResolution(1600, 900)

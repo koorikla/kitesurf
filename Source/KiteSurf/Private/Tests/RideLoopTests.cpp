@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "KiteSurfSpot.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
@@ -433,19 +434,24 @@ bool FKiteSurfPawnSheetStaysWherePut::RunTest(const FString& Parameters)
 
 	TestNearlyEqual(TEXT("Ride starts at the default bar position"), Pawn->GetCurrentSheetInput(), AKiteSurfGameMode::StartSheet, 0.001f);
 
-	Pawn->SetSheetRateInput(1.0f);
-	Ride.Simulate(0.25f);
-	const float SheetedIn = Pawn->GetCurrentSheetInput();
-	TestNearlyEqual(TEXT("Holding sheet-in moves the bar at SheetRatePerSec"), SheetedIn, AKiteSurfGameMode::StartSheet + 0.25f * Pawn->SheetRatePerSec, 0.02f);
+	// A tap moves the bar a little, at SheetRatePerSec.
+	Pawn->SetSheetRateInput(-1.0f);
+	Ride.Simulate(0.1f);
+	const float SheetedOut = Pawn->GetCurrentSheetInput();
+	TestNearlyEqual(TEXT("Holding sheet-out moves the bar at SheetRatePerSec"), SheetedOut, AKiteSurfGameMode::StartSheet - 0.1f * Pawn->SheetRatePerSec, 0.05f);
 
 	Pawn->SetSheetRateInput(0.0f);
 	Ride.Simulate(1.0f);
-	TestNearlyEqual(TEXT("Releasing the key leaves the bar where it is"), Pawn->GetCurrentSheetInput(), SheetedIn, 0.001f);
-	TestNearlyEqual(TEXT("The kite uses the bar position"), Ride.Kite->Sheet, SheetedIn, 0.001f);
+	TestNearlyEqual(TEXT("Releasing the key leaves the bar where it is"), Pawn->GetCurrentSheetInput(), SheetedOut, 0.001f);
+	TestNearlyEqual(TEXT("The kite uses the bar position"), Ride.Kite->Sheet, SheetedOut, 0.001f);
 
+	// The whole throw takes well under a second either way: the bar keeps up with the rider's hands.
+	Pawn->SetSheetRateInput(1.0f);
+	Ride.Simulate(0.5f);
+	TestNearlyEqual(TEXT("Half a second of sheet-in reaches full power"), Pawn->GetCurrentSheetInput(), 1.0f, 0.001f);
 	Pawn->SetSheetRateInput(-1.0f);
-	Ride.Simulate(3.0f);
-	TestNearlyEqual(TEXT("Holding sheet-out reaches fully depowered"), Pawn->GetCurrentSheetInput(), 0.0f, 0.001f);
+	Ride.Simulate(0.5f);
+	TestNearlyEqual(TEXT("Half a second of sheet-out reaches fully depowered"), Pawn->GetCurrentSheetInput(), 0.0f, 0.001f);
 	return true;
 }
 
@@ -1195,6 +1201,8 @@ bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
 	// The game instance rigs the recommended size unless one has been chosen.
 	UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
 	GI->SetPendingWindKnots(30.0f);
+	TestEqual(TEXT("A new game instance rigs the 9 m"), GI->GetEffectiveKiteSizeM2(), 9.0f);
+	GI->SetKiteSizeM2(0.0f);
 	TestEqual(TEXT("With no size chosen the kite is the recommended one"), GI->GetEffectiveKiteSizeM2(), 6.0f);
 	GI->SetKiteSizeM2(9.0f);
 	TestEqual(TEXT("A chosen size is used"), GI->GetEffectiveKiteSizeM2(), 9.0f);
@@ -1295,6 +1303,227 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 		SpeedKn[0], bPlaning[0], DepthCm[0], SpeedKn[1], bPlaning[1], DepthCm[1]);
 	TestTrue(FString::Printf(TEXT("In 12 kn the big board gets up and planes (%.1f kn)"), SpeedKn[1]), bPlaning[1] && DepthCm[1] < 5.0f);
 	TestTrue(FString::Printf(TEXT("while the small board stays sunk and slow (%.1f kn, %.0f cm deep)"), SpeedKn[0], DepthCm[0]), !bPlaning[0] && DepthCm[0] > 20.0f && SpeedKn[0] < SpeedKn[1]);
+	return true;
+}
+
+// The spot's sand: laid out clear of the start, a crash to ride onto, and something to jump over.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSpotSand, "KiteSurf.Spot.Sand", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfSpotSand::RunTest(const FString& Parameters)
+{
+	FRideFixture Ride;
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	AKiteSurfSpot* Spot = Ride.World->SpawnActor<AKiteSurfSpot>();
+	TestNotNull(TEXT("Spot spawned"), Spot);
+	if (!Spot)
+	{
+		return false;
+	}
+	const FVector Origin = Ride.Pawn->GetActorLocation();
+	const FVector Downwind = Ride.Kite->GetDownwindDir();
+	const FVector Across = FVector::CrossProduct(FVector::UpVector, Downwind);
+
+	// Everything off: open water.
+	Spot->Setup(Ride.Pawn, Origin, Downwind, false, false, false);
+	TestEqual(TEXT("With everything off there is no sand"), Spot->GetObstacles().Num(), 0);
+	TestEqual(TEXT("and no sharks"), Spot->GetSharks().Num(), 0);
+
+	// Sand on.
+	Spot->Setup(Ride.Pawn, Origin, Downwind, true, true, false);
+	int32 Islands = 0;
+	int32 Sandbars = 0;
+	for (const FSpotObstacle& Obstacle : Spot->GetObstacles())
+	{
+		(Obstacle.Type == ESpotObstacleType::Island ? Islands : Sandbars)++;
+	}
+	TestTrue(FString::Printf(TEXT("There are islands and sandbars (%d, %d)"), Islands, Sandbars), Islands >= 2 && Sandbars >= 3);
+
+	// The ride opens on clear water: nothing within the clear radius of the start.
+	bool bStartClear = true;
+	for (float AngleDeg = 0.0f; AngleDeg < 360.0f; AngleDeg += 5.0f)
+	{
+		for (float Radius = 0.0f; Radius <= Spot->ClearStartRadiusCm; Radius += 250.0f)
+		{
+			bStartClear = bStartClear && Spot->GetSandHeightCm(Origin + FRotator(0.0f, AngleDeg, 0.0f).Vector() * Radius) <= 0.0f;
+		}
+	}
+	TestTrue(TEXT("No sand within the clear radius of the start"), bStartClear);
+
+	// The first sandbar lies across the opening reach, and stands out of the water along its middle.
+	const FSpotObstacle* FirstBar = Spot->GetObstacles().FindByPredicate([](const FSpotObstacle& O) { return O.Type == ESpotObstacleType::Sandbar; });
+	TestNotNull(TEXT("There is a sandbar"), FirstBar);
+	if (!FirstBar)
+	{
+		return false;
+	}
+	const FVector BarCentre(FirstBar->Centre.X, FirstBar->Centre.Y, Origin.Z);
+	const float TopCm = Spot->GetSandHeightCm(BarCentre);
+	TestTrue(FString::Printf(TEXT("The sandbar's crest is 30 to 80 cm out of the water (%.0f cm)"), TopCm), TopCm > 30.0f && TopCm < 80.0f);
+	TestTrue(TEXT("It is ahead of the start on the opening reach"), FVector::DotProduct(BarCentre - Origin, Across) > Spot->ClearStartRadiusCm);
+	TestTrue(TEXT("There is water either side of it along the reach"), Spot->GetSandHeightCm(BarCentre + Across * 1000.0f) <= 0.0f && Spot->GetSandHeightCm(BarCentre - Across * 1000.0f) <= 0.0f);
+	TestTrue(TEXT("Its long axis lies along the wind, across the reach"), FirstBar->GetVisibleExtent().X > 2000.0f && Spot->GetSandHeightCm(BarCentre + Downwind * 2000.0f) > 0.0f);
+
+	// Riding onto it is a crash, and the rider is put back in the water on the side they came from.
+	const FVector Approach = BarCentre - Across * 900.0f;
+	Ride.Pawn->SetActorLocation(Approach);
+	Ride.Board->Velocity = Across * 900.0f;
+	Ride.Board->SetBoardState(EBoardState::Planing);
+	bool bCrashed = false;
+	for (int32 Step = 0; Step < 240 && !bCrashed; ++Step)
+	{
+		Ride.Simulate(RideDeltaTime);
+		Spot->StepSpot(RideDeltaTime);
+		bCrashed = Ride.Board->IsCrashing();
+	}
+	TestTrue(TEXT("Riding onto the sandbar is a crash"), bCrashed);
+	TestEqual(TEXT("and the spot says why"), Spot->GetLastEvent(), FString(TEXT("Ran aground")));
+	TestTrue(FString::Printf(TEXT("The rider is back in the water (sand %.0f cm)"), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation())), Spot->GetSandHeightCm(Ride.Pawn->GetActorLocation()) <= 0.0f);
+	TestTrue(TEXT("on the side they came from"), FVector::DotProduct(Ride.Pawn->GetActorLocation() - BarCentre, Across) < 0.0f);
+
+	// Jumping it is fine: above the crest there is nothing to hit.
+	Spot->Setup(Ride.Pawn, Origin, Downwind, true, true, false);
+	Ride.Board->ResetToTack(12.0f);
+	Ride.Pawn->SetActorLocation(BarCentre + FVector(0.0f, 0.0f, 250.0f));
+	Ride.Board->Velocity = Across * 900.0f;
+	Ride.Board->SetBoardState(EBoardState::Airborne);
+	Spot->StepSpot(RideDeltaTime);
+	TestFalse(TEXT("A rider 2.5 m above the sandbar clears it"), Ride.Board->IsCrashing());
+	TestTrue(TEXT("and nothing happened"), Spot->GetLastEvent().IsEmpty());
+
+	// Switching the sand off mid-ride removes it.
+	Spot->SetFeatures(false, false, false);
+	TestTrue(TEXT("Switched off, the sandbar is gone"), Spot->GetSandHeightCm(BarCentre) <= 0.0f);
+	return true;
+}
+
+// Sharks patrol, come for a rider who is down in the water, and are a crash to ride into.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSpotSharks, "KiteSurf.Spot.Sharks", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfSpotSharks::RunTest(const FString& Parameters)
+{
+	FRideFixture Ride;
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	AKiteSurfSpot* Spot = Ride.World->SpawnActor<AKiteSurfSpot>();
+	if (!Spot)
+	{
+		return false;
+	}
+	const FVector Origin = Ride.Pawn->GetActorLocation();
+	Spot->Setup(Ride.Pawn, Origin, Ride.Kite->GetDownwindDir(), false, false, true);
+	TestEqual(TEXT("The sharks are in the water"), Spot->GetSharks().Num(), Spot->SharkCount);
+	TestEqual(TEXT("and there is no sand"), Spot->GetObstacles().Num(), 0);
+	if (Spot->GetSharks().Num() == 0)
+	{
+		return false;
+	}
+
+	// With the rider up and riding far away they keep to their patrol circles.
+	bool bStartClear = true;
+	for (const FSpotShark& Shark : Spot->GetSharks())
+	{
+		bStartClear = bStartClear && FVector2D::Distance(Shark.Position, FVector2D(Origin.X, Origin.Y)) > 5000.0f;
+	}
+	TestTrue(TEXT("No shark starts within 50 m of the rider"), bStartClear);
+	Ride.Pawn->SetActorLocation(Origin - FVector(300000.0f, 0.0f, 0.0f));
+	const FVector2D FirstPosition = Spot->GetSharks()[0].Position;
+	for (int32 Step = 0; Step < 600; ++Step)
+	{
+		Spot->StepSpot(RideDeltaTime);
+	}
+	const FSpotShark& Patroller = Spot->GetSharks()[0];
+	TestFalse(TEXT("A shark with no rider near is not hunting"), Patroller.bHunting);
+	TestTrue(TEXT("It has moved"), FVector2D::Distance(Patroller.Position, FirstPosition) > 500.0f);
+	TestNearlyEqual(TEXT("and stayed on its patrol circle"), static_cast<float>(FVector2D::Distance(Patroller.Position, Patroller.PatrolCentre)), Spot->SharkPatrolRadiusCm, 150.0f);
+
+	// A rider up on the board and riding near a shark is left alone.
+	const FVector2D SharkAt = Spot->GetSharks()[0].Position;
+	const FVector NearShark(SharkAt.X + 2500.0f, SharkAt.Y, Origin.Z);
+	Ride.Board->ResetToTack(12.0f);
+	Ride.Pawn->SetActorLocation(NearShark);
+	Spot->StepSpot(RideDeltaTime);
+	TestFalse(TEXT("A planing rider 25 m away is not hunted"), Spot->GetSharks()[0].bHunting);
+
+	// Down in the water at the same place, the shark comes, and gets there.
+	Ride.Board->Velocity = FVector::ZeroVector;
+	Ride.Pawn->SheetKite(0.0f);
+	Ride.Kite->SetWindowPosition(0.0f, 10.0f);
+	for (int32 Step = 0; Step < 180; ++Step)
+	{
+		Ride.Simulate(RideDeltaTime);
+		Ride.Board->Velocity = FVector(0.0f, 0.0f, Ride.Board->Velocity.Z); // held still, as a rider who has lost the kite
+	}
+	TestTrue(TEXT("The rider is floating"), Ride.Board->IsFloating());
+	const float DistanceBefore = FVector2D::Distance(Spot->GetSharks()[0].Position, FVector2D(Ride.Pawn->GetActorLocation()));
+	bool bHunted = false;
+	bool bBitten = false;
+	float Seconds = 0.0f;
+	for (; Seconds < 30.0f && !bBitten; Seconds += RideDeltaTime)
+	{
+		Spot->StepSpot(RideDeltaTime);
+		bHunted = bHunted || Spot->GetSharks()[0].bHunting;
+		bBitten = Ride.Board->IsCrashing();
+	}
+	TestTrue(TEXT("The shark goes for a rider floating nearby"), bHunted);
+	TestTrue(FString::Printf(TEXT("and reaches them (from %.0f m, in %.1f s)"), DistanceBefore / 100.0f, Seconds), bBitten);
+	TestEqual(TEXT("The spot says what happened"), Spot->GetLastEvent(), FString(TEXT("Shark!")));
+
+	// Having had its bite it leaves the rider alone for a while.
+	Spot->StepSpot(RideDeltaTime);
+	TestFalse(TEXT("The shark that bit is not hunting straight afterwards"), Spot->GetSharks()[0].bHunting);
+
+	// Riding over a shark is a crash; jumping over one is not.
+	Spot->Setup(Ride.Pawn, Origin, Ride.Kite->GetDownwindDir(), false, false, true);
+	const FVector2D Fin = Spot->GetSharks()[1].Position;
+	Ride.Board->ResetToTack(12.0f);
+	Ride.Pawn->SetActorLocation(FVector(Fin.X, Fin.Y, Origin.Z + 300.0f));
+	Ride.Board->SetBoardState(EBoardState::Airborne);
+	Spot->StepSpot(RideDeltaTime);
+	TestFalse(TEXT("Three metres above a shark the rider clears it"), Ride.Board->IsCrashing());
+	Ride.Pawn->SetActorLocation(FVector(Fin.X, Fin.Y, Origin.Z));
+	Ride.Board->SetBoardState(EBoardState::Planing);
+	Spot->StepSpot(RideDeltaTime);
+	TestTrue(TEXT("On the water on top of a shark is a crash"), Ride.Board->IsCrashing());
+	return true;
+}
+
+// The bar is the throttle: right out the kite barely pulls, right in it pulls several times harder.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideBarIsTheThrottle, "KiteSurf.Ride.BarIsTheThrottle", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
+{
+	const float SheetValues[3] = { 0.0f, 0.5f, 1.0f };
+	float SpeedKn[3] = { 0.0f, 0.0f, 0.0f };
+	float TensionN[3] = { 0.0f, 0.0f, 0.0f };
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		// The default kite in the default wind.
+		FRideFixture Ride(20.0f);
+		if (!Ride.IsValid())
+		{
+			return false;
+		}
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.Pawn->SheetKite(SheetValues[Index]);
+		Ride.Simulate(20.0f);
+		SpeedKn[Index] = Ride.SpeedKnots();
+		TensionN[Index] = Ride.Kite->GetLineTensionN();
+		TestFalse(TEXT("The kite stays in the air at any bar position"), Ride.Kite->IsCrashed());
+		TestTrue(FString::Printf(TEXT("and does not stall (angle of attack %.1f deg)"), Ride.Kite->GetAngleOfAttackDeg()), Ride.Kite->GetAngleOfAttackDeg() < Ride.Kite->StallAngleDeg);
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("BarIsTheThrottle: 9 m in 20 kn, bar out %.1f kn / %.0f N, half %.1f kn / %.0f N, in %.1f kn / %.0f N"), SpeedKn[0], TensionN[0], SpeedKn[1], TensionN[1], SpeedKn[2], TensionN[2]);
+
+	TestTrue(FString::Printf(TEXT("Bar right in pulls at least five times as hard as bar right out (%.0f N against %.0f N)"), TensionN[2], TensionN[0]), TensionN[2] > 5.0f * TensionN[0]);
+	TestTrue(FString::Printf(TEXT("Half way is in between (%.0f N)"), TensionN[1]), TensionN[1] > 1.5f * TensionN[0] && TensionN[2] > 1.5f * TensionN[1]);
+	TestTrue(FString::Printf(TEXT("Bar right out slows the rider to a crawl (%.1f kn)"), SpeedKn[0]), SpeedKn[0] < 10.0f);
+	TestTrue(FString::Printf(TEXT("Bar right in is at least twice as fast (%.1f kn)"), SpeedKn[2]), SpeedKn[2] > 2.0f * SpeedKn[0] && SpeedKn[2] > 18.0f);
 	return true;
 }
 

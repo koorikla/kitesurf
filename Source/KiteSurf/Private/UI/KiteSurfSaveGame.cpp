@@ -5,14 +5,17 @@ const FString UKiteSurfSaveGame::DefaultSaveSlot = TEXT("Settings");
 const int32 UKiteSurfSaveGame::DefaultUserIndex = 0;
 
 UKiteSurfSaveGame::UKiteSurfSaveGame()
-	: WindStrengthKnots(15.0f)
+	: WindStrengthKnots(20.0f)
 	, MasterVolume(1.0f)
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
 	, RiderCharacterIndex(0)
-	, KiteSizeM2(0.0f)
+	, KiteSizeM2(9.0f)
 	, KiteModelIndex(0)
 	, BoardSizeIndex(1)
+	, bSpotIslands(true)
+	, bSpotSandbars(true)
+	, bSpotSharks(true)
 {
 }
 
@@ -32,7 +35,7 @@ UKiteSurfSaveGame* UKiteSurfSaveGame::LoadOrCreateSettings(const FString& SlotNa
 	}
 
 	UKiteSurfSaveGame* NewSave = NewObject<UKiteSurfSaveGame>();
-	NewSave->WindStrengthKnots = 15.0f;
+	NewSave->WindStrengthKnots = 20.0f;
 	NewSave->MasterVolume = 1.0f;
 	NewSave->bSkipOnboarding = false;
 	NewSave->bOnboardingCompleted = false;

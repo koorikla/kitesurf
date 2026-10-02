@@ -6,6 +6,7 @@
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
+#include "WindStreakComponent.h"
 #include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -72,7 +73,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 		ControlBarMesh->SetStaticMesh(BarMeshFinder.Object);
 	}
 
-	SheetRatePerSec = 0.8f;
+	SheetRatePerSec = 2.5f; // the whole throw in 0.4 s, as fast as arms move a bar
 	MouseSteerSensitivity = 0.02f;
 	MouseSheetSensitivity = 0.01f;
 	CameraArmLengthCm = 1000.0f;
@@ -127,6 +128,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Foam trail and spray behind the board
 	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
+
+	// Wind lines on the sea
+	WindStreaks = CreateDefaultSubobject<UWindStreakComponent>(TEXT("WindStreaks"));
 
 	// Sound: three loops that are always playing and are faded and pitched by what the rider
 	// would hear (UpdateAudioModulation), and one-shots for the pop, landing, crash and reset.

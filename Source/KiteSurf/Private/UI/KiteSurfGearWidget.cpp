@@ -6,6 +6,8 @@
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
 #include "WindComponent.h"
+#include "KiteSurfSpot.h"
+#include "EngineUtils.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Texture2D.h"
 #include "Framework/Application/SlateApplication.h"
@@ -49,6 +51,9 @@ void UKiteSurfGearWidget::LoadChoices()
 		CurrentKiteSizeM2 = GI->KiteSizeM2;
 		CurrentBoardSize = GI->BoardSize;
 		CurrentWindKnots = GI->PendingWindKnots;
+		bIslands = GI->bSpotIslands;
+		bSandbars = GI->bSpotSandbars;
+		bSharks = GI->bSpotSharks;
 	}
 	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, MinWindKnots, MaxWindKnots);
 }
@@ -240,10 +245,59 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			]
 		];
 
-	const TSharedRef<SWidget> Panel = SNew(SBox)
-		.WidthOverride(520.0f)
+	const TSharedRef<SVerticalBox> SpotRows = SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(20.0f, 14.0f, 20.0f, 4.0f)
 		[
-			KiteSurfMenuStyle::BuildPanel(Rows)
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("SPOT")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 26))
+			.ColorAndOpacity(TitleColor)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(20.0f, 0.0f, 20.0f, 12.0f)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("What is in the water.")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
+			.ColorAndOpacity(HintColor)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f)
+		[
+			BuildChoiceRow(TEXT("SANDBARS"), SandbarsButton, SandbarsText, SandbarsDescription, [this]() { ToggleSandbars(); })
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f)
+		[
+			BuildChoiceRow(TEXT("ISLANDS"), IslandsButton, IslandsText, IslandsDescription, [this]() { ToggleIslands(); })
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f, 20.0f, 14.0f)
+		[
+			BuildChoiceRow(TEXT("SHARKS"), SharksButton, SharksText, SharksDescription, [this]() { ToggleSharks(); })
+		];
+
+	const TSharedRef<SWidget> Panel = SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Top)
+		[
+			SNew(SBox)
+			.WidthOverride(520.0f)
+			[
+				KiteSurfMenuStyle::BuildPanel(Rows)
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Top)
+		.Padding(18.0f, 0.0f, 0.0f, 0.0f)
+		[
+			SNew(SBox)
+			.WidthOverride(400.0f)
+			[
+				KiteSurfMenuStyle::BuildPanel(SpotRows)
+			]
 		];
 
 	TSharedRef<SWidget> Root = SNew(SBox)
@@ -274,6 +328,24 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 	return Root;
 }
 
+void UKiteSurfGearWidget::ToggleIslands()
+{
+	bIslands = !bIslands;
+	UpdateTexts();
+}
+
+void UKiteSurfGearWidget::ToggleSandbars()
+{
+	bSandbars = !bSandbars;
+	UpdateTexts();
+}
+
+void UKiteSurfGearWidget::ToggleSharks()
+{
+	bSharks = !bSharks;
+	UpdateTexts();
+}
+
 void UKiteSurfGearWidget::CycleRider()
 {
 	CurrentRider = RiderCharacter::Next(CurrentRider);
@@ -292,6 +364,12 @@ void UKiteSurfGearWidget::CycleKiteSize()
 	const int32 Index = Sizes.IndexOfByKey(CurrentKiteSizeM2);
 	// Recommended, then smallest to biggest, then back to recommended.
 	CurrentKiteSizeM2 = Index == INDEX_NONE ? Sizes[0] : (Index + 1 < Sizes.Num() ? Sizes[Index + 1] : 0.0f);
+	UpdateTexts();
+}
+
+void UKiteSurfGearWidget::SetKiteSizeM2(float SizeM2)
+{
+	CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SizeM2) ? SizeM2 : 0.0f;
 	UpdateTexts();
 }
 
@@ -359,6 +437,12 @@ void UKiteSurfGearWidget::UpdateTexts()
 	Set(BoardDescription, KiteGear::GetDescription(CurrentBoardSize));
 	Set(RiderText, RiderCharacter::GetDisplayName(CurrentRider));
 	Set(RiderDescription, TEXT("Who is on the board."));
+	Set(SandbarsText, bSandbars ? TEXT("ON") : TEXT("OFF"));
+	Set(SandbarsDescription, TEXT("Strips of sand across your reach. Jump them: riding onto one is a crash."));
+	Set(IslandsText, bIslands ? TEXT("ON") : TEXT("OFF"));
+	Set(IslandsDescription, TEXT("Sand islands with palms, further out. Something to ride round."));
+	Set(SharksText, bSharks ? TEXT("ON") : TEXT("OFF"));
+	Set(SharksDescription, TEXT("They patrol in circles, and come for a rider who is down in the water."));
 }
 
 void UKiteSurfGearWidget::Confirm()
@@ -372,6 +456,7 @@ void UKiteSurfGearWidget::Confirm()
 			GI->SetKiteModel(CurrentKiteModel);
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
 			GI->SetBoardSize(CurrentBoardSize);
+			GI->SetSpotFeatures(bIslands, bSandbars, bSharks);
 			GI->SaveSettingsToDisk();
 		}
 
@@ -394,6 +479,12 @@ void UKiteSurfGearWidget::Confirm()
 				Board->SetBoardSize(CurrentBoardSize);
 			}
 			Rider->SetRiderCharacter(CurrentRider);
+		}
+
+		// The spot keeps its layout; features switch on and off where they are.
+		if (const TActorIterator<AKiteSurfSpot> Spot(World); Spot)
+		{
+			Spot->SetFeatures(bIslands, bSandbars, bSharks);
 		}
 	}
 

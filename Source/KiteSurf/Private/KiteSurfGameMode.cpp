@@ -5,6 +5,8 @@
 #include "KiteComponent.h"
 #include "WindComponent.h"
 #include "UI/KiteSurfGameInstance.h"
+#include "KiteSurfSpot.h"
+#include "EngineUtils.h"
 
 AKiteSurfGameMode::AKiteSurfGameMode()
 	: InitialSpawnSpeedCmPerSec(12.0f * 51.44f) // 12 knots = ~617.28 cm/s
@@ -62,6 +64,25 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 		Kite->SetWindowPosition(StartKiteClockDeg * Side, StartKiteDepthDeg);
 	}
 	RiderPawn->SheetKite(StartSheet);
+
+	// What is in the water: laid out round where this ride starts, relative to the wind. Only in a
+	// game with a game instance to say what is switched on.
+	if (UWorld* World = RiderPawn->GetWorld())
+	{
+		if (const UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			const TActorIterator<AKiteSurfSpot> Existing(World);
+			AKiteSurfSpot* Spot = Existing ? *Existing : nullptr;
+			if (!Spot)
+			{
+				Spot = World->SpawnActor<AKiteSurfSpot>();
+			}
+			if (Spot)
+			{
+				Spot->Setup(RiderPawn, RiderPawn->GetActorLocation(), DownwindDir, GI->bSpotIslands, GI->bSpotSandbars, GI->bSpotSharks);
+			}
+		}
+	}
 }
 
 void AKiteSurfGameMode::RestartPlayer(AController* NewPlayer)

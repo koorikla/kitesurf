@@ -485,6 +485,94 @@ def generate_bar_obj(filepath):
             f.write(f'f {f_idx[0]}/{f_idx[0]}/{f_idx[0]} {f_idx[1]}/{f_idx[1]}/{f_idx[1]} {f_idx[2]}/{f_idx[2]}/{f_idx[2]}\n')
 
 
+# ----------------------------------------------------------------------------------------------
+# Spot scenery: an island with palms, a sandbar, and a shark. Origins are at the water surface.
+# The island and the sandbar are the tops of flattened ellipsoids sunk a little below the water;
+# KiteSurfSpot.cpp has the same radii and depths, to know where the sand is. Change them together.
+# ----------------------------------------------------------------------------------------------
+
+SAND = (0.86, 0.78, 0.56)
+PALM_TRUNK = (0.42, 0.30, 0.18)
+PALM_LEAF = (0.13, 0.45, 0.16)
+SHARK = (0.36, 0.42, 0.47)
+
+ISLAND_RADII = (2000.0, 1500.0, 350.0)
+ISLAND_CENTRE_Z = -80.0
+SANDBAR_RADII = (3000.0, 400.0, 90.0)
+SANDBAR_CENTRE_Z = -40.0
+
+
+def _sand_height(radii, centre_z, x, y):
+    inside = 1.0 - (x / radii[0]) ** 2 - (y / radii[1]) ** 2
+    return centre_z + radii[2] * math.sqrt(max(inside, 0.0))
+
+
+def _add_palm(mesh, base, lean, height):
+    """A palm with a curved trunk leaning the way of `lean` (x, y) and a crown of drooping fronds."""
+    trunk = []
+    for i in range(7):
+        t = i / 6.0
+        trunk.append((base[0] + lean[0] * t * t, base[1] + lean[1] * t * t, base[2] + height * t))
+    add_tube(mesh, 'PalmTrunk', PALM_TRUNK, trunk, [20.0 - 9.0 * i / 6.0 for i in range(7)], segments=8)
+    top = trunk[-1]
+    fronds = 8
+    for f in range(fronds):
+        angle = 2.0 * math.pi * f / fronds + 0.3
+        path = []
+        for i in range(6):
+            t = i / 5.0
+            reach = 300.0 * t
+            droop = 60.0 * t - 190.0 * t * t
+            path.append((top[0] + math.cos(angle) * reach, top[1] + math.sin(angle) * reach, top[2] + droop))
+        add_tube(mesh, 'PalmLeaf', PALM_LEAF, path, [16.0, 26.0, 28.0, 22.0, 13.0, 3.0], segments=5)
+    add_ellipsoid(mesh, 'PalmLeaf', PALM_LEAF, top, (26.0, 26.0, 20.0), rings=5, segments=8)
+
+
+def build_island():
+    mesh = Mesh()
+    add_ellipsoid(mesh, 'Sand', SAND, (0.0, 0.0, ISLAND_CENTRE_Z), ISLAND_RADII, rings=14, segments=28)
+    for (x, y), lean, height in (((250.0, -150.0), (130.0, -40.0), 720.0),
+                                 ((-420.0, 260.0), (-150.0, 90.0), 640.0),
+                                 ((-80.0, -380.0), (40.0, -170.0), 560.0)):
+        base_z = _sand_height(ISLAND_RADII, ISLAND_CENTRE_Z, x, y) - 15.0
+        _add_palm(mesh, (x, y, base_z), lean, height)
+    return mesh
+
+
+def build_sandbar():
+    mesh = Mesh()
+    add_ellipsoid(mesh, 'Sand', SAND, (0.0, 0.0, SANDBAR_CENTRE_Z), SANDBAR_RADII, rings=10, segments=28)
+    return mesh
+
+
+def build_shark():
+    """Swims along +X just under the surface with its dorsal fin out of the water."""
+    mesh = Mesh()
+    add_ellipsoid(mesh, 'Shark', SHARK, (0.0, 0.0, -55.0), (170.0, 36.0, 40.0), rings=8, segments=12)
+    dorsal = [(45.0, 0.0, -22.0), (-55.0, 0.0, -22.0), (-40.0, 0.0, 58.0)]
+    mesh.add_part('Shark', SHARK, dorsal, [(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], [(0, 1, 2)], double_sided=True)
+    tail = [(-150.0, 0.0, -55.0), (-235.0, 0.0, 5.0), (-225.0, 0.0, -105.0)]
+    mesh.add_part('Shark', SHARK, tail, [(0.0, 0.5), (1.0, 1.0), (1.0, 0.0)], [(0, 1, 2)], double_sided=True)
+    for side in (-1.0, 1.0):
+        fin = [(60.0, side * 30.0, -65.0), (10.0, side * 30.0, -65.0), (5.0, side * 95.0, -85.0)]
+        mesh.add_part('Shark', SHARK, fin, [(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], [(0, 1, 2)], double_sided=True)
+    return mesh
+
+
+def generate_spot(output_dir):
+    """Writes the scenery OBJs and returns {asset name: path}."""
+    os.makedirs(output_dir, exist_ok=True)
+    paths = {
+        'SM_Island': os.path.join(output_dir, 'island.obj'),
+        'SM_Sandbar': os.path.join(output_dir, 'sandbar.obj'),
+        'SM_Shark': os.path.join(output_dir, 'shark.obj'),
+    }
+    build_island().write(paths['SM_Island'])
+    build_sandbar().write(paths['SM_Sandbar'])
+    build_shark().write(paths['SM_Shark'])
+    return paths
+
+
 def generate_all(output_dir):
     """Writes every OBJ and returns {asset name: path}."""
     os.makedirs(output_dir, exist_ok=True)
@@ -506,5 +594,5 @@ def generate_all(output_dir):
 if __name__ == '__main__':
     import sys
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'Saved', 'Geometry')
-    for name, path in generate_all(out).items():
+    for name, path in {**generate_all(out), **generate_spot(out)}.items():
         print(f'{name}: {path}')

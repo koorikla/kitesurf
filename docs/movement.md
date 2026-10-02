@@ -41,11 +41,13 @@ The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 
 - **In the water** the lines are slack; the kite relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
 - The pull passed to the rider is capped at `MaxLineTensionN`.
 - **Size**: `SetKiteSize` rigs a kite of a given area and scales its mass, the air it has to push and its turning radius with it (12 m^2: 3 kg, 4.2 m radius). `RecommendKiteSizeM2` gives the size a rider would rig for the wind, about 2.2 x rider kg / knots, from the sizes on offer (5 to 17 m^2). The game rigs that size unless one is chosen in Settings; the HUD shows it next to the wind.
-- The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
+- The bar position is persistent: sheet input moves it at `SheetRatePerSec` (2.5 per second: the whole throw in 0.4 s) and it stays there. It sets the kite's trim between `TrimSheetedOutDeg` (-22) and `TrimSheetedInDeg` (+2). On the 9 m in 20 kn that is 150 N and 8 kn with the bar out, 340 N and 13 kn half way, 1100 N and 22 kn with it in (`KiteSurf.Ride.BarIsTheThrottle`).
 - A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn with about 500 N in the lines; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
 
 ### Wind
 `UWindComponent` adds gusts, direction drift and shear to the base wind. Gusts are a slow swell over `GustPeriodSeconds` with quicker puffs on top (`GustPuffRate`, `GustPuffShare`), reaching most of `GustStrength` either way. `GetGustFactorAt` gives the current wind over the base wind; the HUD calls out GUST and LULL from it.
+
+The wind's direction is shown two ways. `UWindStreakComponent` keeps a field of long thin foam streaks on the water round the rider, lying along the wind and drifting down it at `DriftFraction` of its speed; they fade in from `MinWindKnots` and are not there in a calm. The HUD's WIND dial (`AKiteSurfHUD::DrawWindFlag`) is a flag seen from above with the top of the dial the way the camera looks (`GetWindOnScreen`), and says in words where the wind comes from.
 
 ## Default Tunable Properties
 
@@ -94,6 +96,15 @@ The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause 
 - **Board size** (`UBoardMovementComponent::SetBoardSize`): the 138 is the reference. The 132 has 20% more pop and turn rate, planes at 20% more speed, and has 10% less drag and 12% less grip. The 145 planes at 18% less speed with 15% more grip, and has 15% less pop and turn rate and 12% more drag. From a slow start in 12 kn the 145 gets up and planes while the 132 stays sunk.
 
 The board's size does not change how it looks yet.
+
+## The spot
+`AKiteSurfSpot` is what is in the water. The game mode spawns it when a ride starts and lays it out round the start position in wind coordinates (across the wind is the way a ride starts out; down is downwind), so the layout is the same whatever the wind direction. The gear screen's SPOT toggles (saved with the settings) switch sandbars, islands and sharks on and off, and applying them during a ride changes the spot where it is.
+
+- **Sand.** Sandbars and islands are the tops of flattened ellipsoids sunk a little below the water; `FSpotObstacle::GetSandHeightCm` gives the height of sand at a point from the same radii the meshes are built with (`generate_mesh_objs.py`). A sandbar's crest is 50 cm out of the water, 54 m long along the wind and 7 m across; an island stands 2.7 m high. There is no sand within `ClearStartRadiusCm` (150 m) of the start. A rider who is not above the sand where they are has run aground: a crash, and they are put back in the water on the side they came from.
+- **Sharks** patrol a 40 m circle at 3.5 m/s. A rider who is floating or has crashed within `SharkNoticeRadiusCm` (90 m) is hunted at 6.5 m/s. Any rider within `SharkBiteRadiusCm` (2.6 m) of a shark and less than `SharkClearHeightCm` (80 cm) above the water is a crash, after which that shark leaves them alone for 8 s.
+- The HUD shows what happened ("Ran aground", "Shark!") through `AKiteSurfHUD::ShowNotice`.
+
+The sand is not yet part of the water surface the board rides on, and the sharks do not avoid the sand.
 
 ## Sound
 Three loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`): wind in the ears from the apparent wind, water under the board from board speed (silent in the air), and the lines singing from line tension (silent when slack). The pop, landing (louder and deeper the harder it is), crash and reset are one-shots. All of it is synthesised by `scripts/editor/make_sound_wavs.py` and imported by `make_sound_assets.py`; the loops are set to keep playing while silent so they come back after being faded out.

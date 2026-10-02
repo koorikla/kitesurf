@@ -3,6 +3,9 @@
 #include "KiteWindMath.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
+#include "Components/StaticMeshComponent.h"
+#include "CableComponent.h"
+#include "Engine/World.h"
 
 UKiteComponent::UKiteComponent()
 {
@@ -21,12 +24,17 @@ UKiteComponent::UKiteComponent()
 	bDrawDebug = false;
 
 	KiteWorldPosition = FVector::ZeroVector;
+	KiteWorldRotation = FRotator::ZeroRotator;
 	LastKitePosition = FVector::ZeroVector;
 	KiteVelocity = FVector::ZeroVector;
 	bHasLastPosition = false;
 
 	LineTensionN = 0.0f;
 	LineForce = FVector::ZeroVector;
+
+	KiteMesh = nullptr;
+	LeftLine = nullptr;
+	RightLine = nullptr;
 }
 
 void UKiteComponent::BeginPlay()
@@ -47,6 +55,125 @@ void UKiteComponent::BeginPlay()
 	KiteWorldPosition = InitialPos;
 	LastKitePosition = InitialPos;
 	bHasLastPosition = false;
+
+	SetupVisuals();
+}
+
+void UKiteComponent::SetupVisuals()
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || !GetWorld())
+	{
+		return;
+	}
+
+	// 1. Kite Static Mesh Component
+	if (!KiteMesh)
+	{
+		KiteMesh = NewObject<UStaticMeshComponent>(Owner, TEXT("KiteVisualMesh"));
+		if (KiteMesh)
+		{
+			KiteMesh->RegisterComponent();
+			KiteMesh->SetMobility(EComponentMobility::Movable);
+			KiteMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UStaticMesh* SM_Kite = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Game/Meshes/SM_Kite")));
+			if (SM_Kite)
+			{
+				KiteMesh->SetStaticMesh(SM_Kite);
+			}
+		}
+	}
+
+	// 2. Left and Right Kite Line Cables
+	if (!LeftLine)
+	{
+		LeftLine = NewObject<UCableComponent>(Owner, TEXT("KiteLineLeft"));
+		if (LeftLine)
+		{
+			LeftLine->RegisterComponent();
+			LeftLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+			LeftLine->CableWidth = 2.0f;
+			LeftLine->NumSegments = 10;
+			LeftLine->SolverIterations = 1;
+			LeftLine->bEnableStiffness = true;
+			LeftLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
+			if (LineMat)
+			{
+				LeftLine->SetMaterial(0, LineMat);
+			}
+		}
+	}
+
+	if (!RightLine)
+	{
+		RightLine = NewObject<UCableComponent>(Owner, TEXT("KiteLineRight"));
+		if (RightLine)
+		{
+			RightLine->RegisterComponent();
+			RightLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+			RightLine->CableWidth = 2.0f;
+			RightLine->NumSegments = 10;
+			RightLine->SolverIterations = 1;
+			RightLine->bEnableStiffness = true;
+			RightLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
+			if (LineMat)
+			{
+				RightLine->SetMaterial(0, LineMat);
+			}
+		}
+	}
+
+	UpdateVisuals();
+}
+
+void UKiteComponent::UpdateVisuals()
+{
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	// Calculate orientation of the kite:
+	// Heading facing along tangent of wind window + pitch/roll based on apparent wind and steering
+	const FVector RiderPos = Owner->GetActorLocation();
+	const FVector LineDir = (KiteWorldPosition - RiderPos).GetSafeNormal();
+	
+	// Forward is tangential to the sphere pointing in flight direction, Up is outwards (LineDir)
+	const FVector UpVector = LineDir;
+	const FVector TangentLateral = FVector::CrossProduct(FVector::UpVector, LineDir).GetSafeNormal();
+	const FVector ForwardVector = FVector::CrossProduct(LineDir, TangentLateral).GetSafeNormal();
+	FRotator BaseRot = FRotationMatrix::MakeFromXZ(ForwardVector, UpVector).Rotator();
+	BaseRot.Roll += Steer * 25.0f; // Roll into the turn
+	KiteWorldRotation = BaseRot;
+
+	if (KiteMesh)
+	{
+		KiteMesh->SetWorldLocationAndRotation(KiteWorldPosition, KiteWorldRotation);
+	}
+
+	// Update line attachments: connecting from rider control bar to kite wing tips
+	const FVector LeftBarPos = RiderPos + Owner->GetActorRotation().RotateVector(FVector(40.0f, -25.0f, 100.0f));
+	const FVector RightBarPos = RiderPos + Owner->GetActorRotation().RotateVector(FVector(40.0f, 25.0f, 100.0f));
+
+	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, -200.0f, -40.0f));
+	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, 200.0f, -40.0f));
+
+	if (LeftLine)
+	{
+		LeftLine->SetWorldLocation(LeftBarPos);
+		LeftLine->EndLocation = LeftLine->GetComponentTransform().InverseTransformPosition(LeftTipPos);
+		LeftLine->CableLength = (LeftTipPos - LeftBarPos).Size() * 0.98f;
+	}
+
+	if (RightLine)
+	{
+		RightLine->SetWorldLocation(RightBarPos);
+		RightLine->EndLocation = RightLine->GetComponentTransform().InverseTransformPosition(RightTipPos);
+		RightLine->CableLength = (RightTipPos - RightBarPos).Size() * 0.98f;
+	}
 }
 
 void UKiteComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -54,6 +181,7 @@ void UKiteComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	UpdateKite(DeltaTime);
+	UpdateVisuals();
 }
 
 void UKiteComponent::SteerKite(float Axis)
@@ -94,6 +222,11 @@ float UKiteComponent::GetElevationDeg() const
 FVector UKiteComponent::GetKiteVelocity() const
 {
 	return KiteVelocity;
+}
+
+FRotator UKiteComponent::GetKiteRotation() const
+{
+	return KiteWorldRotation;
 }
 
 void UKiteComponent::SetAzimuthDeg(float InAzimuthDeg)

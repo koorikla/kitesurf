@@ -15,6 +15,7 @@ public class KiteSurf : ModuleRules
 			"EnhancedInput",
 			"PhysicsCore",
 			"Water",
+			"CableComponent",
 			"UMG",
 			"Slate",
 			"SlateCore"

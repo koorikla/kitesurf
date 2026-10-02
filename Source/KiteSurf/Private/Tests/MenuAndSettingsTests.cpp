@@ -302,3 +302,85 @@ bool FKiteSurfRiderMaterialsTest::RunTest(const FString& Parameters)
 
     return true;
 }
+
+// Escape reaches the pawn twice on one press (the Enhanced Input action and the fallback key
+// binding). That must open the pause menu once, not open it and close it again.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FKiteSurfPauseOneTogglePerPressTest,
+    "KiteSurf.UI.PauseOneTogglePerPress",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FKiteSurfPauseOneTogglePerPressTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    TestNotNull(TEXT("World created"), World);
+    if (!World)
+    {
+        return false;
+    }
+
+    APlayerController* PC = World->SpawnActor<APlayerController>();
+    AKiteSurfHUD* HUD = World->SpawnActor<AKiteSurfHUD>();
+    AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+    TestTrue(TEXT("Controller, HUD and pawn spawned"), PC && HUD && Pawn);
+    if (PC && HUD && Pawn)
+    {
+        PC->SetPlayerState(World->SpawnActor<APlayerState>());
+        HUD->PlayerOwner = PC;
+        PC->MyHUD = HUD;
+        PC->Possess(Pawn);
+
+        Pawn->TogglePause();
+        Pawn->TogglePause(); // the duplicate from the same key press, same frame
+        TestTrue(TEXT("One Escape press pauses the game"), UGameplayStatics::IsGamePaused(World));
+        TestNotNull(TEXT("and leaves the pause menu open"), HUD->GetActivePauseMenuWidget());
+
+        if (UKiteSurfPauseMenuWidget* PauseMenu = HUD->GetActivePauseMenuWidget())
+        {
+            // Settings opened from the pause menu replace it on screen and hand back to it.
+            PauseMenu->OnSettingsClicked();
+            TestNotNull(TEXT("Settings open from the pause menu"), PauseMenu->ActiveSettingsWidget.Get());
+            TestEqual(TEXT("The pause menu is hidden behind settings"), PauseMenu->GetVisibility(), ESlateVisibility::Collapsed);
+            PauseMenu->OnSettingsClosed();
+            TestNull(TEXT("Closing settings clears it"), PauseMenu->ActiveSettingsWidget.Get());
+            TestEqual(TEXT("and shows the pause menu again"), PauseMenu->GetVisibility(), ESlateVisibility::Visible);
+            TestTrue(TEXT("The game is still paused"), UGameplayStatics::IsGamePaused(World));
+        }
+    }
+
+    World->DestroyWorld(false);
+    return true;
+}
+
+// The settings screen replaces the main menu rather than drawing over it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FKiteSurfMainMenuHidesBehindSettingsTest,
+    "KiteSurf.UI.MainMenuHidesBehindSettings",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter
+)
+
+bool FKiteSurfMainMenuHidesBehindSettingsTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    TestNotNull(TEXT("World created"), World);
+    if (!World)
+    {
+        return false;
+    }
+
+    UKiteSurfMainMenuWidget* MainMenu = CreateWidget<UKiteSurfMainMenuWidget>(World, UKiteSurfMainMenuWidget::StaticClass());
+    TestNotNull(TEXT("Main menu created"), MainMenu);
+    if (MainMenu)
+    {
+        MainMenu->OnSettingsClicked();
+        TestNotNull(TEXT("Settings open from the main menu"), MainMenu->ActiveSettingsWidget.Get());
+        TestEqual(TEXT("The main menu is hidden behind settings"), MainMenu->GetVisibility(), ESlateVisibility::Collapsed);
+
+        MainMenu->OnSettingsClosed();
+        TestEqual(TEXT("Closing settings shows the main menu again"), MainMenu->GetVisibility(), ESlateVisibility::Visible);
+    }
+
+    World->DestroyWorld(false);
+    return true;
+}

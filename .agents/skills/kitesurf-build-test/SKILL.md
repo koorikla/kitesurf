@@ -53,6 +53,15 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    scripts/smoke-test.sh /Game/Maps/L_OpenWater 600   # gameplay map
    ```
    Look at the screenshot: a clean log does not prove the ocean is visible.
+   To put the game in a particular state for the screenshot, script it with console commands
+   in `-ExecCmds` (all registered in `Source/KiteSurf/Private/KiteSurf.cpp`):
+   ```bash
+   scripts/run-editor.sh /Game/Maps/L_OpenWater -game -RenderOffScreen -ResX=1280 -ResY=720 -log -unattended \
+       -ExecCmds="kitesurf.After 500 kitesurf.Input 1 0 0 0 1, kitesurf.SmokeFrames 700"
+   ```
+   - `kitesurf.After <frames> <command...>` runs a console command later.
+   - `kitesurf.Input <steer> <sheet rate> <carve> <edge pressure> <loop 0|1>` holds inputs on the rider.
+   - `kitesurf.Jump`, `kitesurf.TogglePause` and `kitesurf.OpenSettings` do what the keys and buttons do.
 6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh

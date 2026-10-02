@@ -25,8 +25,11 @@ public:
 	/** Bar position at the start of a ride (0 = sheeted out, 1 = sheeted in). */
 	static constexpr float StartSheet = 0.7f;
 
-	/** Puts the pawn on a beam reach at the given speed with the kite powered up on that side. */
-	static void InitializeRide(class AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec);
+	/**
+	 * Puts the pawn on a beam reach at the given speed with the kite powered up on that side.
+	 * TackSide +1 rides to the right looking downwind, -1 to the left.
+	 */
+	static void InitializeRide(class AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec, float TackSide = 1.0f);
 
 	/** Initial forward speed in cm/s given to pawn on spawn (default 12 kn = ~617.28 cm/s) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "KiteSurf|Spawn")

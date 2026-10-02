@@ -1,5 +1,6 @@
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfSettingsWidget.h"
+#include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
@@ -57,11 +58,18 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 	}
 
 	// Fallback Slate UI
+	// A solid brush: the default border brush is a hollow frame, which leaves the centre see-through.
 	return SNew(SBorder)
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Center)
-		.BorderBackgroundColor(FLinearColor(0.01f, 0.03f, 0.08f, 0.90f))
+		.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+		.BorderBackgroundColor(FLinearColor(0.01f, 0.03f, 0.08f, 1.0f))
 		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
 			SNew(SBox)
 			.WidthOverride(420.0f)
 			[
@@ -149,6 +157,14 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 					]
 				]
 			]
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(40.0f, 0.0f, 0.0f, 0.0f)
+			[
+				KiteSurfControlsLegend::Build()
+			]
 		];
 }
 
@@ -173,14 +189,21 @@ void UKiteSurfMainMenuWidget::OnSettingsClicked()
 	if (ActiveSettingsWidget)
 	{
 		ActiveSettingsWidget->OnBackClickedDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::OnSettingsClosed);
-		ActiveSettingsWidget->AddToViewport(20);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSettingsWidget->AddToViewport(20);
+		}
 		ActiveSettingsWidget->FocusFirst();
+
+		// One screen at a time: the menu comes back when settings close.
+		SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
 void UKiteSurfMainMenuWidget::OnSettingsClosed()
 {
 	ActiveSettingsWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
 	FocusFirst();
 }
 

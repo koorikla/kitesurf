@@ -61,28 +61,49 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_Reset', False)
         print(f'IA_Reset configured and saved: {ia_reset}')
 
+        # 7. IA_EdgePressure (Axis1D): dig the edge in / flatten the board
+        ia_edge_pressure = get_or_create_asset('IA_EdgePressure', '/Game/Input', unreal.InputAction, None)
+        ia_edge_pressure.set_editor_property('value_type', unreal.InputActionValueType.AXIS1D)
+        editor_asset_lib.save_loaded_asset(ia_edge_pressure)
+        editor_asset_lib.save_asset('/Game/Input/IA_EdgePressure', False)
+        print(f'IA_EdgePressure configured and saved: {ia_edge_pressure}')
+
+        # 8. IA_Loop (Digital bool): held, steering loops the kite
+        ia_loop = get_or_create_asset('IA_Loop', '/Game/Input', unreal.InputAction, None)
+        ia_loop.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_loop)
+        editor_asset_lib.save_asset('/Game/Input/IA_Loop', False)
+        print(f'IA_Loop configured and saved: {ia_loop}')
+
         print('=== Creating Input Mapping Context ===')
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
         imc.unmap_all()
 
+        # The bar (kite) is on the arrow keys and the right stick; the board is on WASD and the
+        # left stick. Keep the legend in KiteSurfControlsLegend.cpp and the README in step.
         mappings_spec = [
-            # Steer
-            (ia_steer, 'D', False),
-            (ia_steer, 'A', True),
+            # Steer the kite
             (ia_steer, 'Right', False),
             (ia_steer, 'Left', True),
-            (ia_steer, 'Gamepad_LeftX', False),
-            # Sheet
-            (ia_sheet, 'W', False),
-            (ia_sheet, 'S', True),
+            (ia_steer, 'Gamepad_RightX', False),
+            # Sheet the bar in / out
             (ia_sheet, 'Up', False),
             (ia_sheet, 'Down', True),
+            (ia_sheet, 'Gamepad_RightY', False),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
             (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
-            # Edge
-            (ia_edge, 'E', False),
-            (ia_edge, 'Q', True),
-            (ia_edge, 'Gamepad_LeftY', False),
+            # Loop modifier
+            (ia_loop, 'LeftShift', False),
+            (ia_loop, 'RightShift', False),
+            (ia_loop, 'Gamepad_RightShoulder', False),
+            # Carve the board (IA_Edge keeps its name; it has always driven the carve)
+            (ia_edge, 'D', False),
+            (ia_edge, 'A', True),
+            (ia_edge, 'Gamepad_LeftX', False),
+            # Edge pressure
+            (ia_edge_pressure, 'W', False),
+            (ia_edge_pressure, 'S', True),
+            (ia_edge_pressure, 'Gamepad_LeftY', False),
             # Jump
             (ia_jump, 'SpaceBar', False),
             (ia_jump, 'Gamepad_FaceButton_Bottom', False),
@@ -123,6 +144,8 @@ def build_assets():
         cdo_rider.set_editor_property('steer_action', ia_steer)
         cdo_rider.set_editor_property('sheet_action', ia_sheet)
         cdo_rider.set_editor_property('edge_action', ia_edge)
+        cdo_rider.set_editor_property('edge_pressure_action', ia_edge_pressure)
+        cdo_rider.set_editor_property('loop_action', ia_loop)
         cdo_rider.set_editor_property('jump_action', ia_jump)
         cdo_rider.set_editor_property('pause_action', ia_pause)
         if hasattr(cdo_rider, 'reset_action'):

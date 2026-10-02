@@ -88,7 +88,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestTrue(TEXT("IMC_Default maps IA_Jump"), bHasJumpMapping);
 		TestTrue(TEXT("IMC_Default maps IA_Pause"), bHasPauseMapping);
 
-		TSet<FKey> NegativeKeys = { EKeys::A, EKeys::Left, EKeys::S, EKeys::Down, EKeys::Q, EKeys::Gamepad_LeftTriggerAxis };
+		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Down, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis };
 		TSet<FKey> FoundNegativeKeys;
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
@@ -108,7 +108,32 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 				TestTrue(FString::Printf(TEXT("Mapping for %s has InputModifierNegate"), *Mapping.Key.ToString()), bHasNegate);
 			}
 		}
-		TestEqual(TEXT("All 6 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+		TestEqual(TEXT("All 5 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+
+		// The bar is on the arrows and the right stick, the board on WASD and the left stick.
+		struct FExpectedMapping { FKey Key; const TCHAR* ActionName; };
+		const FExpectedMapping ExpectedMappings[] =
+		{
+			{ EKeys::Left, TEXT("IA_Steer") }, { EKeys::Right, TEXT("IA_Steer") }, { EKeys::Gamepad_RightX, TEXT("IA_Steer") },
+			{ EKeys::Up, TEXT("IA_Sheet") }, { EKeys::Down, TEXT("IA_Sheet") }, { EKeys::Gamepad_RightY, TEXT("IA_Sheet") },
+			{ EKeys::LeftShift, TEXT("IA_Loop") }, { EKeys::Gamepad_RightShoulder, TEXT("IA_Loop") },
+			{ EKeys::A, TEXT("IA_Edge") }, { EKeys::D, TEXT("IA_Edge") }, { EKeys::Gamepad_LeftX, TEXT("IA_Edge") },
+			{ EKeys::W, TEXT("IA_EdgePressure") }, { EKeys::S, TEXT("IA_EdgePressure") }, { EKeys::Gamepad_LeftY, TEXT("IA_EdgePressure") },
+			{ EKeys::SpaceBar, TEXT("IA_Jump") }, { EKeys::Escape, TEXT("IA_Pause") }, { EKeys::R, TEXT("IA_Reset") },
+		};
+		for (const FExpectedMapping& Expected : ExpectedMappings)
+		{
+			FString MappedAction;
+			for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+			{
+				if (Mapping.Key == Expected.Key && Mapping.Action)
+				{
+					MappedAction = Mapping.Action->GetName();
+					break;
+				}
+			}
+			TestEqual(FString::Printf(TEXT("%s is mapped to %s"), *Expected.Key.ToString(), Expected.ActionName), MappedAction, FString(Expected.ActionName));
+		}
 	}
 
 	// Test BP_KiteRider Blueprint class and CDO defaults
@@ -124,6 +149,8 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has SteerAction"), CDO->GetSteerAction());
 			TestNotNull(TEXT("BP_KiteRider has SheetAction"), CDO->GetSheetAction());
 			TestNotNull(TEXT("BP_KiteRider has EdgeAction (IA_Edge wired to BoardMovement edging)"), CDO->GetEdgeAction());
+			TestNotNull(TEXT("BP_KiteRider has EdgePressureAction"), CDO->GetEdgePressureAction());
+			TestNotNull(TEXT("BP_KiteRider has LoopAction"), CDO->GetLoopAction());
 			TestNotNull(TEXT("BP_KiteRider has JumpAction"), CDO->GetJumpAction());
 			TestNotNull(TEXT("BP_KiteRider has PauseAction"), CDO->GetPauseAction());
 			TestNotNull(TEXT("BP_KiteRider CDO has Kite component"), CDO->GetKite());

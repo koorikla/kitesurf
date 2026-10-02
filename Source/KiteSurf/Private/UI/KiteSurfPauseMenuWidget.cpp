@@ -1,4 +1,6 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfControlsLegend.h"
+#include "UI/KiteSurfSettingsWidget.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
 #include "Widgets/Layout/SBorder.h"
@@ -31,6 +33,10 @@ void UKiteSurfPauseMenuWidget::NativeConstruct()
 	{
 		RestartButton->OnClicked.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnRestartClicked);
 	}
+	if (SettingsButton)
+	{
+		SettingsButton->OnClicked.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnSettingsClicked);
+	}
 	if (MainMenuButton)
 	{
 		MainMenuButton->OnClicked.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnMainMenuClicked);
@@ -51,11 +57,18 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 	}
 
 	// Fallback Slate UI
+	// A solid brush, tinted mostly opaque, so the paused game is dimmed behind the menu.
 	return SNew(SBorder)
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Center)
+		.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
 		.BorderBackgroundColor(FLinearColor(0.01f, 0.03f, 0.08f, 0.85f))
 		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
 			SNew(SBox)
 			.WidthOverride(380.0f)
 			[
@@ -111,6 +124,26 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 						.Margin(FMargin(10.0f, 8.0f))
 					]
 				]
+				// Settings Button
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					SAssignNew(SlateSettingsButton, SButton)
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						OnSettingsClicked();
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(TEXT("SETTINGS")))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
+						.Margin(FMargin(10.0f, 8.0f))
+					]
+				]
 				// Main Menu Button
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -152,6 +185,14 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 					]
 				]
 			]
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(40.0f, 0.0f, 0.0f, 0.0f)
+			[
+				KiteSurfControlsLegend::Build()
+			]
 		];
 }
 
@@ -190,6 +231,37 @@ void UKiteSurfPauseMenuWidget::OnRestartClicked()
 		}
 		UGameplayStatics::OpenLevel(World, FName(*LevelName));
 	}
+}
+
+void UKiteSurfPauseMenuWidget::OnSettingsClicked()
+{
+	UWorld* World = GetWorld();
+	if (!World || ActiveSettingsWidget)
+	{
+		return;
+	}
+
+	TSubclassOf<UKiteSurfSettingsWidget> ClassToSpawn = SettingsWidgetClass ? SettingsWidgetClass : TSubclassOf<UKiteSurfSettingsWidget>(UKiteSurfSettingsWidget::StaticClass());
+	ActiveSettingsWidget = CreateWidget<UKiteSurfSettingsWidget>(World, ClassToSpawn);
+	if (ActiveSettingsWidget)
+	{
+		ActiveSettingsWidget->OnBackClickedDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnSettingsClosed);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSettingsWidget->AddToViewport(110); // above the pause menu
+		}
+		ActiveSettingsWidget->FocusFirst();
+
+		// One screen at a time: the pause menu comes back when settings close.
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UKiteSurfPauseMenuWidget::OnSettingsClosed()
+{
+	ActiveSettingsWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
+	FocusFirst();
 }
 
 void UKiteSurfPauseMenuWidget::OnMainMenuClicked()

@@ -5,6 +5,7 @@
 #include "KiteSurfPauseMenuWidget.generated.h"
 
 class UButton;
+class UKiteSurfSettingsWidget;
 class SButton;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPauseMenuResumeClicked);
@@ -27,7 +28,16 @@ public:
 	TObjectPtr<UButton> RestartButton;
 
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Pause")
+	TObjectPtr<UButton> SettingsButton;
+
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Pause")
 	TObjectPtr<UButton> MainMenuButton;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pause")
+	TSubclassOf<UKiteSurfSettingsWidget> SettingsWidgetClass;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pause")
+	TObjectPtr<UKiteSurfSettingsWidget> ActiveSettingsWidget;
 
 	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Pause")
 	TObjectPtr<UButton> QuitButton;
@@ -37,6 +47,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnRestartClicked();
+
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSettingsClicked();
+
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSettingsClosed();
 
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnMainMenuClicked();
@@ -55,6 +71,7 @@ protected:
 private:
 	TSharedPtr<SButton> SlateResumeButton;
 	TSharedPtr<SButton> SlateRestartButton;
+	TSharedPtr<SButton> SlateSettingsButton;
 	TSharedPtr<SButton> SlateMainMenuButton;
 	TSharedPtr<SButton> SlateQuitButton;
 };

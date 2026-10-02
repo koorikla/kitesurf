@@ -52,6 +52,8 @@ public:
 	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
 	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
 	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
+	UInputAction* GetEdgePressureAction() const { return EdgePressureAction.Get(); }
+	UInputAction* GetLoopAction() const { return LoopAction.Get(); }
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
 
@@ -68,6 +70,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSheetInput() const { return CurrentSheetInput; }
 
+	/** Sets every held input at once, as the keys or sticks would. Used by the kitesurf.Input console command to script smoke runs. */
+	void ApplyScriptedInput(float Steer, float SheetRate, float Carve, float EdgePressure, bool bLoop);
+
 	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SetSheetRateInput(float Axis);
@@ -75,6 +80,14 @@ public:
 	/** Sheet in (+) / out (-) input currently held, -1..1. The bar position itself is GetCurrentSheetInput(). */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetSheetRateInput() const { return SheetRateInput; }
+
+	/** Bar steering per unit of mouse travel while the right mouse button is held. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite")
+	float MouseSteerSensitivity;
+
+	/** Bar sheeting per unit of mouse travel while the right mouse button is held. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite")
+	float MouseSheetSensitivity;
 
 	/** Bar travel per second at full sheet input (0..1 range). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite")
@@ -172,6 +185,12 @@ protected:
 	TObjectPtr<UInputAction> EdgeAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> EdgePressureAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> LoopAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -191,6 +210,10 @@ private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
+	void OnEdgePressureTriggered(const FInputActionValue& Value);
+	void OnLoopStarted(const FInputActionValue& Value);
+	void OnLoopCompleted(const FInputActionValue& Value);
+	void UpdateMouseBar();
 	void OnJumpTriggered(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
 	void OnResetTriggered(const FInputActionValue& Value);
@@ -214,10 +237,15 @@ private:
 	float CurrentSteerInput;
 	float CurrentSheetInput;
 	float SheetRateInput;
+	float KeySteerInput;
+	float MouseSteerInput;
+	bool bLoopKeyHeld;
+	FVector SmoothedKiteOffset;
 	float CameraYawDeg;
 	float CameraLookPitchDeg;
 	float RiderFacingYawDeg;
 	bool bViewInitialized;
+	uint64 LastPauseToggleFrame;
 	float KiteAzimuthDeg;
 	FVector BoardVelocity;
 };

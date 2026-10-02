@@ -205,10 +205,13 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 	const int32 SafePreset = FMath::Clamp(CurrentQualityPreset, 0, 3);
 	TSharedPtr<FString> InitiallySelectedQuality = QualityOptions[SafePreset];
 
+	// A solid brush: the default border brush is a hollow frame, which lets whatever is behind
+	// the settings show through the text.
 	return SNew(SBorder)
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Center)
-		.BorderBackgroundColor(FLinearColor(0.02f, 0.05f, 0.1f, 0.94f))
+		.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+		.BorderBackgroundColor(FLinearColor(0.02f, 0.05f, 0.1f, 0.97f))
 		[
 			SNew(SBox)
 			.WidthOverride(540.0f)

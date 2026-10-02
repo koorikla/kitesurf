@@ -26,6 +26,8 @@
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |
 | `UBoardMovementComponent` | `void SetWeightShift(float Value)` | Rider weight along the board in `[-1.0, 1.0]`: +1 on the nose, -1 on the tail. |
 | `UKiteComponent` | `void SetKiteSize(float AreaM2)` / `static float RecommendKiteSizeM2(float WindKnots, float RiderMassKg)` | Rigs a kite of that area (mass and turning radius follow); the size a rider would pick for the wind. |
+| `UWindStreakComponent` | `void Simulate(float DeltaTime)` / `float GetStreakYawDeg() const` | Wind lines on the water round the rider, lying along the wind. |
+| `AKiteSurfHUD` | `static FVector2D GetWindOnScreen(const FVector& Wind, float CameraYawDeg)` | The wind's direction across the view (x right, y down the screen), for the WIND dial. |
 | `AKiteSurfSpot` | `void Setup(AKiteRiderPawn*, const FVector& Origin, const FVector& DownwindDir, bool bIslands, bool bSandbars, bool bSharks)` / `float GetSandHeightCm(const FVector&) const` | Lays out the sandbars, islands and sharks round the start and watches the rider; the height of sand above the water at a point. |
 | `UKiteComponent` | `void SetKiteModel(EKiteModel)` | Rigs the loop (3 strut) or boost (5 strut) kite at the current size. |
 | `UBoardMovementComponent` | `void SetBoardSize(EBoardSize)` | Rides the 132, 138 or 145: pop, planing speed, drag, grip and turn rate follow it. |

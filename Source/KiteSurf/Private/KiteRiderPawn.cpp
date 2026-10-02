@@ -6,6 +6,7 @@
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
+#include "WindStreakComponent.h"
 #include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -127,6 +128,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Foam trail and spray behind the board
 	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
+
+	// Wind lines on the sea
+	WindStreaks = CreateDefaultSubobject<UWindStreakComponent>(TEXT("WindStreaks"));
 
 	// Sound: three loops that are always playing and are faded and pitched by what the rider
 	// would hear (UpdateAudioModulation), and one-shots for the pop, landing, crash and reset.

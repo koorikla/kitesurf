@@ -47,6 +47,8 @@ The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 
 ### Wind
 `UWindComponent` adds gusts, direction drift and shear to the base wind. Gusts are a slow swell over `GustPeriodSeconds` with quicker puffs on top (`GustPuffRate`, `GustPuffShare`), reaching most of `GustStrength` either way. `GetGustFactorAt` gives the current wind over the base wind; the HUD calls out GUST and LULL from it.
 
+The wind's direction is shown two ways. `UWindStreakComponent` keeps a field of long thin foam streaks on the water round the rider, lying along the wind and drifting down it at `DriftFraction` of its speed; they fade in from `MinWindKnots` and are not there in a calm. The HUD's WIND dial (`AKiteSurfHUD::DrawWindFlag`) is a flag seen from above with the top of the dial the way the camera looks (`GetWindOnScreen`), and says in words where the wind comes from.
+
 ## Default Tunable Properties
 
 All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")`:

@@ -111,6 +111,11 @@ back up onto the plane. The BAR panel at the bottom right shows what your hands 
 slides down as you pull it in and tilts as you steer, with a marker for the steering that actually
 reaches the kite.
 
+**Reading the wind.** White streaks on the water lie along the wind and drift down it. The WIND
+dial at the top right is a flag seen from above, with the top of the dial the way you are
+looking: the flag streams the way the wind blows, and the line under it says where the wind is
+coming from ("from the right", "from behind left").
+
 The wind gusts and drops (the HUD calls out GUST and LULL). The kite only pulls while its lines
 are tight: in a hole in the wind, or if you outrun the wind, the lines go slack and the kite
 falls until they come tight again. Pull the bar in too far at low speed and it stalls; let it out.

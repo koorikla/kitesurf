@@ -87,6 +87,8 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderMaxLeanDeg = 22.0f;
 	RiderFloatLeanDeg = 30.0f;
 	RiderAirHangLeanDeg = 38.0f;
+	RiderLoadLeanDeg = 20.0f;
+	RiderLoadCrouch = 0.22f;
 	RiderSwitchDelaySeconds = 0.4f;
 	RiderSwitchTurnRateDeg = 540.0f;
 	HarnessHookOffsetCm = FVector(16.0f, 0.0f, 100.0f);
@@ -264,7 +266,9 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		}
 		if (JumpAction)
 		{
-			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
+			// Held: crouch and load the edge. Released: pop.
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnJumpPressed);
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnJumpReleased);
 		}
 		if (ResetAction)
 		{
@@ -475,9 +479,38 @@ void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 	EdgeBoard(Value.Get<float>());
 }
 
-void AKiteRiderPawn::OnJumpTriggered(const FInputActionValue& Value)
+void AKiteRiderPawn::OnJumpPressed(const FInputActionValue& Value)
 {
-	Jump();
+	SetLoadHeld(true);
+}
+
+void AKiteRiderPawn::OnJumpReleased(const FInputActionValue& Value)
+{
+	ReleaseLoadAndPop();
+}
+
+void AKiteRiderPawn::SetLoadHeld(bool bHeld)
+{
+	if (BoardMovement)
+	{
+		BoardMovement->SetLoadHeld(bHeld);
+	}
+}
+
+bool AKiteRiderPawn::ReleaseLoadAndPop()
+{
+	// The pop uses the load that has built up, so it comes before the crouch is let go.
+	const bool bWasHeld = BoardMovement && BoardMovement->IsLoadHeld();
+	const bool bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+	bool bPopped = false;
+	// If the kite has already pulled the rider off the water there is nothing to pop from, and no
+	// message is needed for that.
+	if (bWasHeld && !bAirborne)
+	{
+		bPopped = Jump();
+	}
+	SetLoadHeld(false);
+	return bPopped;
 }
 
 bool AKiteRiderPawn::Jump()
@@ -711,7 +744,16 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
 		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
 	}
+	// Loading: the rider sits back away from the kite, weight low over the back of the board.
+	const float Load = BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f;
+	if (Load > 0.0f)
+	{
+		const FVector Away = bHasKite ? -TowardsKite : -Facing;
+		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
+	}
 	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
+	// The riders are rigid poses, so the crouch is the body drawn shorter.
+	const FVector CrouchScale(1.0f, 1.0f, 1.0f - RiderLoadCrouch * Load);
 
 	if (RiderMesh)
 	{
@@ -722,6 +764,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	{
 		// The posed riders are built facing +X.
 		RiderStaticMesh->SetWorldRotation(BodyQuat);
+		RiderStaticMesh->SetRelativeScale3D(CrouchScale);
 	}
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them

@@ -14,7 +14,7 @@ namespace
 		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet"), TEXT("") },
 		{ TEXT("Turn the board; spin in the air"), TEXT("A / D"),                     TEXT("Left stick left / right") },
 		{ TEXT("Weight on the nose / the tail"),   TEXT("W / S"),                     TEXT("Left stick up / down") },
-		{ TEXT("Pop (hold S + send the kite first)"), TEXT("Space"),                     TEXT("Bottom face button") },
+		{ TEXT("Hold to load the edge, let go to pop"), TEXT("Space"),                    TEXT("Bottom face button") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
 		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },
 		{ TEXT("In menus: move, change, select"),  TEXT("Arrows, Enter; Esc goes back"), TEXT("D-pad or left stick, bottom face button") },

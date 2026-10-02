@@ -11,6 +11,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
 class UBoardMovementComponent;
+class UBoardWakeComponent;
 class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
@@ -56,6 +57,7 @@ public:
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
@@ -136,6 +138,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardMovementComponent> BoardMovement;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoardWakeComponent> Wake;
 
 	// Procedural Audio Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")

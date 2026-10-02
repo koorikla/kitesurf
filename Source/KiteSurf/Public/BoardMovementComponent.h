@@ -154,6 +154,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningDragCoef;
 
+	/** Planing drag per speed squared (kg/cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float PlaningQuadraticDragCoef;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float EdgeGripCoef;
 

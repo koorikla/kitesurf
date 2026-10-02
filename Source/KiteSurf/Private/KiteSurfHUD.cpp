@@ -157,13 +157,13 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	switch (CurrentOnboardingStep)
 	{
 	case 0:
-		return TEXT("STEER THE KITE: Turn left & right [A/D or Left Stick]");
+		return TEXT("Steer the kite: fly it up and over to the other side to turn around [A / D or Left Stick]");
 	case 1:
-		return TEXT("POWER UP: Pull the bar to sheet in [W / S or Right Trigger]");
+		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [W / S or Triggers]");
 	case 2:
-		return TEXT("CARVE & EDGE: Lean against the kite to build tension [Q / E]");
+		return TEXT("Carve the board: hold an edge to turn upwind or downwind [Q / E or Left Stick up / down]");
 	case 3:
-		return TEXT("SEND IT: Pop off the water to jump [SPACE or Bottom Face Button]");
+		return TEXT("Send it: hold an edge and pop off the water to jump [SPACE or Bottom Face Button]");
 	default:
 		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
 	}
@@ -238,7 +238,7 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		return;
 	}
 
-	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 180.0f);
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 204.0f);
 	DrawText(TEXT("KITESURF TELEMETRY"), FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 28.0f, nullptr, 1.1f);
 
 	FVector Vel = RiderPawn->GetBoardVelocity();
@@ -283,6 +283,9 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 			BoardMove->GetLastJumpApexHeight() / 100.0f);
 		DrawText(JumpStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 144.0f, nullptr, 1.1f);
 	}
+
+	const FString SheetStr = FString::Printf(TEXT("BAR: %.0f%% sheeted in"), RiderPawn->GetCurrentSheetInput() * 100.0f);
+	DrawText(SheetStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 168.0f, nullptr, 1.1f);
 }
 
 void AKiteSurfHUD::DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius)
@@ -307,49 +310,44 @@ void AKiteSurfHUD::DrawWindCompass(const FVector& WindVec, float CenterX, float 
 
 void AKiteSurfHUD::DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius)
 {
-	if (!RiderPawn)
+	const UKiteComponent* Kite = RiderPawn ? RiderPawn->GetKite() : nullptr;
+	if (!Kite)
 	{
 		return;
 	}
 
 	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), CenterX - 160.0f, CenterY - 145.0f, 320.0f, 160.0f);
 
-	float AzimuthDeg = RiderPawn->GetKiteAzimuthDeg();
-	FString AzimuthStr = FString::Printf(TEXT("WIND WINDOW (AZIMUTH: %+.1f deg)"), AzimuthDeg);
-	DrawText(AzimuthStr, FLinearColor(1.0f, 0.85f, 0.2f), CenterX - 140.0f, CenterY - 135.0f, nullptr, 1.0f);
+	const FString Title = FString::Printf(TEXT("WIND WINDOW   AZ %+.0f   EL %.0f"), Kite->GetAzimuthDeg(), Kite->GetElevationDeg());
+	DrawText(Title, FLinearColor(1.0f, 0.85f, 0.2f), CenterX - 140.0f, CenterY - 135.0f, nullptr, 1.0f);
 
+	// The window seen from the rider looking downwind: the arc is its edge, from the left horizon
+	// over the zenith to the right horizon, and the water is the base line.
 	const int32 NumSegments = 30;
 	for (int32 i = 0; i < NumSegments; ++i)
 	{
-		float Deg1 = -90.0f + (180.0f * i) / NumSegments;
-		float Deg2 = -90.0f + (180.0f * (i + 1)) / NumSegments;
-		float Rad1 = FMath::DegreesToRadians(270.0f + Deg1);
-		float Rad2 = FMath::DegreesToRadians(270.0f + Deg2);
-		float X1 = CenterX + Radius * FMath::Cos(Rad1);
-		float Y1 = CenterY + Radius * FMath::Sin(Rad1);
-		float X2 = CenterX + Radius * FMath::Cos(Rad2);
-		float Y2 = CenterY + Radius * FMath::Sin(Rad2);
-		DrawLine(X1, Y1, X2, Y2, FLinearColor(0.4f, 0.7f, 1.0f, 0.8f), 2.0f);
+		const float Rad1 = FMath::DegreesToRadians(180.0f + (180.0f * i) / NumSegments);
+		const float Rad2 = FMath::DegreesToRadians(180.0f + (180.0f * (i + 1)) / NumSegments);
+		DrawLine(CenterX + Radius * FMath::Cos(Rad1), CenterY + Radius * FMath::Sin(Rad1),
+			CenterX + Radius * FMath::Cos(Rad2), CenterY + Radius * FMath::Sin(Rad2), FLinearColor(0.4f, 0.7f, 1.0f, 0.8f), 2.0f);
 	}
+	DrawLine(CenterX - Radius, CenterY, CenterX + Radius, CenterY, FLinearColor(0.4f, 0.7f, 1.0f, 0.5f), 1.5f);
 
-	const float Ticks[] = { -90.0f, -45.0f, 0.0f, 45.0f, 90.0f };
-	for (float TickDeg : Ticks)
+	// Clock ticks at 9, 10:30, 12, 1:30 and 3
+	const float ClockTicksDeg[] = { -90.0f, -45.0f, 0.0f, 45.0f, 90.0f };
+	for (float TickDeg : ClockTicksDeg)
 	{
-		float Rad = FMath::DegreesToRadians(270.0f + TickDeg);
-		float XInner = CenterX + (Radius - 8.0f) * FMath::Cos(Rad);
-		float YInner = CenterY + (Radius - 8.0f) * FMath::Sin(Rad);
-		float XOuter = CenterX + (Radius + 8.0f) * FMath::Cos(Rad);
-		float YOuter = CenterY + (Radius + 8.0f) * FMath::Sin(Rad);
-		DrawLine(XInner, YInner, XOuter, YOuter, FLinearColor(0.8f, 0.9f, 1.0f), 1.5f);
+		const float Rad = FMath::DegreesToRadians(270.0f + TickDeg);
+		DrawLine(CenterX + (Radius - 8.0f) * FMath::Cos(Rad), CenterY + (Radius - 8.0f) * FMath::Sin(Rad),
+			CenterX + (Radius + 8.0f) * FMath::Cos(Rad), CenterY + (Radius + 8.0f) * FMath::Sin(Rad), FLinearColor(0.8f, 0.9f, 1.0f), 1.5f);
 	}
 
-	DrawText(TEXT("-90"), FLinearColor::White, CenterX - Radius - 15.0f, CenterY - 15.0f, nullptr, 0.8f);
-	DrawText(TEXT("0"), FLinearColor::White, CenterX - 4.0f, CenterY - Radius - 20.0f, nullptr, 0.8f);
-	DrawText(TEXT("+90"), FLinearColor::White, CenterX + Radius - 10.0f, CenterY - 15.0f, nullptr, 0.8f);
-
-	float KiteRad = FMath::DegreesToRadians(270.0f + AzimuthDeg);
-	float MarkerX = CenterX + Radius * FMath::Cos(KiteRad);
-	float MarkerY = CenterY + Radius * FMath::Sin(KiteRad);
+	// The kite: sideways and upward parts of its direction, so it sits on the arc at the window
+	// edge and moves towards the middle as it goes deeper into the window.
+	const float ClockRad = FMath::DegreesToRadians(Kite->GetClockDeg());
+	const float RingRadius = Radius * FMath::Cos(FMath::DegreesToRadians(Kite->GetWindowDepthDeg()));
+	const float MarkerX = CenterX + RingRadius * FMath::Sin(ClockRad);
+	const float MarkerY = CenterY - RingRadius * FMath::Cos(ClockRad);
 	DrawLine(CenterX, CenterY, MarkerX, MarkerY, FLinearColor(1.0f, 0.5f, 0.1f, 0.6f), 1.5f);
 	DrawRect(FLinearColor(1.0f, 0.3f, 0.0f, 1.0f), MarkerX - 6.0f, MarkerY - 6.0f, 12.0f, 12.0f);
 	DrawRect(FLinearColor(1.0f, 0.9f, 0.2f, 1.0f), MarkerX - 3.0f, MarkerY - 3.0f, 6.0f, 6.0f);
@@ -461,7 +459,8 @@ void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
 		}
 	case 1: // Sheet
 		{
-			const float SheetInput = RiderPawn->GetCurrentSheetInput();
+			// The bar holds its position, so progress comes from moving it, not from where it sits.
+			const float SheetInput = FMath::Abs(RiderPawn->GetSheetRateInput());
 			if (SheetInput > 0.3f)
 			{
 				CurrentStepProgress += DeltaTime * 0.75f;

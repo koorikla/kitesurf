@@ -19,7 +19,8 @@ UBoardMovementComponent::UBoardMovementComponent()
 	BuoyancyN = 1500.0f;
 	PlaningThresholdCmS = 400.0f;
 	DisplacementDragCoef = 0.1f;
-	PlaningDragCoef = 16.0f;
+	PlaningDragCoef = 8.0f;
+	PlaningQuadraticDragCoef = 0.03f; // mostly quadratic, so board speed scales with wind speed
 	EdgeGripCoef = 1700.0f;
 	MaxEdgeAngleDeg = 35.0f;
 	MaxBoardSpeed = 35.0f * 51.44f; // 1800.4 cm/s (35 kn)
@@ -367,7 +368,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				else
 				{
 					// Planing regime: linear drag + high-speed form/spray drag
-					ForwardDragMagnitude = (PlaningDragCoef * ForwardSpeed + 0.015f * (ForwardSpeed * ForwardSpeed)) * ForwardSign;
+					ForwardDragMagnitude = (PlaningDragCoef * FMath::Abs(ForwardSpeed) + PlaningQuadraticDragCoef * (ForwardSpeed * ForwardSpeed)) * ForwardSign;
 
 					// Hydrodynamic lift raising the board with surface contact falloff
 					const float SurfaceContact = FMath::Clamp((Submersion + 10.0f) / 15.0f, 0.0f, 1.0f);

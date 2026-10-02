@@ -88,7 +88,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestTrue(TEXT("IMC_Default maps IA_Jump"), bHasJumpMapping);
 		TestTrue(TEXT("IMC_Default maps IA_Pause"), bHasPauseMapping);
 
-		TSet<FKey> NegativeKeys = { EKeys::A, EKeys::Left, EKeys::S, EKeys::Down, EKeys::Q };
+		TSet<FKey> NegativeKeys = { EKeys::A, EKeys::Left, EKeys::S, EKeys::Down, EKeys::Q, EKeys::Gamepad_LeftTriggerAxis };
 		TSet<FKey> FoundNegativeKeys;
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
@@ -108,7 +108,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 				TestTrue(FString::Printf(TEXT("Mapping for %s has InputModifierNegate"), *Mapping.Key.ToString()), bHasNegate);
 			}
 		}
-		TestEqual(TEXT("All 5 negative keys are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+		TestEqual(TEXT("All 6 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
 	}
 
 	// Test BP_KiteRider Blueprint class and CDO defaults

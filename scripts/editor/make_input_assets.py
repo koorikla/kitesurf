@@ -78,6 +78,7 @@ def build_assets():
             (ia_sheet, 'Up', False),
             (ia_sheet, 'Down', True),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
+            (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
             # Edge
             (ia_edge, 'E', False),
             (ia_edge, 'Q', True),
@@ -127,20 +128,13 @@ def build_assets():
         if hasattr(cdo_rider, 'reset_action'):
             cdo_rider.set_editor_property('reset_action', ia_reset)
 
+        # Camera distance, pitch and field of view are tunables on AKiteRiderPawn (applied every
+        # tick by UpdateCamera); the Blueprint only smooths the boom.
         boom = cdo_rider.get_editor_property('camera_boom')
         if boom:
-            boom.set_editor_property('target_arm_length', 900.0)
-            rot = boom.get_editor_property('relative_rotation')
-            rot.pitch = -15.0
-            boom.set_editor_property('relative_rotation', rot)
             boom.set_editor_property('enable_camera_lag', True)
             boom.set_editor_property('camera_lag_speed', 6.0)
-            boom.set_editor_property('enable_camera_rotation_lag', True)
-            boom.set_editor_property('camera_rotation_lag_speed', 6.0)
-
-        cam = cdo_rider.get_editor_property('follow_camera')
-        if cam:
-            cam.set_editor_property('field_of_view', 80.0)
+            boom.set_editor_property('enable_camera_rotation_lag', False)
 
         rider_comp = cdo_rider.get_editor_property('rider_mesh')
         anim_asset = editor_asset_lib.load_asset('/Game/Characters/Mannequins/Anims/MM_Idle')

@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
+#include "BoardWakeComponent.h"
 #include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -106,6 +107,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Kite component: aerodynamics producing the line force consumed by BoardMovement
 	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
+
+	// Foam trail and spray behind the board
+	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
 
 	// Procedural audio components
 	AudioBedComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("AudioBedComponent"));

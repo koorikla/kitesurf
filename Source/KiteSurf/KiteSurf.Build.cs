@@ -23,6 +23,8 @@ public class KiteSurf : ModuleRules
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
+			"AudioMixer",
+			"MetasoundEngine"
 		});
 	}
 }

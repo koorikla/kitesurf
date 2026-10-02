@@ -33,6 +33,10 @@ enum class EJumpRejectReason : uint8
 	NotEdged   UMETA(DisplayName = "Not Edged")
 };
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
 {
@@ -40,6 +44,21 @@ class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
 
 public:
 	UBoardMovementComponent();
+
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardLanding OnBoardLanding;
+
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardCrash OnBoardCrash;
+
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardReset OnBoardReset;
+
+	UFUNCTION(BlueprintCallable, Category = "Board|State")
+	void TriggerCrash(float CrashIntensity = 1.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Board|State")
+	void ResetToTack(float SpeedKnots = 8.0f);
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 

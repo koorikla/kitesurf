@@ -54,6 +54,13 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_Pause', False)
         print(f'IA_Pause configured and saved: {ia_pause}')
 
+        # 6. IA_Reset (Digital bool)
+        ia_reset = get_or_create_asset('IA_Reset', '/Game/Input', unreal.InputAction, None)
+        ia_reset.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_reset)
+        editor_asset_lib.save_asset('/Game/Input/IA_Reset', False)
+        print(f'IA_Reset configured and saved: {ia_reset}')
+
         print('=== Creating Input Mapping Context ===')
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
         imc.unmap_all()
@@ -81,6 +88,9 @@ def build_assets():
             # Pause
             (ia_pause, 'Escape', False),
             (ia_pause, 'Gamepad_Special_Right', False),
+            # Reset (R and Gamepad Face Button Right)
+            (ia_reset, 'R', False),
+            (ia_reset, 'Gamepad_FaceButton_Right', False),
         ]
 
         for action, key_str, _ in mappings_spec:
@@ -114,6 +124,8 @@ def build_assets():
         cdo_rider.set_editor_property('edge_action', ia_edge)
         cdo_rider.set_editor_property('jump_action', ia_jump)
         cdo_rider.set_editor_property('pause_action', ia_pause)
+        if hasattr(cdo_rider, 'reset_action'):
+            cdo_rider.set_editor_property('reset_action', ia_reset)
 
         boom = cdo_rider.get_editor_property('camera_boom')
         if boom:

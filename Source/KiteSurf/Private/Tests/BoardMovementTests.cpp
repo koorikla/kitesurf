@@ -482,15 +482,90 @@ bool FKiteSurfJumpCrashRecovery::RunTest(const FString& Parameters)
 				TestTrue(TEXT("Crash triggered when landing angle > 30 deg"), BoardComp->IsCrashing());
 				TestEqual(TEXT("Board enters Landing state"), BoardComp->GetBoardState(), EBoardState::Landing);
 
-				// Simulate crash deceleration and respawn (~2.3 seconds)
-				for (int32 i = 0; i < 70; ++i)
+				// Simulate crash deceleration and respawn (recovers within 2.0 seconds)
+				int32 RecoveryTicks = 0;
+				while (BoardComp->IsCrashing() && RecoveryTicks < 60)
 				{
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+					RecoveryTicks++;
 				}
 
 				TestFalse(TEXT("Crash recovery completes and clears crash flag"), BoardComp->IsCrashing());
-				TestEqual(TEXT("Resets to Displacement state after crash"), BoardComp->GetBoardState(), EBoardState::Displacement);
-				TestNearlyEqual(TEXT("Velocity zeroed after crash recovery"), (float)BoardComp->Velocity.Size(), 0.0f, 1.0f);
+				TestTrue(TEXT("Resets to rideable state after crash"), BoardComp->GetBoardState() == EBoardState::Planing || BoardComp->GetBoardState() == EBoardState::Displacement);
+				TestTrue(TEXT("Has 8 kn speed after crash recovery"), (float)BoardComp->Velocity.Size2D() >= 400.0f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfMovementCrashReset, "KiteSurf.Movement.CrashReset", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfMovementCrashReset::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			UKiteComponent* KiteComp = Pawn->FindComponentByClass<UKiteComponent>();
+			TestNotNull(TEXT("KiteComponent found"), KiteComp);
+
+			if (BoardComp)
+			{
+				// 1. Initial riding state on tack
+				Pawn->SetActorRotation(FRotator(0.0f, 45.0f, 0.0f));
+				BoardComp->Velocity = FVector(500.0f, 500.0f, 0.0f);
+				BoardComp->SetBoardState(EBoardState::Planing);
+
+				// 2. Trigger crash
+				BoardComp->TriggerCrash(1.0f);
+				TestTrue(TEXT("Board is crashing"), BoardComp->IsCrashing());
+
+				// 3. Simulate forward in time until crash clears (within 2.0s)
+				const float DeltaTime = 0.0333f;
+				int32 TicksToRecover = 0;
+				while (BoardComp->IsCrashing() && TicksToRecover < 60)
+				{
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+					TicksToRecover++;
+				}
+
+				// 4. Verify rideable state (>= 8 kn, Planing or Displacement) within 2 s
+				TestFalse(TEXT("Crash cleared within 2s"), BoardComp->IsCrashing());
+				TestTrue(TEXT("Recovered within 2s"), TicksToRecover * DeltaTime <= 2.0f);
+				const bool bRideable = (BoardComp->GetBoardState() == EBoardState::Planing || BoardComp->GetBoardState() == EBoardState::Displacement);
+				TestTrue(TEXT("Board returned to rideable state"), bRideable);
+				TestTrue(TEXT("Board has >= 8 kn speed (~411 cm/s)"), BoardComp->Velocity.Size2D() >= 400.0f);
+
+				// 5. Verify board alignment matches tack heading
+				const FVector ExpectedHeading = FVector(500.0f, 500.0f, 0.0f).GetSafeNormal2D();
+				const FVector ActualHeading = BoardComp->UpdatedComponent->GetForwardVector().GetSafeNormal2D();
+				TestNearlyEqual(TEXT("Board heading aligned with tack"), (float)FVector::DotProduct(ExpectedHeading, ActualHeading), 1.0f, 0.05f);
+
+				// 6. Verify kite parked at 10:30 (Azimuth -45 deg, Elevation 45 deg)
+				if (KiteComp)
+				{
+					TestNearlyEqual(TEXT("Kite elevation reset to 45 deg"), KiteComp->GetElevationDeg(), 45.0f, 1.0f);
+					TestNearlyEqual(TEXT("Kite azimuth reset to -45 deg (10:30 park)"), KiteComp->GetAzimuthDeg(), -45.0f, 1.0f);
+				}
+
+				// 7. Verify manual reset (R key) resets mid-ride
+				BoardComp->Velocity = FVector(100.0f, 0.0f, 0.0f);
+				Pawn->ResetRider();
+				TestTrue(TEXT("Manual reset restores >= 8 kn"), BoardComp->Velocity.Size2D() >= 400.0f);
+				TestFalse(TEXT("Manual reset not crashing"), BoardComp->IsCrashing());
 			}
 		}
 

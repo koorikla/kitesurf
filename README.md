@@ -62,13 +62,19 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
 | Sheet in / out (the bar holds its position) | Up / Down | Right stick up / down, triggers |
-| Loop the kite | Hold Shift while steering | Hold right bumper while steering |
-| Bar on the mouse | Hold right button: move to steer and sheet, left button loops | |
+| Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
+| Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Pop (hold S and send the kite first for a real jump) | Space | Bottom face button |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
+
+**Steering and loops.** The bar works like a real one, with no extra key. Steer away from the
+side the kite is on and it flies up over the top to the other side; let go and it parks where it
+is. Keep the bar held towards the side the kite is already on and it turns down and round: a
+loop, for as long as you hold it. So holding the bar through a change of direction ends in a
+loop on the new side; let go as the kite gets there if you do not want one.
 
 **Jumping.** A pop on its own is a hop of about a metre: the height comes from the kite. Hold
 your weight back (S) to dig the edge in, steer the kite up hard, and as the pull builds pull the

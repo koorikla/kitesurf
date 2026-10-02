@@ -157,7 +157,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	switch (CurrentOnboardingStep)
 	{
 	case 0:
-		return TEXT("Steer the kite: fly it over the top to change direction; hold Shift to loop it [Left / Right or Right Stick]");
+		return TEXT("Steer the kite: steer away from it to fly it over the top; keep steering towards its own side to loop it [Left / Right or Right Stick]");
 	case 1:
 		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [Up / Down or Right Stick]");
 	case 2:
@@ -468,7 +468,7 @@ void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 
 	const float Steer = RiderPawn->GetCurrentSteerInput();
 	const float Sheet = RiderPawn->GetCurrentSheetInput();
-	const bool bLooping = Kite->IsLoopHeld();
+	const bool bLooping = Kite->IsLooping();
 	const bool bFlying = !Kite->IsCrashed() && Kite->AreLinesTaut();
 
 	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.75f), ScreenX, ScreenY, Width, Height);
@@ -645,7 +645,10 @@ void AKiteSurfHUD::DrawOnboardingPrompt(float ScreenW, float ScreenH)
 	const float PromptY = 90.0f;
 	const float BoxW = FMath::Max(TextW + 40.0f, 480.0f);
 	const float BoxH = 75.0f;
-	const float BoxX = CenterX - (BoxW * 0.5f);
+	// Centred, but kept clear of the telemetry panel on the left and the FPS readout on the right.
+	const float LeftLimit = 365.0f;
+	const float RightLimit = FMath::Max(ScreenW - 150.0f - BoxW, LeftLimit);
+	const float BoxX = FMath::Clamp(CenterX - (BoxW * 0.5f), LeftLimit, RightLimit);
 
 	// Background container
 	DrawRect(FLinearColor(0.02f, 0.06f, 0.12f, 0.85f), BoxX, PromptY, BoxW, BoxH);

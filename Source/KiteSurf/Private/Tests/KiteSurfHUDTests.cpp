@@ -116,11 +116,16 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		{
 			{ EKeys::Left, TEXT("IA_Steer") }, { EKeys::Right, TEXT("IA_Steer") }, { EKeys::Gamepad_RightX, TEXT("IA_Steer") },
 			{ EKeys::Up, TEXT("IA_Sheet") }, { EKeys::Down, TEXT("IA_Sheet") }, { EKeys::Gamepad_RightY, TEXT("IA_Sheet") },
-			{ EKeys::LeftShift, TEXT("IA_Loop") }, { EKeys::Gamepad_RightShoulder, TEXT("IA_Loop") },
 			{ EKeys::A, TEXT("IA_Edge") }, { EKeys::D, TEXT("IA_Edge") }, { EKeys::Gamepad_LeftX, TEXT("IA_Edge") },
 			{ EKeys::W, TEXT("IA_WeightShift") }, { EKeys::S, TEXT("IA_WeightShift") }, { EKeys::Gamepad_LeftY, TEXT("IA_WeightShift") },
 			{ EKeys::SpaceBar, TEXT("IA_Jump") }, { EKeys::Escape, TEXT("IA_Pause") }, { EKeys::R, TEXT("IA_Reset") },
 		};
+		// Looping needs no key of its own: it is the bar held towards the kite's side.
+		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+		{
+			TestFalse(FString::Printf(TEXT("%s is not bound to a loop modifier"), *Mapping.Key.ToString()), Mapping.Key == EKeys::LeftShift || Mapping.Key == EKeys::RightShift || Mapping.Key == EKeys::Gamepad_RightShoulder);
+		}
+
 		for (const FExpectedMapping& Expected : ExpectedMappings)
 		{
 			FString MappedAction;
@@ -150,7 +155,6 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has SheetAction"), CDO->GetSheetAction());
 			TestNotNull(TEXT("BP_KiteRider has EdgeAction (IA_Edge wired to BoardMovement edging)"), CDO->GetEdgeAction());
 			TestNotNull(TEXT("BP_KiteRider has WeightShiftAction"), CDO->GetWeightShiftAction());
-			TestNotNull(TEXT("BP_KiteRider has LoopAction"), CDO->GetLoopAction());
 			TestNotNull(TEXT("BP_KiteRider has JumpAction"), CDO->GetJumpAction());
 			TestNotNull(TEXT("BP_KiteRider has PauseAction"), CDO->GetPauseAction());
 			TestNotNull(TEXT("BP_KiteRider CDO has Kite component"), CDO->GetKite());

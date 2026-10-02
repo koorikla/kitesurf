@@ -313,17 +313,18 @@ bool FKiteSurfKiteSteeringTravelsRoundTheWindow::RunTest(const FString& Paramete
 	FKiteFlight Settle;
 	Settle.Fly(Kite, 0.0f, 4.0f);
 
-	// Bar left: up over the top and down the left side.
+	// Bar left, away from the kite: up over the top and onto the left side.
 	FKiteFlight Travel;
 	float Seconds = 0.0f;
-	while (Kite->GetClockDeg() > -45.0f && Seconds < 12.0f)
+	while (Kite->GetClockDeg() > -30.0f && Seconds < 12.0f)
 	{
 		Travel.Fly(Kite, -1.0f, RideDeltaTime);
 		Seconds += RideDeltaTime;
 	}
-	TestTrue(FString::Printf(TEXT("Steering left carries the kite from 2 o'clock to 10:30 in %.1f s"), Seconds), Seconds < 12.0f);
+	TestTrue(FString::Printf(TEXT("Steering left carries the kite from 2 o'clock to 11 in %.1f s"), Seconds), Seconds < 12.0f);
 	TestTrue(FString::Printf(TEXT("It stays above the water on the way (lowest elevation %.1f deg)"), Travel.MinElevationDeg), Travel.MinElevationDeg >= Kite->MinElevationDeg - 4.0f);
-	TestNearlyEqual(TEXT("Plain steering does not count as looping"), Kite->GetTurnDeg(), 0.0f, 0.1f);
+	TestNearlyEqual(TEXT("Flying the kite across is not a loop"), Kite->GetTurnDeg(), 0.0f, 0.1f);
+	TestFalse(TEXT("and the assist is still flying it"), Kite->IsLooping());
 
 	// Bar centred: it stops there.
 	const float ClockAtRelease = Kite->GetClockDeg();
@@ -332,13 +333,46 @@ bool FKiteSurfKiteSteeringTravelsRoundTheWindow::RunTest(const FString& Paramete
 	TestTrue(FString::Printf(TEXT("Centring the bar parks the kite (%.0f cm/s)"), Kite->GetKiteVelocity().Size()), Kite->GetKiteVelocity().Size() < 60.0f);
 	TestNearlyEqual(TEXT("It parks close to where the bar was centred"), Kite->GetClockDeg(), ClockAtRelease, 25.0f);
 
-	// Bar right held all the way: it comes back over and stops above the water on the right.
+	// Bar right: it comes back over the top. Kept held once the kite is on the right, the bar
+	// goes straight to the kite and it loops there; no other key is involved.
 	FKiteFlight Back;
-	Back.Fly(Kite, 1.0f, 15.0f);
-	TestTrue(FString::Printf(TEXT("Held right, the kite ends low on the right (clock %.0f)"), Kite->GetClockDeg()), Kite->GetClockDeg() > 60.0f);
-	TestFalse(TEXT("and stays out of the water"), Kite->IsCrashed());
-	TestTrue(FString::Printf(TEXT("pulling out within a few degrees of the minimum elevation (lowest %.1f deg)"), Back.MinElevationDeg), Back.MinElevationDeg >= Kite->MinElevationDeg - 4.0f);
-	TestTrue(FString::Printf(TEXT("and stays near the window edge (depth %.0f deg)"), Kite->GetWindowDepthDeg()), Kite->GetWindowDepthDeg() < 30.0f);
+	Seconds = 0.0f;
+	while (!Kite->IsLooping() && Seconds < 12.0f)
+	{
+		Back.Fly(Kite, 1.0f, RideDeltaTime);
+		Seconds += RideDeltaTime;
+	}
+	TestTrue(FString::Printf(TEXT("Held right, the kite crosses to the right and starts to loop (clock %.0f after %.1f s)"), Kite->GetClockDeg(), Seconds), Kite->IsLooping() && Kite->GetClockDeg() >= Kite->LoopClockDeg - 1.0f);
+	TestTrue(FString::Printf(TEXT("staying above the water on the way (lowest elevation %.1f deg)"), Back.MinElevationDeg), Back.MinElevationDeg >= Kite->MinElevationDeg - 4.0f);
+
+	FKiteFlight Loop;
+	Seconds = 0.0f;
+	while (FMath::Abs(Kite->GetTurnDeg()) < 360.0f && !Kite->IsCrashed() && Seconds < 6.0f)
+	{
+		Loop.Fly(Kite, 1.0f, RideDeltaTime);
+		Seconds += RideDeltaTime;
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("SteeringTravelsRoundTheWindow: loop on the kite's own side took %.1f s, lowest elevation %.1f deg, peak %.0f N"), Seconds, Loop.MinElevationDeg, Loop.PeakTensionN);
+	TestTrue(FString::Printf(TEXT("Still held, it flies a full loop (%.0f deg in %.1f s)"), Kite->GetTurnDeg(), Seconds), FMath::Abs(Kite->GetTurnDeg()) >= 360.0f);
+	TestFalse(TEXT("without going into the water"), Kite->IsCrashed());
+
+	// Let go: the assist takes the kite back and parks it.
+	FKiteFlight Recover;
+	Recover.Fly(Kite, 0.0f, 6.0f);
+	TestFalse(TEXT("Letting go of the bar ends the loop"), Kite->IsLooping());
+	TestFalse(TEXT("and the kite stays out of the water"), Kite->IsCrashed());
+	TestTrue(FString::Printf(TEXT("parked near the window edge (depth %.0f deg, %.0f cm/s)"), Kite->GetWindowDepthDeg(), Kite->GetKiteVelocity().Size()), Kite->GetWindowDepthDeg() < 30.0f && Kite->GetKiteVelocity().Size() < 150.0f);
+
+	// Reversing the bar mid-loop is a new request, not more of the loop.
+	Kite->SetWindowPosition(60.0f, 10.0f);
+	Settle.Fly(Kite, 0.0f, 4.0f);
+	FKiteFlight Start;
+	Start.Fly(Kite, 1.0f, 0.3f);
+	TestTrue(TEXT("Bar towards the kite's own side loops at once"), Kite->IsLooping());
+	Start.Fly(Kite, -1.0f, RideDeltaTime);
+	Kite->SteerKite(-1.0f);
+	Kite->UpdateKite(RideDeltaTime);
+	TestFalse(TEXT("Bar reversed: the kite is being flown to the other side instead"), Kite->IsLooping());
 	return true;
 }
 

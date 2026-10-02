@@ -6,6 +6,7 @@
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
+class USkeletalMeshComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
@@ -52,6 +53,8 @@ public:
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
+	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UKiteComponent> Kite;
@@ -62,6 +65,12 @@ protected:
 	// Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BoardMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USkeletalMeshComponent> RiderMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> ControlBarMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -91,11 +100,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> JumpAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> PauseAction;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePause();
+
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
 	void OnJumpTriggered(const FInputActionValue& Value);
+	void OnPauseTriggered(const FInputActionValue& Value);
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;

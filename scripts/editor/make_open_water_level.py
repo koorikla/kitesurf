@@ -7,15 +7,12 @@ map_path = '/Game/Maps/L_OpenWater'
 # 1. Create or load the level
 level_editor_subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 
-try:
-    # Try creating new level
-    success = unreal.EditorLevelLibrary.new_level(map_path)
-    if not success:
-        print(f"new_level returned False, loading {map_path}...")
-        unreal.EditorLevelLibrary.load_level(map_path)
-except Exception as e:
-    print(f"Error creating level: {e}, attempting load...")
-    unreal.EditorLevelLibrary.load_level(map_path)
+if unreal.EditorAssetLibrary.does_asset_exist(map_path):
+    print(f"Level exists, loading {map_path}...")
+    level_editor_subsystem.load_level(map_path)
+else:
+    print(f"Creating new level at {map_path}...")
+    level_editor_subsystem.new_level(map_path)
 
 # Clear any existing actors if we loaded an existing level to ensure clean state
 existing_actors = unreal.EditorLevelLibrary.get_all_level_actors()
@@ -33,6 +30,7 @@ if sun_actor:
     sun_actor.set_actor_label('DirectionalLight_Sun')
     light_comp = sun_actor.get_component_by_class(unreal.DirectionalLightComponent)
     if light_comp:
+        light_comp.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE)
         light_comp.set_editor_property('atmosphere_sun_light', True)
         light_comp.set_editor_property('intensity', 10.0)
     print("Spawned and configured DirectionalLight")
@@ -55,6 +53,7 @@ if skylight:
     skylight.set_actor_label('SkyLight')
     sl_comp = skylight.get_component_by_class(unreal.SkyLightComponent)
     if sl_comp:
+        sl_comp.set_editor_property('mobility', unreal.ComponentMobility.MOVABLE)
         sl_comp.set_editor_property('real_time_capture', True)
     print("Spawned and configured SkyLight")
 
@@ -84,6 +83,7 @@ if cloud:
 
 # 7. Spawn WaterZone if required by Water plugin, or WaterBodyOcean
 # In UE 5.x, WaterBodyOcean requires or works with a WaterZone in the level
+water_zone = None
 if hasattr(unreal, 'WaterZone'):
     water_zone = unreal.EditorLevelLibrary.spawn_actor_from_class(
         unreal.WaterZone,
@@ -101,6 +101,46 @@ ocean = unreal.EditorLevelLibrary.spawn_actor_from_class(
 if ocean:
     ocean.set_actor_label('WaterBodyOcean')
     print("Spawned WaterBodyOcean at Z=0")
+
+    # Configure Gerstner Waves on ocean
+    print("Setting up Gerstner Water Waves...")
+    waves = unreal.new_object(unreal.GerstnerWaterWaves, ocean)
+    gen = unreal.new_object(unreal.GerstnerWaterWaveGeneratorSimple, waves)
+    waves.set_editor_property('gerstner_wave_generator', gen)
+
+    gen.set_editor_property('num_waves', 16)
+    gen.set_editor_property('min_wavelength', 1200.0)
+    gen.set_editor_property('max_wavelength', 6000.0)
+    gen.set_editor_property('min_amplitude', 15.0)
+    gen.set_editor_property('max_amplitude', 60.0)
+    gen.set_editor_property('wind_angle_deg', 45.0)
+    gen.set_editor_property('direction_angular_spread_deg', 40.0)
+    gen.set_editor_property('small_wave_steepness', 0.25)
+    gen.set_editor_property('large_wave_steepness', 0.15)
+
+    ocean.set_editor_property('water_waves', waves)
+    print("Configured Gerstner waves on ocean")
+
+    # Offset ocean spline center island away from origin to guarantee player is in open water
+    spline = ocean.get_water_spline()
+    if spline:
+        num_pts = spline.get_number_of_spline_points()
+        for i in range(num_pts):
+            pos = spline.get_location_at_spline_point(i, unreal.SplineCoordinateSpace.WORLD)
+            new_pos = unreal.Vector(pos.x - 200000.0, pos.y - 200000.0, pos.z)
+            spline.set_location_at_spline_point(i, new_pos, unreal.SplineCoordinateSpace.WORLD, False)
+        spline.update_spline()
+        print("Relocated ocean spline boundary points for open water")
+
+# Configure WaterZone mesh component (far distance mesh)
+if water_zone:
+    for c in water_zone.get_components_by_class(unreal.WaterMeshComponent):
+        far_mat = unreal.EditorAssetLibrary.load_asset('/Water/Materials/WaterSurface/Water_FarMesh')
+        if far_mat:
+            c.set_editor_property('far_distance_material', far_mat)
+            c.set_editor_property('far_distance_mesh_extent', 600000.0)
+            print("Configured WaterMeshComponent far distance mesh")
+        break
 
 # 8. Spawn PlayerStart at roughly (0, 0, 50)
 player_start = unreal.EditorLevelLibrary.spawn_actor_from_class(

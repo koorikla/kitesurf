@@ -25,6 +25,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "CableComponent",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,
 			"TargetAllowList": [

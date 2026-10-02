@@ -1,5 +1,6 @@
 #include "KiteRiderPawn.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
@@ -8,6 +9,9 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
+#include "KiteSurfHUD.h"
+#include "GameFramework/PlayerController.h"
+#include "UObject/ConstructorHelpers.h"
 
 AKiteRiderPawn::AKiteRiderPawn()
 {
@@ -16,6 +20,44 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// BoardMesh root
 	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
 	RootComponent = BoardMesh;
+
+	// Setup default meshes and materials if available
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BoardMeshFinder(TEXT("/Game/Meshes/SM_KiteBoard"));
+	if (BoardMeshFinder.Succeeded())
+	{
+		BoardMesh->SetStaticMesh(BoardMeshFinder.Object);
+	}
+
+	// RiderMesh attached to BoardMesh (standing on board)
+	RiderMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RiderMesh"));
+	RiderMesh->SetupAttachment(RootComponent);
+	RiderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+	RiderMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f)); // Face across the board in kitesurf stance
+
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"));
+	if (RiderMeshFinder.Succeeded())
+	{
+		RiderMesh->SetSkeletalMesh(RiderMeshFinder.Object);
+	}
+
+	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(TEXT("/Game/Characters/Mannequins/Anims/MM_Idle"));
+	if (RiderAnimFinder.Succeeded())
+	{
+		RiderMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		RiderMesh->SetAnimation(RiderAnimFinder.Object);
+		RiderMesh->Play(true);
+	}
+
+	// ControlBarMesh attached to BoardMesh, positioned in front of rider chest height
+	ControlBarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlBarMesh"));
+	ControlBarMesh->SetupAttachment(RootComponent);
+	ControlBarMesh->SetRelativeLocation(FVector(40.0f, 0.0f, 100.0f));
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BarMeshFinder(TEXT("/Game/Meshes/SM_ControlBar"));
+	if (BarMeshFinder.Succeeded())
+	{
+		ControlBarMesh->SetStaticMesh(BarMeshFinder.Object);
+	}
 
 	// CameraBoom (800cm, -20 deg pitch, camera lag)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
@@ -84,11 +126,20 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
+		if (PauseAction)
+		{
+			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
+		}
 		if (JumpAction)
 		{
 			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnJumpTriggered);
 		}
 	}
+
+	// Fallback binding for standard Escape key in case Enhanced Input action is unassigned
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::P, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
+	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Right, IE_Pressed, this, &AKiteRiderPawn::TogglePause);
 }
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
@@ -176,6 +227,27 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
 
+	// Update ControlBar rotation to reflect steering angle
+	if (ControlBarMesh)
+	{
+		ControlBarMesh->SetRelativeRotation(FRotator(0.0f, CurrentSteerInput * 30.0f, 0.0f));
+	}
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
+}
+
+void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)
+{
+	TogglePause();
+}
+
+void AKiteRiderPawn::TogglePause()
+{
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))
+		{
+			HUD->TogglePauseMenu();
+		}
+	}
 }

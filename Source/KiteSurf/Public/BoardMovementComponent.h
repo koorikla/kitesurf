@@ -6,6 +6,7 @@
 
 class AWaterBody;
 class UWaterBodyComponent;
+class IKiteWaterSurface;
 
 UENUM(BlueprintType)
 enum class EBoardDragRegime : uint8
@@ -104,6 +105,12 @@ public:
 
 	/** Samples water height and normal at the given world location */
 	void SampleWaterSurface(const FVector& Location, float& OutWaterHeight, FVector& OutWaterNormal) const;
+
+	/** Sets the water surface interface (used by tests or custom water providers) */
+	void SetWaterSurface(TSharedPtr<IKiteWaterSurface> InWaterSurface);
+
+	/** Gets the active water surface interface */
+	TSharedPtr<IKiteWaterSurface> GetWaterSurface() const;
 
 public:
 	// Tunables (Spec)
@@ -217,4 +224,5 @@ private:
 	float LandingStateTimer;
 
 	mutable TWeakObjectPtr<const UWaterBodyComponent> CachedWaterBodyComponent;
+	mutable TSharedPtr<IKiteWaterSurface> WaterSurface;
 };

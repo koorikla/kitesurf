@@ -1,6 +1,7 @@
 #include "BoardMovementComponent.h"
 #include "KiteSurf.h"
 #include "KiteComponent.h"
+#include "KiteWaterSurface.h"
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -70,8 +71,24 @@ void UBoardMovementComponent::BeginPlay()
 	SampleWaterSurface(GetActorLocation(), DummyHeight, DummyNormal);
 }
 
+void UBoardMovementComponent::SetWaterSurface(TSharedPtr<IKiteWaterSurface> InWaterSurface)
+{
+	WaterSurface = InWaterSurface;
+}
+
+TSharedPtr<IKiteWaterSurface> UBoardMovementComponent::GetWaterSurface() const
+{
+	return WaterSurface;
+}
+
 void UBoardMovementComponent::SampleWaterSurface(const FVector& Location, float& OutWaterHeight, FVector& OutWaterNormal) const
 {
+	if (WaterSurface.IsValid())
+	{
+		WaterSurface->SampleWaterSurface(Location, OutWaterHeight, OutWaterNormal);
+		return;
+	}
+
 	OutWaterHeight = 0.0f;
 	OutWaterNormal = FVector::UpVector;
 
@@ -98,16 +115,8 @@ void UBoardMovementComponent::SampleWaterSurface(const FVector& Location, float&
 
 	if (CachedWaterBodyComponent.IsValid())
 	{
-		FVector SurfaceLocation = FVector::ZeroVector;
-		FVector SurfaceNormal = FVector::UpVector;
-		FVector SurfaceVelocity = FVector::ZeroVector;
-		float Depth = 0.0f;
-
-		if (CachedWaterBodyComponent->GetWaterSurfaceInfoAtLocation(Location, SurfaceLocation, SurfaceNormal, SurfaceVelocity, Depth, false))
-		{
-			OutWaterHeight = SurfaceLocation.Z;
-			OutWaterNormal = SurfaceNormal;
-		}
+		WaterSurface = MakeShared<FKiteWaterBodySurface>(CachedWaterBodyComponent.Get());
+		WaterSurface->SampleWaterSurface(Location, OutWaterHeight, OutWaterNormal);
 	}
 }
 

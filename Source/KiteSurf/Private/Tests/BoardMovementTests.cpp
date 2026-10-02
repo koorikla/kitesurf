@@ -1,6 +1,7 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
 #include "BoardMovementComponent.h"
+#include "KiteWaterSurface.h"
 #include "KiteRiderPawn.h"
 #include "KiteComponent.h"
 #include "WindComponent.h"
@@ -525,6 +526,104 @@ bool FKiteSurfJumpPawnIntegration::RunTest(const FString& Parameters)
 				TestTrue(TEXT("Pawn Jump() succeeds when conditions met"), Pawn->Jump());
 				TestEqual(TEXT("Pawn board enters Airborne state"), BoardComp->GetBoardState(), EBoardState::Airborne);
 				TestTrue(TEXT("Pawn board velocity has positive vertical component"), Pawn->GetBoardVelocity().Z > 0.0f);
+			}
+		}
+
+		World->DestroyWorld(false);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfWaterSurfaceInterface, "KiteSurf.Water.SurfaceInterface", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
+{
+	// 1. Flat implementation returns 0 (and UpVector normal)
+	FKiteFlatWaterSurface FlatSurface(0.0f);
+	float FlatHeight = 100.0f;
+	FVector FlatNormal = FVector::ZeroVector;
+	FlatSurface.SampleWaterSurface(FVector2D(123.0f, 456.0f), FlatHeight, FlatNormal);
+	TestNearlyEqual(TEXT("Flat water height = 0 cm"), (double)FlatHeight, 0.0, 0.01);
+	TestEqual(TEXT("Flat water normal = UpVector"), FlatNormal, FVector::UpVector);
+
+	// 2. Mock wave implementation returns A*sin(kx) within 1 cm at 100 points
+	// Amplitude = 80 cm, Wavelength = 2000 cm, Direction = (1, 0)
+	const float Amplitude = 80.0f;
+	const float Wavelength = 2000.0f;
+	FKiteWaveWaterSurface WaveSurface(0.0f, Amplitude, Wavelength, FVector2D(1.0f, 0.0f));
+
+	for (int32 i = 0; i < 100; ++i)
+	{
+		const float SampleX = (float)i * 20.0f; // 0 to 2000 cm across full wavelength
+		const float SampleY = (float)(i % 10) * 100.0f;
+		float H = 0.0f;
+		FVector N = FVector::ZeroVector;
+		WaveSurface.SampleWaterSurface(FVector2D(SampleX, SampleY), H, N);
+
+		const float ExpectedK = 2.0f * PI / Wavelength;
+		const float ExpectedH = Amplitude * FMath::Sin(ExpectedK * SampleX);
+		TestNearlyEqual(TEXT("Wave height matches A*sin(kx) within 1 cm at 100 sample points"), (double)H, (double)ExpectedH, 0.01);
+		TestNearlyEqual(TEXT("Wave normal is unit length"), (double)N.Size(), 1.0, 0.01);
+	}
+
+	// 3. Board Z tracks wave surface height in physics simulation
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	TestNotNull(TEXT("World created"), World);
+
+	if (World)
+	{
+		AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
+		TestNotNull(TEXT("Pawn spawned"), Pawn);
+
+		if (Pawn)
+		{
+			UBoardMovementComponent* BoardComp = Pawn->FindComponentByClass<UBoardMovementComponent>();
+			TestNotNull(TEXT("BoardMovementComponent found"), BoardComp);
+
+			if (BoardComp)
+			{
+				TSharedPtr<FKiteWaveWaterSurface> Wave = MakeShared<FKiteWaveWaterSurface>(0.0f, Amplitude, Wavelength, FVector2D(1.0f, 0.0f));
+				BoardComp->SetWaterSurface(Wave);
+
+				// Crest is at X = 500 cm (height = +80 cm)
+				float CrestWaterHeight = 0.0f;
+				FVector CrestWaterNormal = FVector::UpVector;
+				BoardComp->SampleWaterSurface(FVector(500.0f, 0.0f, 0.0f), CrestWaterHeight, CrestWaterNormal);
+				TestNearlyEqual(TEXT("Board component samples crest height ≈ 80 cm"), (double)CrestWaterHeight, 80.0, 0.1);
+
+				// Trough is at X = 1500 cm (height = -80 cm)
+				float TroughWaterHeight = 0.0f;
+				FVector TroughWaterNormal = FVector::UpVector;
+				BoardComp->SampleWaterSurface(FVector(1500.0f, 0.0f, 0.0f), TroughWaterHeight, TroughWaterNormal);
+				TestNearlyEqual(TEXT("Board component samples trough height ≈ -80 cm"), (double)TroughWaterHeight, -80.0, 0.1);
+
+				// Place board at wave crest and simulate settling (3.0 seconds at 30 Hz)
+				Pawn->SetActorLocation(FVector(500.0f, 0.0f, 100.0f));
+				BoardComp->Velocity = FVector::ZeroVector;
+				const float DeltaTime = 3.0f / 90.0f;
+				for (int32 i = 0; i < 90; ++i)
+				{
+					Pawn->Tick(DeltaTime);
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+
+				const FVector FinalCrestLoc = Pawn->GetActorLocation();
+				UE_LOG(LogKiteSurf, Log, TEXT("Board on wave crest: Final Z = %.2f cm (target ≈ 80 cm)"), FinalCrestLoc.Z);
+				TestNearlyEqual(TEXT("Board settles near wave crest (Z ≈ 80 cm)"), (double)FinalCrestLoc.Z, 80.0, 5.0);
+
+				// Place board at wave trough and simulate settling
+				Pawn->SetActorLocation(FVector(1500.0f, 0.0f, -60.0f));
+				BoardComp->Velocity = FVector::ZeroVector;
+				for (int32 i = 0; i < 90; ++i)
+				{
+					Pawn->Tick(DeltaTime);
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+
+				const FVector FinalTroughLoc = Pawn->GetActorLocation();
+				UE_LOG(LogKiteSurf, Log, TEXT("Board on wave trough: Final Z = %.2f cm (target ≈ -80 cm)"), FinalTroughLoc.Z);
+				TestNearlyEqual(TEXT("Board settles near wave trough (Z ≈ -80 cm)"), (double)FinalTroughLoc.Z, -80.0, 5.0);
 			}
 		}
 

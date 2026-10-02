@@ -40,6 +40,7 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			// edge key carves the board, so a steady course is ridden with the edge neutral.
 			Pawn->SetActorLocation(FVector::ZeroVector);
 			Pawn->SetActorRotation(FRotator(0.0f, 90.0f, 0.0f));
+			KiteComp->bParkHoldAssist = true; // the kite stays parked low on that side, as a rider's hands would hold it
 			KiteComp->SetWindowPosition(65.0f, 8.0f);
 			Pawn->SheetKite(0.8f);
 			Pawn->EdgeBoard(0.0f);
@@ -47,24 +48,20 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 600; ++i) // 20 seconds of simulation
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float SpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
 			UE_LOG(LogKiteSurf, Log, TEXT("SpeedEnvelope: Final Speed = %.2f kn (Expected 12..25 kn)"), SpeedKnots);
 			TestTrue(TEXT("Steady-state board speed reaches at least 12 kn"), SpeedKnots >= 12.0f);
 			TestTrue(TEXT("Steady-state board speed does not exceed 25 kn under standard power"), SpeedKnots <= 25.0f);
-			TestTrue(TEXT("Speed does not exceed MaxBoardSpeed (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
+			TestTrue(TEXT("Speed does not exceed MaxBoardSpeedCmS (35 kn)"), SpeedKnots <= 35.0f + 0.1f);
 
 			// Sheet out (depower) and simulate for 10 s to verify decay below 10 kn
 			Pawn->SheetKite(0.0f);
 			for (int32 i = 0; i < 300; ++i) // 10 seconds of sheet-out decay
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float DecayedSpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
@@ -111,7 +108,6 @@ bool FKiteSurfMovementDepowerToStop::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 150; ++i) // 5 seconds
 			{
-				Pawn->Tick(DeltaTime);
 				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
@@ -154,6 +150,7 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 			Pawn->SetActorLocation(FVector::ZeroVector);
 			Pawn->SetActorRotation(UpwindHeading);
 			BoardComp->Velocity = UpwindHeading.Vector() * 600.0f; // already planing
+			KiteComp->bParkHoldAssist = true; // the kite stays parked low on that side, as a rider's hands would hold it
 			KiteComp->SetWindowPosition(65.0f, 8.0f);
 			Pawn->SheetKite(0.6f);
 			Pawn->EdgeBoard(0.0f); // course held by the fins; an edge input would carve
@@ -161,9 +158,7 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 450; ++i) // 15 seconds
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float ForwardSpeed = BoardComp->GetForwardSpeed();
@@ -212,9 +207,7 @@ bool FKiteSurfMovementNoNaNGuard::RunTest(const FString& Parameters)
 				Pawn->SheetKite(Sheet);
 				Pawn->SteerKite(Edge);
 
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 
 				const FVector Vel = Pawn->GetBoardVelocity();
 				TestFalse(TEXT("Velocity does not contain NaN"), Vel.ContainsNaN());

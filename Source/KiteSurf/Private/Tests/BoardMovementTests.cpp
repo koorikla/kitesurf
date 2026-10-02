@@ -6,6 +6,7 @@
 #include "KiteComponent.h"
 #include "WindComponent.h"
 #include "KiteSurf.h"
+#include "KiteSurfUnits.h"
 #include "Engine/World.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -37,7 +38,6 @@ bool FKiteSurfBoardSettlesAtRest::RunTest(const FString& Parameters)
 				const float DeltaTime = 3.0f / 90.0f;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 
@@ -151,7 +151,8 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 					BoardComp->AddExternalForce(LateralForce);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
-				const float LateralSpeedNoEdge = BoardComp->GetLateralSpeed();
+				// Sideways over the water: the board heels under the load, and its own right axis would read some of the vertical motion.
+				const float LateralSpeedNoEdge = FMath::Abs(BoardComp->Velocity.Y);
 
 				// Run 2: Full Edge (EdgeInput = 1.0f)
 				Pawn->SetActorLocation(FVector::ZeroVector);
@@ -164,7 +165,7 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 					BoardComp->AddExternalForce(LateralForce);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
-				const float LateralSpeedFullEdge = BoardComp->GetLateralSpeed();
+				const float LateralSpeedFullEdge = FMath::Abs(BoardComp->Velocity.Y);
 
 				const float Ratio = LateralSpeedFullEdge / FMath::Max(LateralSpeedNoEdge, 0.001f);
 				UE_LOG(LogKiteSurf, Log, TEXT("EdgeResistsLateralForce: No Edge = %.1f cm/s, Full Edge = %.1f cm/s, Ratio = %.1f%%"),
@@ -372,6 +373,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
 				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f); // 15 kn
 				KiteComp->SheetKite(1.0f);
+				KiteComp->bParkHoldAssist = true; // held where it is placed through the hop
 				KiteComp->SetElevationDeg(80.0f);
 				KiteComp->UpdateKite(0.0333f);
 
@@ -387,9 +389,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				float MaxHeightReached = 0.0f;
 				for (int32 i = 0; i < 90; ++i) // 3 seconds
 				{
-					KiteComp->UpdateKite(DeltaTime);
 					Pawn->Tick(DeltaTime);
-					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 					MaxHeightReached = FMath::Max(MaxHeightReached, Pawn->GetActorLocation().Z);
 				}
 
@@ -416,6 +416,84 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 		World->DestroyWorld(false);
 	}
 
+	return true;
+}
+
+// In the air the rider and board are a body in the wind (research: drag area 0.5 to 1.0 m^2,
+// docs/physics/research.md 3.5): still air slows them by 0.5 rho CdA v^2, a wind pushes a rider
+// hanging still along with it, and on the water there is no air drag at all.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpBodyDragInTheAir, "KiteSurf.Jump.BodyDragInTheAir", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpBodyDragInTheAir::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+	UWindComponent* Wind = Pawn ? Pawn->GetWind() : nullptr;
+	UKiteComponent* Kite = Pawn ? Pawn->GetKite() : nullptr;
+	TestTrue(TEXT("Rider, board, wind and kite created"), Board && Wind && Kite);
+	if (!Board || !Wind || !Kite)
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+		}
+		return false;
+	}
+	Wind->GustStrength = 0.0f;
+	Wind->DirectionDriftDeg = 0.0f;
+	const float Step = 1.0f / 240.0f;
+	const float HalfRhoCdA = 0.5f * KiteUnits::AirDensityKgM3 * Board->RiderDragAreaM2;
+	const FVector HighUp(0.0f, 0.0f, 2000.0f);
+
+	// Still air, flying level at 15 m/s, 20 m up: the drag is 0.5 rho CdA v^2 against the motion.
+	Wind->BaseWind = FVector::ZeroVector;
+	const float FlightSpeedMS = 15.0f;
+	auto FlyLevel = [&](float Seconds)
+	{
+		Pawn->SetActorLocation(HighUp);
+		Board->Velocity = FVector(KiteUnits::MToCm(FlightSpeedMS), 0.0f, 0.0f);
+		Board->SetBoardState(EBoardState::Airborne);
+		Board->Simulate(Step);
+		const FVector FirstStepDragN = Board->GetLastStepDebug().AirDragN;
+		Board->Simulate(FMath::Max(Seconds - Step, 0.0f));
+		return FirstStepDragN;
+	};
+	const FVector StillAirDragN = FlyLevel(1.0f);
+	const float SpeedAfterDragMS = KiteUnits::CmToM(Board->Velocity.X);
+	const float ExpectedDragN = HalfRhoCdA * FMath::Square(FlightSpeedMS);
+	TestNearlyEqual(FString::Printf(TEXT("In still air at 15 m/s the drag is 0.5 rho CdA v^2 = %.1f N against the motion (%.1f N)"), ExpectedDragN, -StillAirDragN.X),
+		static_cast<float>(-StillAirDragN.X), ExpectedDragN, 0.01f * ExpectedDragN);
+	TestTrue(TEXT("and only against the motion"), FMath::Abs(StillAirDragN.Y) < 0.01f && FMath::Abs(StillAirDragN.Z) < 0.01f);
+	TestTrue(FString::Printf(TEXT("A second of it takes about a metre a second off (%.2f m/s left of 15)"), SpeedAfterDragMS), SpeedAfterDragMS < FlightSpeedMS - 0.9f && SpeedAfterDragMS > FlightSpeedMS - 1.6f);
+
+	Board->RiderDragAreaM2 = 0.0f;
+	FlyLevel(1.0f);
+	TestNearlyEqual(TEXT("With no drag area nothing slows the rider in the air"), static_cast<float>(KiteUnits::CmToM(Board->Velocity.X)), FlightSpeedMS, 0.001f);
+	Board->RiderDragAreaM2 = 0.7f;
+
+	// A 10 m/s wind and a rider hanging still: pushed downwind by the wind at chest height.
+	Wind->BaseWind = FVector(1000.0f, 0.0f, 0.0f);
+	Pawn->SetActorLocation(HighUp);
+	Board->Velocity = FVector::ZeroVector;
+	Board->SetBoardState(EBoardState::Airborne);
+	Board->Simulate(Step);
+	const FVector WindAtChestCmS = Wind->GetWindAtTime(HighUp + FVector(0.0f, 0.0f, Kite->RiderWindHeightCm), Board->GetSimTimeSeconds());
+	const float ExpectedPushN = HalfRhoCdA * FMath::Square(KiteUnits::CmToM(WindAtChestCmS.Size()));
+	const FVector PushN = Board->GetLastStepDebug().AirDragN;
+	TestNearlyEqual(FString::Printf(TEXT("A wind pushes a rider hanging still downwind with 0.5 rho CdA w^2 = %.1f N (%.1f N)"), ExpectedPushN, PushN.X),
+		static_cast<float>(PushN.X), ExpectedPushN, 0.01f * ExpectedPushN);
+
+	// On the water the hull is the model: no air drag.
+	Pawn->SetActorLocation(FVector::ZeroVector);
+	Board->Velocity = FVector(800.0f, 0.0f, 0.0f);
+	Board->SetBoardState(EBoardState::Planing);
+	Board->Simulate(Step);
+	TestTrue(TEXT("On the water there is no air drag"), Board->GetLastStepDebug().AirDragN.IsZero());
+	UE_LOG(LogKiteSurf, Log, TEXT("BodyDragInTheAir: CdA %.2f m^2: %.1f N at 15 m/s in still air (1 s leaves %.2f m/s), %.1f N from a %.1f m/s wind at chest height"),
+		Board->RiderDragAreaM2, -StillAirDragN.X, SpeedAfterDragMS, PushN.X, KiteUnits::CmToM(WindAtChestCmS.Size()));
+
+	World->DestroyWorld(false);
 	return true;
 }
 
@@ -698,7 +776,6 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 				const float DeltaTime = 3.0f / 90.0f;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 
@@ -712,7 +789,6 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 				BoardComp->Velocity = FVector::ZeroVector;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 

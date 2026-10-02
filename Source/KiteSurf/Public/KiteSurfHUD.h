@@ -83,11 +83,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "KiteSurf|HUD")
 	static FString FormatKnots(float SpeedCmPerSec, bool bIncludeUnit = true);
 
-	/** Converts cm/s to knots (1 kn = 51.44 cm/s) */
+	/** Converts cm/s to knots (KiteUnits::CmPerKnot) */
 	UFUNCTION(BlueprintPure, Category = "KiteSurf|HUD")
 	static float CmPerSecToKnots(float SpeedCmPerSec);
 
-	/** Converts knots to cm/s (1 kn = 51.44 cm/s) */
+	/** Converts knots to cm/s (KiteUnits::CmPerKnot) */
 	UFUNCTION(BlueprintPure, Category = "KiteSurf|HUD")
 	static float KnotsToCmPerSec(float Knots);
 

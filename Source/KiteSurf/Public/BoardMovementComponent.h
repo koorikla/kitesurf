@@ -34,6 +34,21 @@ enum class EJumpRejectReason : uint8
 	NotEdged   UMETA(DisplayName = "Not Edged")
 };
 
+/** What the water and the air did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
+struct FBoardStepDebug
+{
+	/** Sideways force the fins and rail put on the board (what the grip took out of the sideways speed). */
+	FVector GripForceN = FVector::ZeroVector;
+	/** Forward drive the heeled rail made out of that grip. */
+	FVector DriveForceN = FVector::ZeroVector;
+	/** Forward drag of the hull (planing or displacement). */
+	FVector DragForceN = FVector::ZeroVector;
+	/** Angle between the board's velocity over the water and its axis, either end first (deg); positive sliding to its right. */
+	float LeewayDeg = 0.0f;
+	/** Air drag on the rider and board, along the wind they feel; only in the air. */
+	FVector AirDragN = FVector::ZeroVector;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
@@ -63,7 +78,15 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** Accumulate an external force in kg*cm/s^2 (applied during next tick) */
+	/** Advances the board by DeltaTime in sub-steps no longer than MaxStepSeconds; a force added before the call acts for the whole of it. For tests and for a board nobody else steps. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	void Simulate(float DeltaTime);
+
+	/** One fixed step with the external force accumulated since the last one. The pawn calls this inside its own step loop. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	void StepBoard(float StepSeconds);
+
+	/** Accumulate an external force in kg*cm/s^2, applied during the next step */
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	void AddExternalForce(const FVector& Force);
 
@@ -202,6 +225,13 @@ public:
 	/** Gets the active water surface interface */
 	TSharedPtr<IKiteWaterSurface> GetWaterSurface() const;
 
+	/** The forces on the board in the last fixed step: the water's grip, drive, drag and leeway (zero in the air) and the air's drag (only in the air). */
+	const FBoardStepDebug& GetLastStepDebug() const { return LastStepDebug; }
+
+	/** Time the board's simulation has advanced (s); the wind on the rider in the air is sampled at this time. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	float GetSimTimeSeconds() const { return SimTimeSeconds; }
+
 public:
 	// Tunables (Spec)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -219,43 +249,51 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningThresholdCmS;
 
+	/** Displacement drag per speed squared (kg/cm): force in kg*cm/s^2 is this times (cm/s)^2. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float DisplacementDragCoef;
+	float DisplacementQuadraticDragKgPerCm;
 
+	/** Planing drag per speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningDragCoef;
+	float PlaningDragKgPerS;
 
 	/** Planing drag per speed squared (kg/cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningQuadraticDragCoef;
+	float PlaningQuadraticDragKgPerCm;
 
+	/** Extra sideways grip at full carve input (kg/s): sideways force per cm/s of leeway. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgeGripCoef;
+	float EdgeGripKgPerS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxEdgeAngleDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float MaxBoardSpeed;
+	float MaxBoardSpeedCmS;
 
+	/** Displacement drag per speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float LinearDisplacementDragCoef;
+	float DisplacementDragKgPerS;
 
+	/** Share of the sideways grip force that a heeled rail turns into forward drive, at full carve input. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float EdgeDriveEfficiency;
 
-	// Additional physics tuning
+	/** Sideways grip with no carve input (kg/s): the fins and a neutral stance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BaseLateralDragCoef;
+	float BaseGripKgPerS;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BuoyancySpringStiffness;
+	/** How quickly the board bobs back to its ride height (Hz). Stiffness scales with the mass, so the feel does not change with the rider. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.01"))
+	float BuoyancyNaturalFrequencyHz;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BuoyancyDamping;
+	/** Damping of that bob: 1 settles without overshoot, below 1 bounces. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float BuoyancyDampingRatio;
 
+	/** Upward planing lift per cm/s above the planing speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningLiftCoef;
+	float PlaningLiftKgPerS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
@@ -280,9 +318,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotRate;
 
-	/** Horizontal line force needed before the board pivots towards it (kg*cm/s^2). */
+	/** Horizontal line force needed before the board pivots towards it (N). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float LowSpeedPivotMinForce;
+	float LowSpeedPivotMinForceN;
 
 	/** How quickly the carve follows the input (1/s); lower feels heavier. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -324,7 +362,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirSpinRate;
 
-	/** Extra pop with the weight fully on the tail, as a fraction of BaseJumpImpulse. */
+	/** Extra pop with the weight fully on the tail, as a fraction of PopImpulseKgCmPerS. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float TailWeightPopBonus;
 
@@ -336,16 +374,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float AutoHeelDeg;
 
-	/** Sideways line force that gives the full AutoHeelDeg (kg*cm/s^2). */
+	/** Sideways line force that gives the full AutoHeelDeg (N). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float AutoHeelFullLoadForce;
+	float AutoHeelFullLoadN;
 
-	// Jump tunables (Spec)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float BaseJumpImpulse;
+	/**
+	 * Drag area (drag coefficient times frontal area, m^2) of the rider and board in the air. While
+	 * airborne the air pushes on them with 0.5 * rho * CdA * |v_a| * v_a, v_a the wind they feel (the
+	 * true wind at the kite's RiderWindHeightCm above them, minus their velocity); nothing on the
+	 * water. Research: 0.5 to 1.0 m^2 (docs/physics/research.md 3.5).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
+	float RiderDragAreaM2;
 
+	/** Vertical impulse from the legs on a pop (kg*cm/s): about 2.5 m/s for 85 kg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float KiteLiftFactor;
+	float PopImpulseKgCmPerS;
+
+	/** How long the kite's upward pull counts as an impulse when the edge is let go (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float EdgeReleaseSeconds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float JumpMinSpeedKnots;
@@ -369,7 +417,15 @@ public:
 	float CrashRespawnDelay;
 
 	UFUNCTION(BlueprintPure, Category = "Tuning")
-	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeed <= 100.0f ? (MaxBoardSpeed * 51.44f) : MaxBoardSpeed; }
+	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeedCmS; }
+
+	/** The board is stepped in sub-steps no longer than this (s), whatever Simulate is given. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Simulation", meta = (ClampMin = "0.0001"))
+	float MaxStepSeconds;
+
+	/** Most sub-steps one Simulate call will take; past that the sub-step grows. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Simulation", meta = (ClampMin = "1"))
+	int32 MaxStepsPerUpdate;
 
 protected:
 	virtual void BeginPlay() override;
@@ -393,7 +449,18 @@ private:
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();
+
+	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
+	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);
+	float EffectiveMassForBuoyancy() const;
 	FVector AccumulatedExternalForce;
+	FBoardStepDebug LastStepDebug;
+
+	/** Time the board's simulation has advanced (s). */
+	float SimTimeSeconds = 0.0f;
+
+	/** Air drag on the rider and board at this place and velocity (kg*cm/s^2), from the wind at the board's simulation time. */
+	FVector ComputeAirDragForce(const FVector& Location, const FVector& InVelocity) const;
 
 	float CurrentJumpHeight;
 	float CurrentJumpAirtime;

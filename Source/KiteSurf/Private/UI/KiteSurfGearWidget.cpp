@@ -1,4 +1,5 @@
 #include "UI/KiteSurfGearWidget.h"
+#include "KiteSurfUnits.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfSaveGame.h"
@@ -712,7 +713,7 @@ void UKiteSurfGearWidget::Confirm()
 			if (UWindComponent* Wind = Rider->GetWind())
 			{
 				const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
-				Wind->BaseWind = Direction * CurrentWindKnots * 51.44f;
+				Wind->BaseWind = Direction * KiteUnits::KnotsToCmS(CurrentWindKnots);
 			}
 			if (UKiteComponent* Kite = Rider->GetKite())
 			{

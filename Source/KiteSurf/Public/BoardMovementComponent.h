@@ -192,18 +192,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningThresholdCmS;
 
+	/** Displacement drag per speed squared (kg/cm): force in kg*cm/s^2 is this times (cm/s)^2. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float DisplacementDragCoef;
+	float DisplacementQuadraticDragKgPerCm;
 
+	/** Planing drag per speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningDragCoef;
+	float PlaningDragKgPerS;
 
 	/** Planing drag per speed squared (kg/cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningQuadraticDragCoef;
+	float PlaningQuadraticDragKgPerCm;
 
+	/** Extra sideways grip at full carve input (kg/s): sideways force per cm/s of leeway. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgeGripCoef;
+	float EdgeGripKgPerS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxEdgeAngleDeg;
@@ -211,24 +214,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxBoardSpeedCmS;
 
+	/** Displacement drag per speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float LinearDisplacementDragCoef;
+	float DisplacementDragKgPerS;
 
+	/** Share of the sideways grip force that a heeled rail turns into forward drive, at full carve input. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float EdgeDriveEfficiency;
 
-	// Additional physics tuning
+	/** Sideways grip with no carve input (kg/s): the fins and a neutral stance. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BaseLateralDragCoef;
+	float BaseGripKgPerS;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BuoyancySpringStiffness;
+	/** How quickly the board bobs back to its ride height (Hz). Stiffness scales with the mass, so the feel does not change with the rider. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.01"))
+	float BuoyancyNaturalFrequencyHz;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BuoyancyDamping;
+	/** Damping of that bob: 1 settles without overshoot, below 1 bounces. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float BuoyancyDampingRatio;
 
+	/** Upward planing lift per cm/s above the planing speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float PlaningLiftCoef;
+	float PlaningLiftKgPerS;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveTurnRate;
@@ -253,9 +261,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotRate;
 
-	/** Horizontal line force needed before the board pivots towards it (kg*cm/s^2). */
+	/** Horizontal line force needed before the board pivots towards it (N). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float LowSpeedPivotMinForce;
+	float LowSpeedPivotMinForceN;
 
 	/** How quickly the carve follows the input (1/s); lower feels heavier. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -297,7 +305,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirSpinRate;
 
-	/** Extra pop with the weight fully on the tail, as a fraction of BaseJumpImpulse. */
+	/** Extra pop with the weight fully on the tail, as a fraction of PopImpulseKgCmPerS. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float TailWeightPopBonus;
 
@@ -309,16 +317,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float AutoHeelDeg;
 
-	/** Sideways line force that gives the full AutoHeelDeg (kg*cm/s^2). */
+	/** Sideways line force that gives the full AutoHeelDeg (N). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float AutoHeelFullLoadForce;
+	float AutoHeelFullLoadN;
 
-	// Jump tunables (Spec)
+	/** Vertical impulse from the legs on a pop (kg*cm/s): about 2.5 m/s for 85 kg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float BaseJumpImpulse;
+	float PopImpulseKgCmPerS;
 
+	/** How long the kite's upward pull counts as an impulse when the edge is let go (s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float KiteLiftFactor;
+	float EdgeReleaseSeconds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float JumpMinSpeedKnots;
@@ -372,6 +381,10 @@ private:
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();
+
+	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
+	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);
+	float EffectiveMassForBuoyancy() const;
 	FVector AccumulatedExternalForce;
 
 	float CurrentJumpHeight;

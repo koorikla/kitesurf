@@ -1264,24 +1264,24 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 		return false;
 	}
 	UBoardMovementComponent* Board = Ride.Board;
-	const float ReferencePop = Board->BaseJumpImpulse;
+	const float ReferencePop = Board->PopImpulseKgCmPerS;
 	const float ReferencePlaning = Board->PlaningThresholdCmS;
-	const float ReferenceGrip = Board->EdgeGripCoef;
+	const float ReferenceGrip = Board->EdgeGripKgPerS;
 	const float ReferenceTurn = Board->CarveTurnRate;
 	Board->SetBoardSize(EBoardSize::Medium);
-	TestTrue(TEXT("The 138 is the board the simulation is tuned for"), Board->BaseJumpImpulse == ReferencePop && Board->PlaningThresholdCmS == ReferencePlaning && Board->EdgeGripCoef == ReferenceGrip && Board->CarveTurnRate == ReferenceTurn);
+	TestTrue(TEXT("The 138 is the board the simulation is tuned for"), Board->PopImpulseKgCmPerS == ReferencePop && Board->PlaningThresholdCmS == ReferencePlaning && Board->EdgeGripKgPerS == ReferenceGrip && Board->CarveTurnRate == ReferenceTurn);
 
 	Board->SetBoardSize(EBoardSize::Small);
-	TestTrue(TEXT("The small board pops harder"), Board->BaseJumpImpulse > ReferencePop);
+	TestTrue(TEXT("The small board pops harder"), Board->PopImpulseKgCmPerS > ReferencePop);
 	TestTrue(TEXT("needs more speed to plane"), Board->PlaningThresholdCmS > ReferencePlaning);
 	TestTrue(TEXT("so it is still sunk at a speed the 138 planes at"), Board->GetFloatDepthForSpeed(ReferencePlaning) > 0.0f);
-	TestTrue(TEXT("and turns quicker with less grip"), Board->CarveTurnRate > ReferenceTurn && Board->EdgeGripCoef < ReferenceGrip);
+	TestTrue(TEXT("and turns quicker with less grip"), Board->CarveTurnRate > ReferenceTurn && Board->EdgeGripKgPerS < ReferenceGrip);
 
 	Board->SetBoardSize(EBoardSize::Large);
-	TestTrue(TEXT("The big board pops less"), Board->BaseJumpImpulse < ReferencePop);
+	TestTrue(TEXT("The big board pops less"), Board->PopImpulseKgCmPerS < ReferencePop);
 	TestTrue(TEXT("planes earlier"), Board->PlaningThresholdCmS < ReferencePlaning);
 	TestNearlyEqual(TEXT("so it is on the surface at a speed the 138 is still coming up at"), Board->GetFloatDepthForSpeed(0.9f * ReferencePlaning), 0.0f, 0.01f);
-	TestTrue(TEXT("and grips harder but turns slower"), Board->EdgeGripCoef > ReferenceGrip && Board->CarveTurnRate < ReferenceTurn);
+	TestTrue(TEXT("and grips harder but turns slower"), Board->EdgeGripKgPerS > ReferenceGrip && Board->CarveTurnRate < ReferenceTurn);
 
 	// Light wind, starting slow: the big board gets up and planes where the small one stays sunk.
 	float SpeedKn[2] = { 0.0f, 0.0f };

@@ -30,12 +30,12 @@ def make_flat(name, color):
     return instance
 
 
-def make_kite_canopy():
+def make_kite_canopy(name='M_KiteCanopy', texture_name='T_KiteCanopy'):
     """Two-sided cloth carrying the canopy texture, so the kite reads from above and from the rider's side."""
-    texture = unreal.EditorAssetLibrary.load_asset('/Game/Textures/T_KiteCanopy')
+    texture = unreal.EditorAssetLibrary.load_asset(f'/Game/Textures/{texture_name}')
     if not texture:
-        raise RuntimeError('T_KiteCanopy is missing: run import_geometry.py first')
-    material = recreate('M_KiteCanopy', unreal.Material, unreal.MaterialFactoryNew())
+        raise RuntimeError(f'{texture_name} is missing: run import_geometry.py first')
+    material = recreate(name, unreal.Material, unreal.MaterialFactoryNew())
     material.set_editor_property('two_sided', True)
     sample = mel.create_material_expression(material, unreal.MaterialExpressionTextureSample, -500, 0)
     sample.set_editor_property('texture', texture)
@@ -45,12 +45,13 @@ def make_kite_canopy():
     mel.connect_material_property(roughness, '', unreal.MaterialProperty.MP_ROUGHNESS)
     mel.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False)
-    print('Created M_KiteCanopy')
+    print(f'Created {name}')
     return material
 
 
 materials = {
     'KiteCanopy': make_kite_canopy(),
+    'KiteCanopyBoost': make_kite_canopy('M_KiteCanopyBoost', 'T_KiteCanopyBoost'),
     'KiteTube': make_flat('M_KiteTube', unreal.LinearColor(0.9, 0.9, 0.88, 1.0)),
     'KiteBoard': make_flat('M_KiteBoard', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),
     'ControlBar': make_flat('M_ControlBar', unreal.LinearColor(0.1, 0.1, 0.1, 1.0)),
@@ -65,8 +66,7 @@ make_flat('M_KiteLines', unreal.LinearColor(0.95, 0.95, 0.95, 1.0))
 
 # Meshes whose slots are named after the materials above; the board and bar have a single unnamed slot.
 SINGLE_SLOT = {'SM_KiteBoard': 'KiteBoard', 'SM_ControlBar': 'ControlBar'}
-# The riders' parts get these materials from import_rider_parts.py.
-for mesh_name in ['SM_Kite', 'SM_KiteBoard', 'SM_ControlBar']:
+for mesh_name in ['SM_Kite', 'SM_KiteBoost', 'SM_KiteBoard', 'SM_ControlBar', 'SM_RiderSanta', 'SM_RiderWetsuit']:
     mesh = unreal.EditorAssetLibrary.load_asset(f'/Game/Meshes/{mesh_name}')
     if not mesh:
         raise RuntimeError(f'{mesh_name} is missing: run import_geometry.py first')

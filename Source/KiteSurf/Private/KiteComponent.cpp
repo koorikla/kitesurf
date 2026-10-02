@@ -153,10 +153,9 @@ void UKiteComponent::SetupVisuals()
 			KiteMesh->RegisterComponent();
 			KiteMesh->SetMobility(EComponentMobility::Movable);
 			KiteMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			UStaticMesh* SM_Kite = Cast<UStaticMesh>(StaticLoadObject(UStaticMesh::StaticClass(), nullptr, TEXT("/Game/Meshes/SM_Kite")));
-			if (SM_Kite)
+			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, KiteGear::GetMeshPath(KiteModel)))
 			{
-				KiteMesh->SetStaticMesh(SM_Kite);
+				KiteMesh->SetStaticMesh(Mesh);
 			}
 			KiteMesh->SetWorldScale3D(FVector(GetSizeScale()));
 		}
@@ -415,6 +414,13 @@ void UKiteComponent::SetKiteModel(EKiteModel InModel)
 {
 	KiteModel = KiteGear::KiteModelFromIndex(static_cast<int32>(InModel));
 	SetKiteSize(AreaM2);
+	if (KiteMesh)
+	{
+		if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, KiteGear::GetMeshPath(KiteModel)))
+		{
+			KiteMesh->SetStaticMesh(Mesh);
+		}
+	}
 }
 
 void UKiteComponent::SetBarEnds(const FVector& LeftEnd, const FVector& RightEnd)

@@ -40,10 +40,17 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    - `scripts/editor/import_spot_assets.py` generates and imports the island, sandbar and shark
      meshes and their materials. Their sand shapes are mirrored in `KiteSurfSpot.cpp`.
    - `scripts/editor/import_rider_parts.py` generates and imports the jointed riders' parts (torso,
-     thigh, shin, upper arm, forearm per rider). Their lengths are mirrored in `RiderRig.h`.
-   - `scripts/editor/import_geometry.py` generates and imports the kite, board and bar
-     meshes (`generate_mesh_objs.py`) and the kite canopy texture (`make_kite_texture.sh`,
-     needs ImageMagick); run `scripts/editor/create_materials.py` after it to assign materials.
+     thigh, shin, upper arm, forearm per rider) that the ride poses every frame. Their lengths are
+     mirrored in `RiderRig.h`. The one-piece rider meshes from `import_geometry.py` are only for
+     the gear screen's preview.
+   - `scripts/editor/import_geometry.py` generates and imports the kite (`SM_Kite`, and the
+     five-strut `SM_KiteBoost`), board, bar and rider meshes (`generate_mesh_objs.py`) and one
+     canopy texture per kite model (`make_kite_texture.sh <out> loop|boost`, needs ImageMagick);
+     run `scripts/editor/create_materials.py` after it to assign materials. A new kite colourway
+     is a case in `make_kite_texture.sh`, a texture and canopy material here, and an entry in
+     `KiteGear::GetMeshPath`.
+   - `scripts/editor/import_gear_preview_assets.py` builds the gear preview's backdrop card
+     (`SM_PreviewBackdrop`) and its unlit sky-and-sea gradient (`M_PreviewBackdrop`).
    - `scripts/editor/make_water_fx_materials.py` builds `M_WaterFoam` and `M_WaterSpray`,
      the per-instance-fading materials used by `UBoardWakeComponent`.
    Extend the existing script so one run still rebuilds the whole asset.

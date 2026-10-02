@@ -806,7 +806,10 @@ bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
 	const FExpectedMesh ExpectedMeshes[] =
 	{
 		{ TEXT("/Game/Meshes/SM_Kite.SM_Kite"), 2, 400.0f },                 // canopy and tubes; a 12 m2 kite spans over 4 m
-		// The jointed riders' parts (import_rider_parts.py). A slot count of 0 means "any".
+		// The one-piece riders, shown on the gear screen's preview.
+		{ TEXT("/Game/Meshes/SM_RiderSanta.SM_RiderSanta"), 4, 150.0f },     // skin, white, red, black
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit.SM_RiderWetsuit"), 4, 150.0f }, // skin, wetsuit, accent, black
+		// The jointed riders' parts, posed in the ride (import_rider_parts.py). A slot count of 0 means "any".
 		{ TEXT("/Game/Meshes/SM_RiderSanta_Torso.SM_RiderSanta_Torso"), 4, 80.0f },       // skin, white, red, black
 		{ TEXT("/Game/Meshes/SM_RiderWetsuit_Torso.SM_RiderWetsuit_Torso"), 4, 80.0f },   // skin, wetsuit, accent, black
 		{ TEXT("/Game/Meshes/SM_RiderSanta_Thigh.SM_RiderSanta_Thigh"), 0, 45.0f },

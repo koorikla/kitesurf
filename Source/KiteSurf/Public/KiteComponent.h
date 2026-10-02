@@ -48,11 +48,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
  * come tight again or it reaches the water. Too much angle of attack stalls it; air on the wrong
  * side of the canopy (overflying the window, or outrunning the wind) luffs it.
  *
- * Steering turns the nose at a rate proportional to airspeed. Normally an assist flies it: bar
- * over means travel round the window that way; bar centred lets the kite drift up the window edge
- * to the zenith and sit there, as a real kite does with the bar neutral (or, with bParkHoldAssist,
- * holds it where the bar was centred). With the loop input held the bar turns the kite directly,
- * so holding it flies a loop.
+ * Steering turns the nose at a rate proportional to airspeed, so the tightest turn has the same
+ * radius at any speed; a depowered kite turns more slowly, and the bar reaches the canopy only
+ * after a dead time that grows as the bar goes out. A slow kite flying across the window drops its
+ * nose. Normally an assist flies it: bar over means travel round the window that way; bar centred
+ * lets the kite drift up the window edge to the zenith and sit there, as a real kite does with the
+ * bar neutral (or, with bParkHoldAssist, holds it where the bar was centred). With the loop input
+ * held the bar turns the kite directly, so holding it flies a loop.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -135,10 +137,15 @@ public:
 
 	/**
 	 * The steering actually reaching the kite, -1..1: the rider's bar while looping, otherwise what
-	 * the assist asks for to carry out the bar's intent. 0 while the kite is in the water.
+	 * the assist asks for to carry out the bar's intent. 0 while the kite is in the water. The
+	 * rider's bar reaches the kite GetSteeringDeadTimeSeconds() after it moves.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetAppliedSteer() const { return AppliedSteer; }
+
+	/** How long the bar takes to reach the canopy at the current sheet (s): SteeringDeadTimeSeconds, plus DepoweredDeadTimeExtraSeconds with the bar right out. */
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	float GetSteeringDeadTimeSeconds() const;
 
 	/** True while the kite is lying on the water. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
@@ -287,6 +294,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float StallAngleDeg;
 
+	/**
+	 * Angle of attack at which the canopy makes no lift (deg): attached-flow lift follows the angle
+	 * above it, reaching MaxLiftCoefficient at StallAngleDeg. A cambered tube kite still lifts at zero
+	 * angle; research puts this at about -3 deg (docs/physics/research.md 1.2), the value to tune
+	 * towards. The default is 0 (no camber) because -3 at today's trim adds so much power that a
+	 * small board planes in 12 kn and the upwind leeway passes 10 deg.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "-15.0", ClampMax = "5.0"))
+	float ZeroLiftAngleDeg;
+
 	/** How far the force on a stalled canopy leans towards its nose (deg). More recovers from a stall faster. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float StalledForwardTiltDeg;
@@ -299,9 +316,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float InducedDragFactor;
 
-	/** Extra drag coefficient with the bar hard over: a kite bent into a turn is draggy, which keeps loop speed down. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
-	float SteeringDragCoefficient;
+	/**
+	 * A kite bent into a turn is draggy, which keeps loop speed down: while the flow is attached the
+	 * drag coefficient is multiplied by 1 + this times the steering reaching the canopy (0..1); a
+	 * stalled canopy drags the same however it is bent. Research: 0.6 (Fechner et al. 2015,
+	 * docs/physics/research.md 1.4).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "0.0"))
+	float SteeringDragFactor;
 
 	/** Resistance to sliding sideways through the air; makes the kite fly where it points. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
@@ -335,9 +357,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float WeathercockGain;
 
-	/** How strongly the nose drops towards the water when the kite is slow. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
-	float GravityTurnGain;
+	/**
+	 * How hard gravity turns the nose of a slow kite towards the water (rad m/s^2): the heading rate
+	 * is this over the airspeed, times how far the kite is flying across the window and how low it
+	 * is (sin(heading) cos(elevation)). For the 12 m^2 reference kite; smaller kites get more, by
+	 * sqrt(ReferenceAreaM2 / AreaM2), as they turn more tightly. Research: Fechner's c_2, 6.28 for a
+	 * 10 m^2 kite (Fechner et al. 2015, docs/physics/research.md 1.4), the value to tune towards. The
+	 * default 2.4 is the most the park-hold assist holds its clock position against (within 4 deg);
+	 * the old gravity term was 1.5.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0"))
+	float GravityTurnRadMPerS2;
+
+	/**
+	 * Dead time between the bar moving and the canopy answering, with the bar right in (s).
+	 * Research: about 0.2 s at full power (Elfert, Goehlich and Schmehl 2024, docs/physics/research.md 1.4).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float SteeringDeadTimeSeconds;
+
+	/**
+	 * Extra dead time with the bar right out (s), scaled by how far out it is: a depowered kite is
+	 * slow to answer the bar. Research: the dead time grows to about 0.6 s at minimum power (Elfert 2024).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float DepoweredDeadTimeExtraSeconds;
+
+	/**
+	 * Turn rate from the bar with the bar right out, as a fraction of the turn rate with it right in;
+	 * in between it follows the sheet. Research: the steering gain falls from 0.35 to 0.15 rad/m from
+	 * full to minimum power, about 0.45 (Elfert 2024, docs/physics/research.md 1.4).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DepoweredTurnRateFactor;
 
 	/** Heading the assist asks for at full steering, measured from nose-out: just past along-the-edge, so the kite also dips into the window and gains power as it travels. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
@@ -433,11 +485,37 @@ protected:
 	/** One fixed step of the flight dynamics; returns the line tension during the step (N). */
 	float StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderVelocity, const FVector& Wind);
 
-	/** Lift and drag coefficients for an angle of attack in degrees, valid at any angle. */
-	void GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag) const;
+	/** Lift and drag coefficients for an angle of attack in degrees, valid at any angle, with the steering (-1..1) reaching the canopy. */
+	void GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag, float SteerAmount = 0.0f) const;
 
-	/** Bar position the kite is flown with: the player's in loop mode, the assist's otherwise. */
-	float ComputeSteering(float DeltaTime, const FVector& RiderVelocity, const FVector& Wind);
+	/** Steering the kite is flown with, from the rider's bar as it reaches the kite (Bar, after the dead time): the bar itself in loop mode, the assist's otherwise. */
+	float ComputeSteering(float DeltaTime, float Bar, const FVector& RiderVelocity, const FVector& Wind);
+
+	/** One bar position and when it was applied, for the steering dead time. */
+	struct FSteerSample
+	{
+		float TimeSeconds = 0.0f;
+		float Steer = 0.0f;
+	};
+
+	/** Forgets the bar's history: from now on it has been at Steer. */
+	void ResetSteerHistory(float Steer);
+
+	/** Remembers the rider's bar at this simulation time, and forgets what no dead time can reach back to. */
+	void RecordSteer(float TimeSeconds, float Steer);
+
+	/** Where the bar was at this simulation time, interpolated between the recorded steps. */
+	float GetRecordedSteer(float TimeSeconds) const;
+
+	const FSteerSample& GetSteerSample(int32 Index) const { return SteerHistory[(SteerHistoryStart + Index) % SteerHistory.Num()]; }
+
+	/** The bar's recent positions, oldest first from SteerHistoryStart: a ring that grows when full. */
+	TArray<FSteerSample> SteerHistory;
+	int32 SteerHistoryStart = 0;
+	int32 SteerHistoryNum = 0;
+
+	/** The simulation time whose bar the kite last flew with (s). */
+	float BarReadSeconds = -UE_BIG_NUMBER;
 
 	void Crash();
 	void Relaunch();

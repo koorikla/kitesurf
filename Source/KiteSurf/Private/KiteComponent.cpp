@@ -19,6 +19,8 @@ namespace
 	const float TurnResetSeconds = 0.75f;
 	// Lines count as at full length within this (cm).
 	const float TautSlackCm = 5.0f;
+	// The bar's history starts with room for this many steps and doubles when it runs out.
+	const int32 MinSteerHistorySamples = 64;
 
 	/** Unit tangent at Dir that points most nearly along Preferred; falls back to a stable choice at the poles. */
 	FVector TangentTowards(const FVector& Dir, const FVector& Preferred)
@@ -60,10 +62,11 @@ UKiteComponent::UKiteComponent()
 	AddedMassKg = 3.0f;
 	MaxLiftCoefficient = 1.2f;
 	StallAngleDeg = 18.0f;
+	ZeroLiftAngleDeg = 0.0f;
 	StalledForwardTiltDeg = 10.0f;
 	ParasiteDragCoefficient = 0.09f;
 	InducedDragFactor = 0.085f;
-	SteeringDragCoefficient = 0.06f;
+	SteeringDragFactor = 0.6f;
 	SideForceCoefficient = 1.2f;
 	SlackDragCoefficient = 0.7f;
 	SlackCollapseCm = 150.0f;
@@ -73,7 +76,10 @@ UKiteComponent::UKiteComponent()
 	MinTurnRadiusCm = 420.0f;
 	TurnResponse = 9.0f;
 	WeathercockGain = 0.2f;
-	GravityTurnGain = 0.15f;
+	GravityTurnRadMPerS2 = 2.4f;
+	SteeringDeadTimeSeconds = 0.15f;
+	DepoweredDeadTimeExtraSeconds = 0.3f;
+	DepoweredTurnRateFactor = 0.45f;
 	TravelHeadingDeg = 100.0f;
 	SteerAssistGain = 2.5f;
 	ZenithDriftGain = 1.0f;
@@ -503,6 +509,7 @@ void UKiteComponent::PlaceParked()
 	AirspeedCmS = WindFelt.Size();
 	TurnRateRadS = 0.0f;
 	AppliedSteer = 0.0f;
+	ResetSteerHistory(0.0f); // a kite put somewhere has been flown there with the bar centred
 	TurnDeg = 0.0f;
 	bLooping = false;
 	CentredBarSeconds = 0.0f;
@@ -553,15 +560,21 @@ void UKiteComponent::UpdateAngles()
 	AzimuthDeg = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(KiteDir, Crosswind), FVector::DotProduct(KiteDir, Downwind)));
 }
 
-void UKiteComponent::GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag) const
+void UKiteComponent::GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag, float SteerAmount) const
 {
 	const float Alpha = FMath::UnwindDegrees(AlphaDeg);
 	const float AlphaRad = FMath::DegreesToRadians(Alpha);
 
-	// Attached flow: lift rises with angle of attack, rounding off to its maximum at the stall,
-	// and drags a little more for it.
-	const float AttachedLift = MaxLiftCoefficient * FMath::Sin(FMath::Clamp(Alpha / FMath::Max(StallAngleDeg, 1.0f), -1.0f, 1.0f) * UE_HALF_PI);
-	const float AttachedDrag = ParasiteDragCoefficient + InducedDragFactor * FMath::Square(AttachedLift);
+	// Attached flow: lift rises with the angle above the zero-lift angle (a cambered canopy lifts at
+	// zero), rounding off to its maximum at the stall, and drags a little more for it. The stall on
+	// the other side is as far below the zero-lift angle.
+	const float EffectiveAlphaDeg = Alpha - ZeroLiftAngleDeg;
+	const float LiftRangeDeg = FMath::Max(StallAngleDeg - ZeroLiftAngleDeg, 1.0f);
+	const float AttachedLift = MaxLiftCoefficient * FMath::Sin(FMath::Clamp(EffectiveAlphaDeg / LiftRangeDeg, -1.0f, 1.0f) * UE_HALF_PI);
+	// A canopy bent into a turn is draggier while the flow is attached (Fechner's steering drag);
+	// a stalled plate drags the same however it is bent.
+	const float SteeringDragScale = 1.0f + SteeringDragFactor * FMath::Clamp(FMath::Abs(SteerAmount), 0.0f, 1.0f);
+	const float AttachedDrag = (ParasiteDragCoefficient + InducedDragFactor * FMath::Square(AttachedLift)) * SteeringDragScale;
 
 	// Separated flow: the canopy is just a plate held across the air, pushed square-on to its
 	// surface. Resolved along and across the flow that is less lift and much more drag.
@@ -574,20 +587,20 @@ void UKiteComponent::GetAeroCoefficients(float AlphaDeg, float& OutLift, float& 
 
 	// The stall takes hold over a few degrees.
 	const float StallBlendDeg = 5.0f;
-	const float Separated = FMath::SmoothStep(StallAngleDeg, StallAngleDeg + StallBlendDeg, FMath::Abs(Alpha));
+	const float Separated = FMath::SmoothStep(LiftRangeDeg, LiftRangeDeg + StallBlendDeg, FMath::Abs(EffectiveAlphaDeg));
 	OutLift = FMath::Lerp(AttachedLift, PlateLift, Separated);
 	OutDrag = FMath::Lerp(AttachedDrag, PlateDrag, Separated);
 }
 
-float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVelocity, const FVector& Wind)
+float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector& RiderVelocity, const FVector& Wind)
 {
-	const bool bSteering = FMath::Abs(Steer) >= CentredBarThreshold;
+	const bool bSteering = FMath::Abs(Bar) >= CentredBarThreshold;
 
 	// The bar held towards the side the kite is already on goes straight to the kite, which
 	// turns it down and round: a loop. It stays that way until the bar is let go or reversed,
 	// so the loop carries on through the rest of the window. Steering towards the other side
 	// is a request to fly there, which the assist below carries out over the top.
-	const float SteerSide = Steer >= 0.0f ? 1.0f : -1.0f;
+	const float SteerSide = Bar >= 0.0f ? 1.0f : -1.0f;
 	if (!bSteering || (bLooping && SteerSide != LoopSide))
 	{
 		bLooping = false;
@@ -601,7 +614,7 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 	{
 		CentredBarSeconds = 0.0f;
 		bHasParkClock = false;
-		return Steer;
+		return Bar;
 	}
 
 	CentredBarSeconds += DeltaTime;
@@ -624,7 +637,7 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 	if (bSteering)
 	{
 		// Bar over: travel round the window that way.
-		OffsetDeg = Steer * TravelHeadingDeg;
+		OffsetDeg = Bar * TravelHeadingDeg;
 		bHasParkClock = false;
 	}
 	else if (bParkHoldAssist)
@@ -701,8 +714,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 
 	float LiftCoefficient = 0.0f;
 	float DragCoefficient = 0.0f;
-	GetAeroCoefficients(AlphaDeg, LiftCoefficient, DragCoefficient);
-	DragCoefficient += SteeringDragCoefficient * FMath::Square(SteerInput);
+	GetAeroCoefficients(AlphaDeg, LiftCoefficient, DragCoefficient, SteerInput);
 
 	// Lift acts at right angles to the flow in the plane of the nose and the lines; drag along the
 	// flow; the side force along the span, against the kite sliding sideways.
@@ -774,16 +786,20 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		return Tension;
 	}
 
-	// Heading: the bar turns the nose in proportion to the air flowing over the kite; the nose
-	// also swings to face the flow, and drops towards the water when the kite is slow.
+	// Heading: the bar turns the nose in proportion to the air flowing over the kite, so the turn
+	// has the same radius at any speed, and a depowered kite turns more slowly. The nose also swings
+	// to face the flow, and gravity drops it towards the water when the kite is slow and flying
+	// across the window (Fechner's turn-rate law, docs/physics/research.md 1.4).
 	if (bTaut)
 	{
 		const FVector Right = FVector::CrossProduct(Nose, Dir);
-		const float SteerRate = SteerInput * FMath::Max(ChordFlow, 0.0f) * CmPerM / FMath::Max(MinTurnRadiusCm, 1.0f);
+		const float PowerTurnScale = FMath::Lerp(DepoweredTurnRateFactor, 1.0f, FMath::Clamp(Sheet, 0.0f, 1.0f));
+		const float SteerRate = SteerInput * PowerTurnScale * FMath::Max(ChordFlow, 0.0f) * CmPerM / FMath::Max(MinTurnRadiusCm, 1.0f);
 		const float WeathercockRate = WeathercockGain * SpanFlow;
 		const FVector DownTangent = -FVector::UpVector + FVector::DotProduct(FVector::UpVector, Dir) * Dir;
 		const float MinSpeedForGravityTurn = 3.0f;
-		const float GravityRate = GravityTurnGain * GravityMS2 * FVector::DotProduct(DownTangent, Right) / FMath::Max(PlaneFlowSpeed, MinSpeedForGravityTurn);
+		const float GravityTurn = GravityTurnRadMPerS2 * FMath::Sqrt(ReferenceAreaM2 / FMath::Max(AreaM2, 1.0f));
+		const float GravityRate = GravityTurn * FVector::DotProduct(DownTangent, Right) / FMath::Max(PlaneFlowSpeed, MinSpeedForGravityTurn);
 
 		// The kite has some inertia in yaw: it winds into a turn rather than snapping round.
 		TurnRateRadS = FMath::FInterpTo(TurnRateRadS, SteerRate + WeathercockRate + GravityRate, StepSeconds, TurnResponse);
@@ -829,6 +845,96 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	KiteHeading = TangentTowards(KiteDir, KiteHeading);
 
 	return Tension;
+}
+
+float UKiteComponent::GetSteeringDeadTimeSeconds() const
+{
+	return FMath::Max(SteeringDeadTimeSeconds + DepoweredDeadTimeExtraSeconds * (1.0f - FMath::Clamp(Sheet, 0.0f, 1.0f)), 0.0f);
+}
+
+void UKiteComponent::ResetSteerHistory(float InSteer)
+{
+	SteerHistoryStart = 0;
+	SteerHistoryNum = 0;
+	BarReadSeconds = -UE_BIG_NUMBER;
+	RecordSteer(SimTimeSeconds, InSteer);
+}
+
+void UKiteComponent::RecordSteer(float TimeSeconds, float InSteer)
+{
+	if (SteerHistoryNum > 0)
+	{
+		FSteerSample& Newest = SteerHistory[(SteerHistoryStart + SteerHistoryNum - 1) % SteerHistory.Num()];
+		if (TimeSeconds <= Newest.TimeSeconds)
+		{
+			Newest.Steer = InSteer; // the same instant (a zero-length step): the latest bar wins
+			return;
+		}
+	}
+
+	// No read reaches further back than the longest dead time, the one with the bar right out:
+	// keep the newest sample at or before that and forget the rest.
+	const float LongestDeadTimeSeconds = FMath::Max(SteeringDeadTimeSeconds, 0.0f) + FMath::Max(DepoweredDeadTimeExtraSeconds, 0.0f);
+	const float OldestNeededSeconds = TimeSeconds - LongestDeadTimeSeconds;
+	while (SteerHistoryNum >= 2 && GetSteerSample(1).TimeSeconds <= OldestNeededSeconds)
+	{
+		SteerHistoryStart = (SteerHistoryStart + 1) % SteerHistory.Num();
+		--SteerHistoryNum;
+	}
+
+	if (SteerHistoryNum == SteerHistory.Num())
+	{
+		TArray<FSteerSample> Grown;
+		Grown.SetNum(FMath::Max(2 * SteerHistory.Num(), MinSteerHistorySamples));
+		for (int32 Index = 0; Index < SteerHistoryNum; ++Index)
+		{
+			Grown[Index] = GetSteerSample(Index);
+		}
+		SteerHistory = MoveTemp(Grown);
+		SteerHistoryStart = 0;
+	}
+	FSteerSample& Added = SteerHistory[(SteerHistoryStart + SteerHistoryNum) % SteerHistory.Num()];
+	Added.TimeSeconds = TimeSeconds;
+	Added.Steer = InSteer;
+	++SteerHistoryNum;
+}
+
+float UKiteComponent::GetRecordedSteer(float TimeSeconds) const
+{
+	if (SteerHistoryNum == 0)
+	{
+		return 0.0f;
+	}
+	const FSteerSample& Oldest = GetSteerSample(0);
+	if (TimeSeconds <= Oldest.TimeSeconds)
+	{
+		return Oldest.Steer;
+	}
+	const FSteerSample& Newest = GetSteerSample(SteerHistoryNum - 1);
+	if (TimeSeconds >= Newest.TimeSeconds)
+	{
+		return Newest.Steer;
+	}
+
+	// The last sample at or before the time, and the one after it.
+	int32 Before = 0;
+	int32 After = SteerHistoryNum - 1;
+	while (After - Before > 1)
+	{
+		const int32 Mid = (Before + After) / 2;
+		if (GetSteerSample(Mid).TimeSeconds <= TimeSeconds)
+		{
+			Before = Mid;
+		}
+		else
+		{
+			After = Mid;
+		}
+	}
+	const FSteerSample& From = GetSteerSample(Before);
+	const FSteerSample& To = GetSteerSample(After);
+	const float SpanSeconds = To.TimeSeconds - From.TimeSeconds;
+	return SpanSeconds > 0.0f ? FMath::Lerp(From.Steer, To.Steer, (TimeSeconds - From.TimeSeconds) / SpanSeconds) : To.Steer;
 }
 
 void UKiteComponent::UpdateKite(float DeltaTime)
@@ -888,11 +994,18 @@ void UKiteComponent::StepKite(float StepSeconds)
 		return;
 	}
 
+	// The kite answers the rider's bar after the dead time: it is flown with where the bar was
+	// then. The assist is the rider's practised hands and leads the kite by the dead time, so its
+	// own corrections to hold a heading are not delayed.
+	// Letting the bar out lengthens the dead time; the kite then holds the bar it has rather than
+	// going back to an older one, so the time it reads never runs backwards.
+	RecordSteer(SimTimeSeconds, Steer);
+	BarReadSeconds = FMath::Max(SimTimeSeconds - GetSteeringDeadTimeSeconds(), BarReadSeconds);
+	const float BarAtKite = GetRecordedSteer(BarReadSeconds);
 	const FVector Wind = GetWindAt(KiteWorldPosition);
-	const float SteerInput = ComputeSteering(StepSeconds, RiderVelocity, Wind);
-	AppliedSteer = SteerInput;
+	AppliedSteer = ComputeSteering(StepSeconds, BarAtKite, RiderVelocity, Wind);
 
-	const float Tension = StepFlight(StepSeconds, SteerInput, RiderPos, RiderVelocity, Wind);
+	const float Tension = StepFlight(StepSeconds, AppliedSteer, RiderPos, RiderVelocity, Wind);
 	if (StepSeconds > 0.0f && KiteWorldPosition.Z <= CrashHeightCm)
 	{
 		Crash();

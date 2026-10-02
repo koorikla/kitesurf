@@ -440,15 +440,17 @@ bool FKiteSurfKiteSteeringTravelsRoundTheWindow::RunTest(const FString& Paramete
 	TestFalse(TEXT("and the kite stays out of the water"), Kite->IsCrashed());
 	TestTrue(FString::Printf(TEXT("parked near the window edge (depth %.0f deg, %.0f cm/s)"), Kite->GetWindowDepthDeg(), Kite->GetKiteVelocity().Size()), Kite->GetWindowDepthDeg() < 30.0f && Kite->GetKiteVelocity().Size() < 150.0f);
 
-	// Reversing the bar mid-loop is a new request, not more of the loop.
+	// Reversing the bar mid-loop is a new request, not more of the loop. The kite answers the bar
+	// after its dead time, so each change is checked once that has passed.
 	Kite->SetWindowPosition(60.0f, 10.0f);
 	Settle.Fly(Kite, 0.0f, 4.0f);
 	FKiteFlight Start;
-	Start.Fly(Kite, 1.0f, 0.3f);
-	TestTrue(TEXT("Bar towards the kite's own side loops at once"), Kite->IsLooping());
-	Start.Fly(Kite, -1.0f, RideDeltaTime);
+	const float DeadTimeSeconds = Kite->GetSteeringDeadTimeSeconds();
+	Start.Fly(Kite, 1.0f, DeadTimeSeconds + 2.0f * RideDeltaTime);
+	TestTrue(TEXT("Bar towards the kite's own side loops as soon as it reaches the kite"), Kite->IsLooping());
+	Start.Fly(Kite, -1.0f, DeadTimeSeconds);
 	Kite->SteerKite(-1.0f);
-	Kite->UpdateKite(RideDeltaTime);
+	Kite->UpdateKite(2.0f * RideDeltaTime);
 	TestFalse(TEXT("Bar reversed: the kite is being flown to the other side instead"), Kite->IsLooping());
 	return true;
 }
@@ -494,6 +496,146 @@ bool FKiteSurfKiteLoopsWhenSteerHeld::RunTest(const FString& Parameters)
 		TestNearlyEqual(TEXT("Parked tension returns to about what it was"), Kite->GetLineTensionN(), ParkedTensionN, ParkedTensionN * 0.4f);
 		TestNearlyEqual(TEXT("The turn counter clears once the bar is centred"), Kite->GetTurnDeg(), 0.0f, 0.1f);
 	}
+	return true;
+}
+
+// A depowered kite turns more slowly: the bar turns it at a fraction of the rate it does sheeted
+// in, and reaches it later. Research: the steering gain (turn per metre of air past the kite)
+// falls from 0.35 to 0.15 rad/m and the dead time grows from 0.2 to 0.6 s from full to minimum
+// power (Elfert 2024, docs/physics/research.md 1.4).
+//
+// From the same start, each kite is turned at full bar and the degrees it turns are counted for 2 s
+// from when the bar reaches it, so the dead time (checked on its own) does not count twice. The
+// research's ratio is of steering gains at the same airspeed; a depowered kite also flies slower,
+// so in degrees it turns less than the gain alone says. Both are held to 35 to 55%.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteDepowerSlowsTheTurn, "KiteSurf.Kite.DepowerSlowsTheTurn", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteDepowerSlowsTheTurn::RunTest(const FString& Parameters)
+{
+	const float SettleSheet = 0.5f;
+	const float TurnSeconds = 2.0f;
+	float TurnedDeg[2] = { 0.0f, 0.0f };
+	float AirRunM[2] = { 0.0f, 0.0f };
+	float DeadTimeSeconds[2] = { 0.0f, 0.0f };
+	float TurnedBeforeBarDeg[2] = { 0.0f, 0.0f };
+	const float Sheets[2] = { 0.0f, 1.0f };
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FStandingFixture Standing;
+		UKiteComponent* Kite = Standing.Kite;
+		TestNotNull(TEXT("Kite created"), Kite);
+		if (!Kite)
+		{
+			return false;
+		}
+		// The same start for both: parked overhead, settled half sheeted. Then the bar goes to the
+		// sheet under test and hard over, loop held, all at once.
+		Kite->bParkHoldAssist = true;
+		Kite->SheetKite(SettleSheet);
+		Kite->SetWindowPosition(0.0f, 10.0f);
+		FKiteFlight Settle;
+		Settle.Fly(Kite, 0.0f, 5.0f);
+
+		Kite->SheetKite(Sheets[Index]);
+		DeadTimeSeconds[Index] = Kite->GetSteeringDeadTimeSeconds();
+		Kite->SetLoopHeld(true);
+		Kite->SteerKite(1.0f);
+		float Elapsed = 0.0f;
+		for (; Elapsed < DeadTimeSeconds[Index]; Elapsed += RideDeltaTime)
+		{
+			Kite->UpdateKite(RideDeltaTime);
+		}
+		TurnedBeforeBarDeg[Index] = Kite->GetTurnDeg();
+		for (float Turning = 0.0f; Turning < TurnSeconds; Turning += RideDeltaTime)
+		{
+			Kite->UpdateKite(RideDeltaTime);
+			AirRunM[Index] += Kite->GetAirspeedCmS() / 100.0f * RideDeltaTime;
+		}
+		TurnedDeg[Index] = Kite->GetTurnDeg() - TurnedBeforeBarDeg[Index];
+		TestFalse(FString::Printf(TEXT("Sheet %.0f: the kite stays in the air"), Sheets[Index]), Kite->IsCrashed());
+		Kite->SetLoopHeld(false);
+	}
+	const float DegreesRatio = TurnedDeg[0] / FMath::Max(TurnedDeg[1], 1.0f);
+	const float GainOut = TurnedDeg[0] / FMath::Max(AirRunM[0], 1.0f);
+	const float GainIn = TurnedDeg[1] / FMath::Max(AirRunM[1], 1.0f);
+	const float GainRatio = GainOut / FMath::Max(GainIn, KINDA_SMALL_NUMBER);
+	UE_LOG(LogKiteSurf, Log, TEXT("DepowerSlowsTheTurn: %.0f s at full bar from when it reaches the kite: sheeted out %.0f deg over %.1f m of air (%.2f s dead time, %.1f deg before), sheeted in %.0f deg over %.1f m of air (%.2f s dead time, %.1f deg before); steering gain %.2f against %.2f rad/m (%.0f%%), degrees %.0f%%"),
+		TurnSeconds, TurnedDeg[0], AirRunM[0], DeadTimeSeconds[0], TurnedBeforeBarDeg[0], TurnedDeg[1], AirRunM[1], DeadTimeSeconds[1], TurnedBeforeBarDeg[1],
+		FMath::DegreesToRadians(GainOut), FMath::DegreesToRadians(GainIn), 100.0f * GainRatio, 100.0f * DegreesRatio);
+
+	TestTrue(FString::Printf(TEXT("Sheeted in the kite turns (%.0f deg in %.0f s)"), TurnedDeg[1], TurnSeconds), TurnedDeg[1] > 180.0f);
+	TestTrue(FString::Printf(TEXT("Sheeted out it turns 35 to 55%% as far in the same time (%.0f%%)"), 100.0f * DegreesRatio), DegreesRatio >= 0.35f && DegreesRatio <= 0.55f);
+	TestTrue(FString::Printf(TEXT("and its steering gain, turn per metre of air, is 35 to 55%% of sheeted in (%.0f%%)"), 100.0f * GainRatio), GainRatio >= 0.35f && GainRatio <= 0.55f);
+	TestTrue(FString::Printf(TEXT("The bar reaches it later (%.2f s against %.2f s)"), DeadTimeSeconds[0], DeadTimeSeconds[1]), DeadTimeSeconds[0] > DeadTimeSeconds[1]);
+	TestTrue(FString::Printf(TEXT("and until it does, neither kite turns much (%.0f and %.0f deg)"), TurnedBeforeBarDeg[0], TurnedBeforeBarDeg[1]), FMath::Abs(TurnedBeforeBarDeg[0]) < 15.0f && FMath::Abs(TurnedBeforeBarDeg[1]) < 15.0f);
+	return true;
+}
+
+// The tightest turn is a fixed radius, whatever the speed: the bar turns the kite in proportion to
+// its airspeed (research: radius 1 / g_k, docs/physics/research.md 1.4). Measured from the kite's
+// path over one full loop after it has wound into the turn.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteLoopRadiusIsSpeedIndependent, "KiteSurf.Kite.LoopRadiusIsSpeedIndependent", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteLoopRadiusIsSpeedIndependent::RunTest(const FString& Parameters)
+{
+	const float WindsKnots[2] = { 15.0f, 25.0f };
+	const float StartTurnDeg = 45.0f;
+	const float LoopDeg = 360.0f;
+	const float MaxSeconds = 10.0f;
+	float RadiusM[2] = { 0.0f, 0.0f };
+	float LoopSeconds[2] = { 0.0f, 0.0f };
+	float MeanSpeedMS[2] = { 0.0f, 0.0f };
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FStandingFixture Standing;
+		UKiteComponent* Kite = Standing.Kite;
+		UWindComponent* Wind = Standing.Pawn ? Standing.Pawn->GetWind() : nullptr;
+		TestTrue(TEXT("Kite and wind created"), Kite && Wind);
+		if (!Kite || !Wind)
+		{
+			return false;
+		}
+		Wind->BaseWind = FVector(WindsKnots[Index] * KnotCmS, 0.0f, 0.0f);
+		Kite->bParkHoldAssist = true;
+		Kite->SetWindowPosition(0.0f, 10.0f);
+		FKiteFlight Settle;
+		Settle.Fly(Kite, 0.0f, 5.0f);
+
+		// Full bar, loop held: once the kite has wound into the turn, follow it round one loop.
+		Kite->SetLoopHeld(true);
+		Kite->SteerKite(1.0f);
+		float PathCm = 0.0f;
+		float Seconds = 0.0f;
+		float LoopStartSeconds = -1.0f;
+		FVector Previous = Kite->GetKiteWorldPosition();
+		while (Seconds < MaxSeconds && !Kite->IsCrashed() && Kite->GetTurnDeg() < StartTurnDeg + LoopDeg)
+		{
+			Kite->UpdateKite(RideDeltaTime);
+			Seconds += RideDeltaTime;
+			const FVector Now = Kite->GetKiteWorldPosition();
+			if (Kite->GetTurnDeg() >= StartTurnDeg)
+			{
+				if (LoopStartSeconds < 0.0f)
+				{
+					LoopStartSeconds = Seconds;
+				}
+				PathCm += FVector::Dist(Now, Previous);
+			}
+			Previous = Now;
+		}
+		const float TurnedRad = FMath::DegreesToRadians(Kite->GetTurnDeg() - StartTurnDeg);
+		RadiusM[Index] = PathCm / 100.0f / FMath::Max(TurnedRad, KINDA_SMALL_NUMBER);
+		LoopSeconds[Index] = Seconds - LoopStartSeconds;
+		MeanSpeedMS[Index] = PathCm / 100.0f / FMath::Max(LoopSeconds[Index], KINDA_SMALL_NUMBER);
+		TestTrue(FString::Printf(TEXT("%.0f kn: the kite flew a full loop (%.0f deg)"), WindsKnots[Index], Kite->GetTurnDeg() - StartTurnDeg), Kite->GetTurnDeg() - StartTurnDeg >= LoopDeg);
+		TestFalse(FString::Printf(TEXT("%.0f kn: without going into the water"), WindsKnots[Index]), Kite->IsCrashed());
+		Kite->SetLoopHeld(false);
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("LoopRadiusIsSpeedIndependent: full-bar loop radius %.2f m at %.0f kn (%.1f m/s, %.2f s a loop), %.2f m at %.0f kn (%.1f m/s, %.2f s a loop); MinTurnRadiusCm %.0f"),
+		RadiusM[0], WindsKnots[0], MeanSpeedMS[0], LoopSeconds[0], RadiusM[1], WindsKnots[1], MeanSpeedMS[1], LoopSeconds[1], UKiteComponent::StaticClass()->GetDefaultObject<UKiteComponent>()->MinTurnRadiusCm);
+
+	TestTrue(FString::Printf(TEXT("The kite loops faster in more wind (%.1f against %.1f m/s)"), MeanSpeedMS[1], MeanSpeedMS[0]), MeanSpeedMS[1] > 1.2f * MeanSpeedMS[0]);
+	TestNearlyEqual(FString::Printf(TEXT("but in a loop of the same radius, within 15%% (%.2f m against %.2f m)"), RadiusM[1], RadiusM[0]), RadiusM[1], RadiusM[0], 0.15f * RadiusM[0]);
 	return true;
 }
 
@@ -957,12 +1099,13 @@ bool FKiteSurfKiteAppliedSteer::RunTest(const FString& Parameters)
 	Parked.Fly(Kite, 0.0f, 6.0f);
 	TestTrue(FString::Printf(TEXT("A settled, parked kite needs little steering (%.2f)"), Kite->GetAppliedSteer()), FMath::Abs(Kite->GetAppliedSteer()) < 0.5f);
 
-	// Looping, the rider's bar goes straight to the kite.
+	// Looping, the rider's bar goes straight to the kite, once its dead time has passed.
 	Kite->SetLoopHeld(true);
 	FKiteFlight Loop;
-	Loop.Fly(Kite, 0.6f, 0.2f);
+	const float DeadTimeSeconds = Kite->GetSteeringDeadTimeSeconds();
+	Loop.Fly(Kite, 0.6f, DeadTimeSeconds + 0.2f);
 	TestNearlyEqual(TEXT("With loop held the kite gets exactly the bar"), Kite->GetAppliedSteer(), 0.6f, 0.001f);
-	Loop.Fly(Kite, -1.0f, 0.1f);
+	Loop.Fly(Kite, -1.0f, DeadTimeSeconds + 0.1f);
 	TestNearlyEqual(TEXT("in both directions"), Kite->GetAppliedSteer(), -1.0f, 0.001f);
 	Kite->SetLoopHeld(false);
 
@@ -1099,7 +1242,8 @@ namespace
 	/**
 	 * Rides for a few seconds at 30 kn on the recommended kite, then jumps. With bSend the kite is
 	 * steered hard up; with bHoldEdge the rider's weight is on the tail until ReleaseSeconds after
-	 * that, when they pull the bar in and pop. ReleaseSeconds < 0 means never pop.
+	 * the kite starts to answer that (the bar reaches it after its steering dead time), when they
+	 * pull the bar in and pop. ReleaseSeconds < 0 means never pop.
 	 */
 	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop)
 	{
@@ -1113,9 +1257,11 @@ namespace
 		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(30.0f));
 		Ride.Simulate(8.0f);
 
+		float SendDeadTimeSeconds = 0.0f;
 		if (bSend)
 		{
 			Ride.Pawn->SteerKite(-1.0f);
+			SendDeadTimeSeconds = Ride.Kite->GetSteeringDeadTimeSeconds();
 		}
 		if (bHoldEdge)
 		{
@@ -1134,7 +1280,7 @@ namespace
 				Ride.Board->SetWeightShift(0.0f);
 				Ride.Pawn->SheetKite(1.0f);
 			}
-			if (!bLeftWater && ReleaseSeconds >= 0.0f && Elapsed >= ReleaseSeconds)
+			if (!bLeftWater && ReleaseSeconds >= 0.0f && Elapsed >= ReleaseSeconds + SendDeadTimeSeconds)
 			{
 				Ride.Board->SetWeightShift(-1.0f);
 				Ride.Pawn->SheetKite(1.0f);

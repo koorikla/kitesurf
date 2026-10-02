@@ -10,6 +10,9 @@
 #include "WindComponent.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "UI/KiteSurfMainMenuWidget.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UI/KiteSurfSettingsWidget.h"
+#include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
 
@@ -160,6 +163,26 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.MenuKey"),
+			TEXT("Sends a key press through the UI, as the keyboard or gamepad would. Usage: kitesurf.MenuKey <Up|Down|Left|Right|Enter|Gamepad_DPad_Down|...>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const FKey Key(Args.IsValidIndex(0) ? FName(*Args[0]) : NAME_None);
+				if (!Key.IsValid())
+				{
+					return;
+				}
+				// Through Slate, as a real key press goes: it reaches the menu only if the menu has
+				// keyboard focus, which is the thing worth checking in a scripted run.
+				FSlateApplication& Slate = FSlateApplication::Get();
+				const FKeyEvent Event(Key, FModifierKeysState(), Slate.GetUserIndexForKeyboard(), false, 0, 0);
+				const bool bHandled = Slate.ProcessKeyDownEvent(Event);
+				Slate.ProcessKeyUpEvent(Event);
+				UE_LOG(LogKiteSurf, Log, TEXT("Menu key %s: %s"), *Key.ToString(), bHandled ? TEXT("handled") : TEXT("not handled"));
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.OpenGear"),
 			TEXT("Opens the gear screen from whichever menu is on screen (PLAY on the main menu, GEAR on the pause menu)."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -215,6 +238,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.TogglePause"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenGear"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MenuKey"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MotionBar"));

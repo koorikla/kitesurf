@@ -263,6 +263,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateVolumeSlider, SSlider)
+						.IsFocusable(false)
 						.Value(CurrentVolume)
 						.OnValueChanged_Lambda([this](float NewVal)
 						{
@@ -305,6 +306,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateFullscreenButton, SButton)
+						.IsFocusable(false)
 						.HAlign(HAlign_Center)
 						.OnClicked_Lambda([this]()
 						{
@@ -341,6 +343,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateResolutionCombo, SComboBox<TSharedPtr<FString>>)
+						.IsFocusable(false)
 						.OptionsSource(&ResolutionOptions)
 						.InitiallySelectedItem(InitiallySelectedRes)
 						.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
@@ -390,6 +393,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateMotionBarButton, SButton)
+						.IsFocusable(false)
 						.HAlign(HAlign_Center)
 						.OnClicked_Lambda([this]()
 						{
@@ -436,6 +440,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateVSyncButton, SButton)
+						.IsFocusable(false)
 						.HAlign(HAlign_Center)
 						.OnClicked_Lambda([this]()
 						{
@@ -472,6 +477,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateQualityCombo, SComboBox<TSharedPtr<FString>>)
+						.IsFocusable(false)
 						.OptionsSource(&QualityOptions)
 						.InitiallySelectedItem(InitiallySelectedQuality)
 						.OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
@@ -505,6 +511,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 				.HAlign(HAlign_Center)
 				[
 					SAssignNew(SlateBackButton, SButton)
+					.IsFocusable(false)
 					.OnClicked_Lambda([this]()
 					{
 						OnBackClicked();
@@ -529,6 +536,10 @@ void UKiteSurfSettingsWidget::OnWindSliderChanged(float Value)
 void UKiteSurfSettingsWidget::OnVolumeSliderChanged(float Value)
 {
 	CurrentVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	if (SlateVolumeSlider.IsValid() && !FMath::IsNearlyEqual(SlateVolumeSlider->GetValue(), CurrentVolume))
+	{
+		SlateVolumeSlider->SetValue(CurrentVolume); // moved by the keys rather than the mouse
+	}
 	UpdateTextDisplays();
 }
 
@@ -839,19 +850,51 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 
 void UKiteSurfSettingsWidget::FocusFirst()
 {
-	if (BackButton)
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		BackButton->SetKeyboardFocus();
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
-	else if (SlateBackButton.IsValid())
+}
+
+FKiteMenuNavigator& UKiteSurfSettingsWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
 	{
-		FSlateApplication::Get().SetKeyboardFocus(SlateBackButton);
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
 	}
+	return Navigator;
+}
+
+void UKiteSurfSettingsWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.AddSlider(SlateVolumeSlider, [this](int32 Direction) { OnVolumeSliderChanged(CurrentVolume + 0.05f * Direction); });
+	Navigator.AddButton(SlateFullscreenButton, [this]() { ToggleFullscreen(); }, true);
+	Navigator.AddText(SlateResolutionText, [this](int32 Direction)
+	{
+		// Step to the neighbouring resolution; from one that is not in the list, start at its end.
+		const int32 Current = SupportedResolutions.IndexOfByKey(CurrentResolution);
+		const int32 Next = Current == INDEX_NONE ? (Direction > 0 ? 0 : SupportedResolutions.Num() - 1) : Current + Direction;
+		SetResolutionByIndex(FMath::Clamp(Next, 0, FMath::Max(SupportedResolutions.Num() - 1, 0)));
+	});
+	Navigator.AddButton(SlateMotionBarButton, [this]() { ToggleMotionBar(); }, true);
+	Navigator.AddButton(SlateVSyncButton, [this]() { ToggleVSync(); }, true);
+	Navigator.AddText(SlateQualityText, [this](int32 Direction) { SetQualityPreset(CurrentQualityPreset + Direction); });
+	Navigator.AddButton(SlateBackButton, [this]() { OnBackClicked(); });
 }
 
 FReply UKiteSurfSettingsWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right || Key == EKeys::Gamepad_FaceButton_Right)
 	{
 		OnBackClicked();

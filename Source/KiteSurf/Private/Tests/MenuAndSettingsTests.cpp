@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "KiteComponent.h"
@@ -511,6 +512,189 @@ bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
     // The menu art exists.
     TestNotNull(TEXT("The menu background texture is imported"), KiteSurfMenuStyle::LoadBackgroundTexture());
     TestTrue(TEXT("The startup splash is in Content/Splash"), FPaths::FileExists(FPaths::ProjectContentDir() / TEXT("Splash/EdSplash.png")) && FPaths::FileExists(FPaths::ProjectContentDir() / TEXT("Splash/Splash.png")));
+
+    World->DestroyWorld(false);
+    return true;
+}
+
+// Menus are driven from the keyboard and the gamepad: up and down move, left and right change, accept presses.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfMenuNavigationTest, "KiteSurf.UI.MenuNavigation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
+{
+    // The navigator on its own.
+    {
+        FKiteMenuNavigator Navigator;
+        int32 Pressed = 0;
+        int32 Adjusted = 0;
+        TArray<int32> Highlighted;
+        Highlighted.Init(0, 3);
+        for (int32 Index = 0; Index < 3; ++Index)
+        {
+            FKiteMenuNavigator::FItem Item;
+            Item.Highlight = [&Highlighted, Index](bool bSelected) { Highlighted[Index] = bSelected ? 1 : 0; };
+            if (Index != 1)
+            {
+                Item.Activate = [&Pressed, Index]() { Pressed += 1 + Index; };
+            }
+            if (Index == 1)
+            {
+                Item.Adjust = [&Adjusted](int32 Direction) { Adjusted += Direction; };
+            }
+            Navigator.AddItem(MoveTemp(Item));
+        }
+        Navigator.Select(0);
+        TestTrue(TEXT("The selected item is highlighted and no other"), Highlighted[0] == 1 && Highlighted[1] == 0 && Highlighted[2] == 0);
+
+        TestTrue(TEXT("Down is a navigation key"), Navigator.HandleKey(EKeys::Down));
+        TestEqual(TEXT("and moves the selection down"), Navigator.GetSelected(), 1);
+        TestTrue(TEXT("The highlight moves with it"), Highlighted[0] == 0 && Highlighted[1] == 1);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
+        TestEqual(TEXT("The D-pad moves it too"), Navigator.GetSelected(), 2);
+        Navigator.HandleKey(EKeys::Gamepad_LeftStick_Down);
+        TestEqual(TEXT("The left stick moves it, and past the bottom it wraps to the top"), Navigator.GetSelected(), 0);
+        Navigator.HandleKey(EKeys::Up);
+        TestEqual(TEXT("Up from the top wraps to the bottom"), Navigator.GetSelected(), 2);
+        Navigator.HandleKey(EKeys::Gamepad_LeftStick_Up);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Up);
+        TestEqual(TEXT("Up twice more is back at the top"), Navigator.GetSelected(), 0);
+
+        Navigator.HandleKey(EKeys::Enter);
+        TestEqual(TEXT("Enter presses the selected item"), Pressed, 1);
+        Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);
+        Navigator.HandleKey(EKeys::SpaceBar);
+        TestEqual(TEXT("as do the bottom face button and Space"), Pressed, 3);
+        Navigator.HandleKey(EKeys::Right);
+        TestEqual(TEXT("Left and right do nothing on an item with no value"), Adjusted, 0);
+
+        Navigator.Select(1);
+        Navigator.HandleKey(EKeys::Right);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Right);
+        Navigator.HandleKey(EKeys::Gamepad_LeftStick_Left);
+        TestEqual(TEXT("Left and right change the selected item's value"), Adjusted, 1);
+        Navigator.HandleKey(EKeys::Enter);
+        TestEqual(TEXT("Accept does nothing on an item with nothing to press"), Pressed, 3);
+
+        TestFalse(TEXT("Other keys are left for the menu to handle"), Navigator.HandleKey(EKeys::Escape));
+        TestFalse(TEXT("including letters"), Navigator.HandleKey(EKeys::W));
+    }
+
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    TestNotNull(TEXT("World created"), World);
+    if (!World)
+    {
+        return false;
+    }
+
+    // Main menu: PLAY, SETTINGS, QUIT.
+    UKiteSurfMainMenuWidget* MainMenu = CreateWidget<UKiteSurfMainMenuWidget>(World, UKiteSurfMainMenuWidget::StaticClass());
+    if (MainMenu)
+    {
+        FKiteMenuNavigator& Navigator = MainMenu->GetNavigator();
+        TestEqual(TEXT("The main menu has three items"), Navigator.Num(), 3);
+        TestEqual(TEXT("and opens on PLAY"), Navigator.GetSelected(), 0);
+        Navigator.HandleKey(EKeys::Down);
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotNull(TEXT("Down then accept opens settings"), MainMenu->ActiveSettingsWidget.Get());
+        MainMenu->OnSettingsClosed();
+        TestEqual(TEXT("Back on the menu the selection is PLAY again"), MainMenu->GetNavigator().GetSelected(), 0);
+        MainMenu->GetNavigator().HandleKey(EKeys::Gamepad_FaceButton_Bottom);
+        TestNotNull(TEXT("Accept on PLAY opens the gear screen"), MainMenu->ActiveGearWidget.Get());
+        if (MainMenu->ActiveGearWidget)
+        {
+            MainMenu->ActiveGearWidget->Cancel();
+        }
+    }
+
+    // Pause menu: RESUME, RESTART, GEAR, SETTINGS, MAIN MENU, QUIT.
+    UKiteSurfPauseMenuWidget* PauseMenu = CreateWidget<UKiteSurfPauseMenuWidget>(World, UKiteSurfPauseMenuWidget::StaticClass());
+    if (PauseMenu)
+    {
+        FKiteMenuNavigator& Navigator = PauseMenu->GetNavigator();
+        TestEqual(TEXT("The pause menu has six items"), Navigator.Num(), 6);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
+        Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);
+        TestNotNull(TEXT("Down twice then accept opens the gear screen"), PauseMenu->ActiveGearWidget.Get());
+        if (PauseMenu->ActiveGearWidget)
+        {
+            PauseMenu->ActiveGearWidget->Cancel();
+        }
+    }
+
+    // Settings: volume, window mode, resolution, motion bar, vsync, quality, back.
+    UKiteSurfSettingsWidget* Settings = CreateWidget<UKiteSurfSettingsWidget>(World, UKiteSurfSettingsWidget::StaticClass());
+    if (Settings)
+    {
+        FKiteMenuNavigator& Navigator = Settings->GetNavigator();
+        TestEqual(TEXT("Settings has seven items"), Navigator.Num(), 7);
+        TestEqual(TEXT("and opens on the first"), Navigator.GetSelected(), 0);
+
+        Settings->OnVolumeSliderChanged(1.0f);
+        Navigator.HandleKey(EKeys::Left);
+        Navigator.HandleKey(EKeys::Left);
+        TestNearlyEqual(TEXT("Left on the volume turns it down a step at a time"), Settings->CurrentVolume, 0.9f, 0.001f);
+        Navigator.HandleKey(EKeys::Right);
+        Navigator.HandleKey(EKeys::Right);
+        Navigator.HandleKey(EKeys::Right);
+        TestNearlyEqual(TEXT("Right turns it up, stopping at full"), Settings->CurrentVolume, 1.0f, 0.001f);
+
+        Navigator.Select(3);
+        const bool bMotionBefore = Settings->bMotionBar;
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotEqual(TEXT("Accept on MOTION BAR switches it"), Settings->bMotionBar, bMotionBefore);
+        Navigator.HandleKey(EKeys::Right);
+        TestEqual(TEXT("and so does right"), Settings->bMotionBar, bMotionBefore);
+
+        Navigator.Select(5);
+        Settings->SetQualityPreset(1);
+        Navigator.HandleKey(EKeys::Right);
+        TestEqual(TEXT("Right on QUALITY steps it up"), Settings->CurrentQualityPreset, 2);
+        Navigator.HandleKey(EKeys::Left);
+        Navigator.HandleKey(EKeys::Left);
+        Navigator.HandleKey(EKeys::Left);
+        TestEqual(TEXT("Left steps it down, stopping at the lowest"), Settings->CurrentQualityPreset, 0);
+    }
+
+    // Gear: wind, kite size, kite, board, rider, sandbars, islands, sharks, RIDE, BACK.
+    UKiteSurfGearWidget* Gear = CreateWidget<UKiteSurfGearWidget>(World, UKiteSurfGearWidget::StaticClass());
+    if (Gear)
+    {
+        FKiteMenuNavigator& Navigator = Gear->GetNavigator();
+        TestEqual(TEXT("The gear screen has ten items"), Navigator.Num(), 10);
+        TestEqual(TEXT("and opens on RIDE, so accept starts the ride"), Navigator.GetSelected(), 8);
+
+        Navigator.Select(0);
+        Gear->SetWindKnots(20.0f);
+        Navigator.HandleKey(EKeys::Right);
+        Navigator.HandleKey(EKeys::Right);
+        TestEqual(TEXT("Right on WIND adds a knot each press"), Gear->CurrentWindKnots, 22.0f);
+        Navigator.HandleKey(EKeys::Gamepad_DPad_Left);
+        TestEqual(TEXT("Left takes one off"), Gear->CurrentWindKnots, 21.0f);
+
+        Navigator.HandleKey(EKeys::Down);
+        Gear->SetKiteSizeM2(9.0f);
+        Navigator.HandleKey(EKeys::Left);
+        TestEqual(TEXT("Left on KITE SIZE steps to the next size down"), Gear->CurrentKiteSizeM2, 8.0f);
+        Navigator.HandleKey(EKeys::Right);
+        Navigator.HandleKey(EKeys::Right);
+        TestEqual(TEXT("Right steps up"), Gear->CurrentKiteSizeM2, 10.0f);
+        Gear->SetKiteSizeM2(5.0f);
+        Navigator.HandleKey(EKeys::Left);
+        TestEqual(TEXT("Below the smallest is the recommended size"), Gear->CurrentKiteSizeM2, 0.0f);
+        Navigator.HandleKey(EKeys::Left);
+        TestEqual(TEXT("and below that wraps to the biggest"), Gear->CurrentKiteSizeM2, 17.0f);
+
+        Navigator.HandleKey(EKeys::Down);
+        const EKiteModel ModelBefore = Gear->CurrentKiteModel;
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotEqual(TEXT("Accept on KITE changes the model"), Gear->CurrentKiteModel, ModelBefore);
+
+        Navigator.Select(7);
+        const bool bSharksBefore = Gear->bSharks;
+        Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);
+        TestNotEqual(TEXT("Accept on SHARKS switches them"), Gear->bSharks, bSharksBefore);
+    }
 
     World->DestroyWorld(false);
     return true;

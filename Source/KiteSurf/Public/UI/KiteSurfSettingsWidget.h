@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "RiderCharacter.h"
 #include "KiteSurfSettingsWidget.generated.h"
@@ -166,7 +167,14 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator Navigator;
+
 	void InitializeSettings();
 	void UpdateTextDisplays();
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "KiteGear.h"
 #include "RiderCharacter.h"
 #include "Styling/SlateBrush.h"
@@ -124,7 +125,15 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator::FItem MakeKiteSizeItem();
+	FKiteMenuNavigator Navigator;
+
 	void LoadChoices();
 	void UpdateTexts();
 	TSharedRef<SWidget> BuildChoiceRow(const TCHAR* Label, TSharedPtr<SButton>& OutButton, TSharedPtr<STextBlock>& OutValueText, TSharedPtr<STextBlock>& OutDescriptionText, TFunction<void()> OnClicked);
@@ -159,4 +168,5 @@ private:
 	TSharedPtr<STextBlock> SharksText;
 	TSharedPtr<STextBlock> SharksDescription;
 	TSharedPtr<SButton> ConfirmButton;
+	TSharedPtr<SButton> BackButton;
 };

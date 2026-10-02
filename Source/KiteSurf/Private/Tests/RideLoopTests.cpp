@@ -3,6 +3,13 @@
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialInterface.h"
+#include "RiderCharacter.h"
+#include "UI/KiteSurfSettingsWidget.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "KiteComponent.h"
@@ -631,6 +638,87 @@ bool FKiteSurfRideKiteLiftsRiderOff::RunTest(const FString& Parameters)
 	Ride.Simulate(8.0f);
 	TestTrue(TEXT("Back on the water"), Ride.Board->GetBoardState() != EBoardState::Airborne);
 	TestTrue(TEXT("The landing was clean"), Ride.Board->WasLastLandingClean() && !Ride.Board->IsCrashing());
+	return true;
+}
+
+// The rider on the board follows the chosen character.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPawnRiderCharacterSelection, "KiteSurf.Pawn.RiderCharacterSelection", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPawnRiderCharacterSelection::RunTest(const FString& Parameters)
+{
+	FStandingFixture Standing;
+	AKiteRiderPawn* Pawn = Standing.Pawn;
+	TestNotNull(TEXT("Pawn created"), Pawn);
+	if (!Pawn || !Pawn->GetRiderStaticMesh() || !Pawn->GetRiderMesh())
+	{
+		return false;
+	}
+	const UStaticMeshComponent* Posed = Pawn->GetRiderStaticMesh();
+	const USkeletalMeshComponent* Robot = Pawn->GetRiderMesh();
+
+	TestEqual(TEXT("Santa is the default rider"), Pawn->GetRiderCharacter(), ERiderCharacter::Santa);
+	TestTrue(TEXT("Santa is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderSanta"));
+	TestFalse(TEXT("The robot is hidden behind Santa"), Robot->IsVisible());
+
+	Pawn->SetRiderCharacter(ERiderCharacter::Wetsuit);
+	TestTrue(TEXT("The wetsuit rider is shown"), Posed->IsVisible() && Posed->GetStaticMesh() && Posed->GetStaticMesh()->GetName() == TEXT("SM_RiderWetsuit"));
+
+	Pawn->SetRiderCharacter(ERiderCharacter::Robot);
+	TestTrue(TEXT("The robot is shown"), Robot->IsVisible());
+	TestFalse(TEXT("The posed rider is hidden behind the robot"), Posed->IsVisible());
+
+	// The settings button steps through every rider and comes back round.
+	ERiderCharacter Character = ERiderCharacter::Santa;
+	TSet<ERiderCharacter> Seen;
+	for (int32 Step = 0; Step < static_cast<int32>(ERiderCharacter::Count); ++Step)
+	{
+		Seen.Add(Character);
+		Character = RiderCharacter::Next(Character);
+	}
+	TestEqual(TEXT("Cycling visits every rider"), Seen.Num(), static_cast<int32>(ERiderCharacter::Count));
+	TestEqual(TEXT("and returns to the first"), Character, ERiderCharacter::Santa);
+	TestEqual(TEXT("A stored index out of range falls back to Santa"), RiderCharacter::FromIndex(99), ERiderCharacter::Santa);
+
+	UKiteSurfSettingsWidget* Settings = NewObject<UKiteSurfSettingsWidget>();
+	const ERiderCharacter Before = Settings->CurrentRiderCharacter;
+	Settings->CycleRiderCharacter();
+	TestEqual(TEXT("The settings screen steps to the next rider"), Settings->CurrentRiderCharacter, RiderCharacter::Next(Before));
+	return true;
+}
+
+// Guards the output of scripts/editor/import_geometry.py and create_materials.py.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfAssetsKiteAndRiderMeshes, "KiteSurf.Assets.KiteAndRiderMeshes", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
+{
+	struct FExpectedMesh { const TCHAR* Path; int32 MaterialSlots; float MinSizeCm; };
+	const FExpectedMesh ExpectedMeshes[] =
+	{
+		{ TEXT("/Game/Meshes/SM_Kite.SM_Kite"), 2, 400.0f },                 // canopy and tubes; a 12 m2 kite spans over 4 m
+		{ TEXT("/Game/Meshes/SM_RiderSanta.SM_RiderSanta"), 4, 150.0f },     // skin, white, red, black
+		{ TEXT("/Game/Meshes/SM_RiderWetsuit.SM_RiderWetsuit"), 4, 150.0f }, // skin, wetsuit, accent, black
+	};
+	for (const FExpectedMesh& Expected : ExpectedMeshes)
+	{
+		const UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, Expected.Path);
+		TestNotNull(FString::Printf(TEXT("%s loads"), Expected.Path), Mesh);
+		if (!Mesh)
+		{
+			continue;
+		}
+		TestEqual(FString::Printf(TEXT("%s material slot count"), Expected.Path), Mesh->GetStaticMaterials().Num(), Expected.MaterialSlots);
+		for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
+		{
+			TestTrue(FString::Printf(TEXT("%s slot %s uses a project material"), Expected.Path, *Slot.MaterialSlotName.ToString()),
+				Slot.MaterialInterface && Slot.MaterialInterface->GetPathName().StartsWith(TEXT("/Game/Materials/")));
+		}
+		const float LargestExtentCm = static_cast<float>(Mesh->GetBounds().BoxExtent.GetMax()) * 2.0f;
+		TestTrue(FString::Printf(TEXT("%s is at least %.0f cm across (%.0f)"), Expected.Path, Expected.MinSizeCm, LargestExtentCm), LargestExtentCm >= Expected.MinSizeCm);
+	}
+
+	TestNotNull(TEXT("The kite canopy texture loads"), LoadObject<UTexture2D>(nullptr, TEXT("/Game/Textures/T_KiteCanopy.T_KiteCanopy")));
+	const UMaterialInterface* Canopy = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_KiteCanopy.M_KiteCanopy"));
+	TestTrue(TEXT("The canopy material is two-sided, so the kite shows from both sides"), Canopy && Canopy->IsTwoSided());
 	return true;
 }
 

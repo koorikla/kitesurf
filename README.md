@@ -64,14 +64,19 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Sheet in / out (the bar holds its position) | Up / Down | Right stick up / down, triggers |
 | Loop the kite | Hold Shift while steering | Hold right bumper while steering |
 | Bar on the mouse | Hold right button: move to steer and sheet, left button loops | |
-| Carve the board; spin it in the air | A / D | Left stick left / right |
-| Edge harder / flatten the board | W / S | Left stick up / down |
+| Turn the board left / right; spin it in the air | A / D | Left stick left / right |
+| Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Jump (pop, with the edge loaded) | Space | Bottom face button |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
 
 Sending the kite up over your head with the bar in lifts you off the water without a pop, and a
 kite looped through the middle of the window pulls several times harder than a parked one.
+Loop it too low and it goes into the water, where it lies with slack lines until it relaunches
+(about three seconds, or sooner if you steer). Weight on the tail (S) digs the rail in and loads
+the pop; weight on the nose (W) flattens the board so it runs faster and slides more.
+
+The rider is chosen in Settings: Santa (the default), a wetsuit rider, or the robot.
 
 ## Conventions
 

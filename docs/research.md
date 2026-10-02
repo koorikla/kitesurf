@@ -554,7 +554,7 @@ Orientation is set directly: pitch and roll follow the water normal plus up to 4
 
 ### Gaps for big air, in priority order
 
-1. **Kite flight dynamics** (first version done). The kite now has a heading and an airspeed on the line sphere, a turn rate from bar input, and can loop (`KiteSurf.Kite.LoopsWhenSteerHeld`). Still missing: kite mass and gravity, stall and backstall, and a relaunch after a crash.
+1. **Kite flight dynamics** (first version done). The kite now has a heading and an airspeed on the line sphere, a turn rate from bar input, and can loop (`KiteSurf.Kite.LoopsWhenSteerHeld`). The kite can stall and fall, be looped into the water, and relaunch. Still missing: kite mass and inertia in turns, backstall, and a relaunch that has to be flown.
 2. **Apparent wind from kite motion** (done). Line tension follows the kite's airspeed squared, so a kite diving through the middle of the window pulls several times harder than a parked one.
 3. **Airborne state machine.** No riding, loaded, airborne, landing or crashed states. Water forces are not gated on contact.
 4. **Pop and edge loading.** One edge axis drives roll, grip and yaw together, so an edge cannot be held against the kite without turning.

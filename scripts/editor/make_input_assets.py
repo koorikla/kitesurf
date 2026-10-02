@@ -68,15 +68,8 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_WeightShift', False)
         print(f'IA_WeightShift configured and saved: {ia_weight_shift}')
 
-        # 8. IA_Loop (Digital bool): held, steering loops the kite
-        ia_loop = get_or_create_asset('IA_Loop', '/Game/Input', unreal.InputAction, None)
-        ia_loop.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
-        editor_asset_lib.save_loaded_asset(ia_loop)
-        editor_asset_lib.save_asset('/Game/Input/IA_Loop', False)
-        print(f'IA_Loop configured and saved: {ia_loop}')
-
         # Assets from earlier control schemes
-        for stale in ['/Game/Input/IA_EdgePressure']:
+        for stale in ['/Game/Input/IA_EdgePressure', '/Game/Input/IA_Loop']:
             if editor_asset_lib.does_asset_exist(stale):
                 editor_asset_lib.delete_asset(stale)
 
@@ -97,10 +90,6 @@ def build_assets():
             (ia_sheet, 'Gamepad_RightY', False),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
             (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
-            # Loop modifier
-            (ia_loop, 'LeftShift', False),
-            (ia_loop, 'RightShift', False),
-            (ia_loop, 'Gamepad_RightShoulder', False),
             # Turn the board (IA_Edge keeps its name; it has always driven the carve)
             (ia_edge, 'D', False),
             (ia_edge, 'A', True),
@@ -150,7 +139,6 @@ def build_assets():
         cdo_rider.set_editor_property('sheet_action', ia_sheet)
         cdo_rider.set_editor_property('edge_action', ia_edge)
         cdo_rider.set_editor_property('weight_shift_action', ia_weight_shift)
-        cdo_rider.set_editor_property('loop_action', ia_loop)
         cdo_rider.set_editor_property('jump_action', ia_jump)
         cdo_rider.set_editor_property('pause_action', ia_pause)
         if hasattr(cdo_rider, 'reset_action'):

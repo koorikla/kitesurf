@@ -60,7 +60,7 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
        -ExecCmds="kitesurf.After 500 kitesurf.Input 1 0 0 0 1, kitesurf.SmokeFrames 700"
    ```
    - `kitesurf.After <frames> <command...>` runs a console command later.
-   - `kitesurf.Input <steer> <sheet rate> <carve> <edge pressure> <loop 0|1>` holds inputs on the rider.
+   - `kitesurf.Input <steer> <sheet rate> <turn> <weight shift> <raw steer 0|1>` holds inputs on the rider. The last flag sends the bar straight to the kite from any position; players loop by steering towards the kite's own side instead.
    - `kitesurf.Jump`, `kitesurf.TogglePause` and `kitesurf.OpenSettings` do what the keys and buttons do.
    - `kitesurf.Wind <knots>` sets the base wind speed, e.g. `kitesurf.After 200 kitesurf.Wind 2` to drop the kite and leave the rider floating.
 6. **Package a Linux Shipping build.**

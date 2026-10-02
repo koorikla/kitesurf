@@ -54,7 +54,6 @@ public:
 	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
 	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
 	UInputAction* GetWeightShiftAction() const { return WeightShiftAction.Get(); }
-	UInputAction* GetLoopAction() const { return LoopAction.Get(); }
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
 
@@ -244,9 +243,6 @@ protected:
 	TObjectPtr<UInputAction> WeightShiftAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> LoopAction;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -267,8 +263,6 @@ private:
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
 	void OnWeightShiftTriggered(const FInputActionValue& Value);
-	void OnLoopStarted(const FInputActionValue& Value);
-	void OnLoopCompleted(const FInputActionValue& Value);
 	void UpdateMouseBar();
 	void OnJumpTriggered(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
@@ -295,7 +289,8 @@ private:
 	float SheetRateInput;
 	float KeySteerInput;
 	float MouseSteerInput;
-	bool bLoopKeyHeld;
+	/** Set by ApplyScriptedInput: the bar goes straight to the kite wherever it is. */
+	bool bScriptedRawSteer;
 	FVector SmoothedKiteOffset;
 	float CameraYawDeg;
 	float CameraLookPitchDeg;

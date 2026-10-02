@@ -54,12 +54,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SheetKite(float Amount /* 0..1 */);
 
-	/** While held, steering turns the kite directly instead of choosing a direction of travel, so holding the bar over flies a loop. */
+	/**
+	 * Forces the bar straight through to the kite wherever it is in the window. Not bound to a
+	 * key: the rider loops the kite by holding the bar towards the kite's own side. This is for
+	 * scripted input and tests that need raw steering from any position.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetLoopHeld(bool bHeld);
 
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	bool IsLoopHeld() const { return bLoopHeld; }
+
+	/** True while the rider's bar is going straight to the kite and turning it round: a loop in progress. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	bool IsLooping() const { return bLooping; }
+
+	/** How far round the window on its own side (deg of clock) the kite must be for the bar held that way to loop it rather than fly it there. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float LoopClockDeg;
 
 	/** The kite sizes on offer (m^2), smallest first. */
 	static TConstArrayView<float> GetKiteSizesM2();
@@ -389,6 +401,8 @@ protected:
 	bool bHasParkClock;
 	bool bPlacementPending;
 	bool bLoopHeld;
+	bool bLooping;
+	float LoopSide;
 	bool bCrashed;
 	bool bLinesTaut;
 	float CrashedSeconds;

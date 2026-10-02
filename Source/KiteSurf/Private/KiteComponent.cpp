@@ -102,6 +102,9 @@ UKiteComponent::UKiteComponent()
 	bHasParkClock = false;
 	bPlacementPending = true;
 	bLoopHeld = false;
+	bLooping = false;
+	LoopSide = 0.0f;
+	LoopClockDeg = 35.0f;
 	bCrashed = false;
 	bLinesTaut = true;
 	bHasLastRiderPosition = false;
@@ -485,6 +488,7 @@ void UKiteComponent::PlaceParked()
 	TurnRateRadS = 0.0f;
 	AppliedSteer = 0.0f;
 	TurnDeg = 0.0f;
+	bLooping = false;
 	CentredBarSeconds = 0.0f;
 	bHasParkClock = false;
 	bPlacementPending = false;
@@ -563,8 +567,21 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 {
 	const bool bSteering = FMath::Abs(Steer) >= CentredBarThreshold;
 
-	// Loop input held: the rider's bar goes straight to the kite.
-	if (bLoopHeld && bSteering)
+	// The bar held towards the side the kite is already on goes straight to the kite, which
+	// turns it down and round: a loop. It stays that way until the bar is let go or reversed,
+	// so the loop carries on through the rest of the window. Steering towards the other side
+	// is a request to fly there, which the assist below carries out over the top.
+	const float SteerSide = Steer >= 0.0f ? 1.0f : -1.0f;
+	if (!bSteering || (bLooping && SteerSide != LoopSide))
+	{
+		bLooping = false;
+	}
+	if (bSteering && !bLooping && (bLoopHeld || GetClockDeg() * SteerSide >= LoopClockDeg))
+	{
+		bLooping = true;
+		LoopSide = SteerSide;
+	}
+	if (bLooping)
 	{
 		CentredBarSeconds = 0.0f;
 		bHasParkClock = false;
@@ -732,7 +749,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		TurnRateRadS = FMath::FInterpTo(TurnRateRadS, SteerRate + WeathercockRate + GravityRate, StepSeconds, TurnResponse);
 		const float TurnRad = TurnRateRadS * StepSeconds;
 		KiteHeading = Nose * FMath::Cos(TurnRad) + Right * FMath::Sin(TurnRad);
-		if (bLoopHeld && FMath::Abs(Steer) >= CentredBarThreshold)
+		if (bLooping)
 		{
 			TurnDeg += FMath::RadiansToDegrees(TurnRad);
 		}

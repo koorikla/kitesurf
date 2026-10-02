@@ -171,7 +171,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	SheetRateInput = 0.0f;
 	KeySteerInput = 0.0f;
 	MouseSteerInput = 0.0f;
-	bLoopKeyHeld = false;
+	bScriptedRawSteer = false;
 	SmoothedKiteOffset = FVector::ZeroVector;
 	CameraYawDeg = 0.0f;
 	CameraLookPitchDeg = 0.0f;
@@ -250,11 +250,6 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(WeightShiftAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnWeightShiftTriggered);
 			EnhancedInputComponent->BindAction(WeightShiftAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnWeightShiftTriggered);
 		}
-		if (LoopAction)
-		{
-			EnhancedInputComponent->BindAction(LoopAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnLoopStarted);
-			EnhancedInputComponent->BindAction(LoopAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnLoopCompleted);
-		}
 		if (PauseAction)
 		{
 			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
@@ -296,7 +291,7 @@ void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carv
 	{
 		BoardMovement->SetWeightShift(WeightShift);
 	}
-	bLoopKeyHeld = bLoop;
+	bScriptedRawSteer = bLoop;
 }
 
 void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
@@ -307,23 +302,12 @@ void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
 	}
 }
 
-void AKiteRiderPawn::OnLoopStarted(const FInputActionValue& Value)
-{
-	bLoopKeyHeld = true;
-}
-
-void AKiteRiderPawn::OnLoopCompleted(const FInputActionValue& Value)
-{
-	bLoopKeyHeld = false;
-}
-
 void AKiteRiderPawn::UpdateMouseBar()
 {
 	// The mouse is the bar while the right button is held: sideways steers, towards you sheets
-	// in, and the left button is the hard pull that loops the kite. Letting go centres the bar.
+	// in. Letting go centres the bar.
 	const APlayerController* PC = Cast<APlayerController>(GetController());
 	const bool bMouseBar = PC && PC->IsInputKeyDown(EKeys::RightMouseButton);
-	bool bMouseLoop = false;
 	if (bMouseBar)
 	{
 		float DeltaX = 0.0f;
@@ -331,7 +315,6 @@ void AKiteRiderPawn::UpdateMouseBar()
 		PC->GetInputMouseDelta(DeltaX, DeltaY);
 		MouseSteerInput = FMath::Clamp(MouseSteerInput + DeltaX * MouseSteerSensitivity, -1.0f, 1.0f);
 		SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
-		bMouseLoop = PC->IsInputKeyDown(EKeys::LeftMouseButton);
 		SteerKite(KeySteerInput + MouseSteerInput);
 	}
 	else if (MouseSteerInput != 0.0f)
@@ -342,7 +325,7 @@ void AKiteRiderPawn::UpdateMouseBar()
 
 	if (Kite)
 	{
-		Kite->SetLoopHeld(bLoopKeyHeld || bMouseLoop);
+		Kite->SetLoopHeld(bScriptedRawSteer);
 	}
 }
 

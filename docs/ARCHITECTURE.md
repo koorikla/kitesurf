@@ -19,8 +19,9 @@
 | `UWindComponent` | `float DirectionDriftDeg` | Maximum wind direction drift in degrees (default: 10.0°). |
 | `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
 | `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
-| `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering: asks the kite to travel round the wind window that way (right = clockwise looking downwind), or turns it directly while the loop input is held; `Axis` clamped to `[-1.0, 1.0]`. |
-| `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | While held, steering turns the kite at a rate set by its airspeed, so holding the bar over flies a loop. |
+| `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering. Towards the other side of the window: the kite is flown there over the top (right = clockwise looking downwind). Towards the kite's own side: the bar turns it directly, which loops it. |
+| `UKiteComponent` | `bool IsLooping() const` | True while the bar is going straight to the kite and turning it round. |
+| `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | Forces raw steering from any position. Not bound to a key; for scripted input and tests. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |
 | `UBoardMovementComponent` | `void SetWeightShift(float Value)` | Rider weight along the board in `[-1.0, 1.0]`: +1 on the nose, -1 on the tail. |
 | `UKiteComponent` | `void SetKiteSize(float AreaM2)` / `static float RecommendKiteSizeM2(float WindKnots, float RiderMassKg)` | Rigs a kite of that area (mass and turning radius follow); the size a rider would pick for the wind. |

@@ -4,9 +4,57 @@
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "GameFramework/PlayerController.h"
+#include "UI/KiteSurfPauseMenuWidget.h"
+#include "Kismet/GameplayStatics.h"
+#include "Blueprint/UserWidget.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
 {
+}
+
+void AKiteSurfHUD::TogglePauseMenu()
+{
+	if (ActivePauseMenuWidget && ActivePauseMenuWidget->IsInViewport())
+	{
+		HidePauseMenu();
+	}
+	else
+	{
+		ShowPauseMenu();
+	}
+}
+
+void AKiteSurfHUD::ShowPauseMenu()
+{
+	UWorld* World = GetWorld();
+	APlayerController* PC = GetOwningPlayerController();
+	if (!World || !PC)
+	{
+		return;
+	}
+	TSubclassOf<UKiteSurfPauseMenuWidget> ClassToSpawn = PauseMenuWidgetClass ? PauseMenuWidgetClass : TSubclassOf<UKiteSurfPauseMenuWidget>(UKiteSurfPauseMenuWidget::StaticClass());
+	ActivePauseMenuWidget = CreateWidget<UKiteSurfPauseMenuWidget>(PC, ClassToSpawn);
+	if (!ActivePauseMenuWidget)
+	{
+		return;
+	}
+	ActivePauseMenuWidget->AddToViewport(100);
+	UGameplayStatics::SetGamePaused(World, true);
+	PC->bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(ActivePauseMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
+	ActivePauseMenuWidget->FocusFirst();
+}
+
+void AKiteSurfHUD::HidePauseMenu()
+{
+	if (ActivePauseMenuWidget)
+	{
+		ActivePauseMenuWidget->OnResumeClicked();
+		ActivePauseMenuWidget = nullptr;
+	}
 }
 
 float AKiteSurfHUD::CmPerSecToKnots(float SpeedCmPerSec)

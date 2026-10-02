@@ -8,6 +8,9 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
+#include "KiteSurfHUD.h"
+#include "GameFramework/PlayerController.h"
+#include "UObject/ConstructorHelpers.h"
 
 AKiteRiderPawn::AKiteRiderPawn()
 {
@@ -169,4 +172,20 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
+}
+
+void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)
+{
+	TogglePause();
+}
+
+void AKiteRiderPawn::TogglePause()
+{
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))
+		{
+			HUD->TogglePauseMenu();
+		}
+	}
 }

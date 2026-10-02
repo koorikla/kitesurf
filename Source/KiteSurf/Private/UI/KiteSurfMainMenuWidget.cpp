@@ -168,7 +168,7 @@ void UKiteSurfMainMenuWidget::OnSettingsClicked()
 		return;
 	}
 
-	TSubclassOf<UKiteSurfSettingsWidget> ClassToSpawn = SettingsWidgetClass ? SettingsWidgetClass : UKiteSurfSettingsWidget::StaticClass();
+	TSubclassOf<UKiteSurfSettingsWidget> ClassToSpawn = SettingsWidgetClass ? SettingsWidgetClass : TSubclassOf<UKiteSurfSettingsWidget>(UKiteSurfSettingsWidget::StaticClass());
 	ActiveSettingsWidget = CreateWidget<UKiteSurfSettingsWidget>(World, ClassToSpawn);
 	if (ActiveSettingsWidget)
 	{

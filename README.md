@@ -68,7 +68,8 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Pop (hold S and send the kite first for a real jump) | Space | Bottom face button |
 | Reset | R | Right face button |
-| Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
+| Pause menu (resume, restart, gear, settings, main menu, quit) | Esc or P | Start |
+| In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |
 
 **The spot.** The gear screen also switches what is in the water. Sandbars lie across your
 reach, about 260 m out on the first run: jump them, because riding onto sand is a crash.

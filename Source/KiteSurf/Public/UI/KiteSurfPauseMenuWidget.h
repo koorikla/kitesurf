@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "KiteSurfPauseMenuWidget.generated.h"
 
 class UButton;
@@ -78,7 +79,14 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator Navigator;
+
 	TSharedPtr<SButton> SlateResumeButton;
 	TSharedPtr<SButton> SlateRestartButton;
 	TSharedPtr<SButton> SlateGearButton;

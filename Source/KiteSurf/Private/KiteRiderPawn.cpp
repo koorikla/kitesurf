@@ -166,7 +166,19 @@ bool AKiteRiderPawn::Jump()
 {
 	if (BoardMovement)
 	{
-		return BoardMovement->Jump();
+		const EJumpRejectReason Reason = BoardMovement->Jump();
+		if (Reason != EJumpRejectReason::None)
+		{
+			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			{
+				if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))
+				{
+					HUD->ShowJumpRejection(Reason);
+				}
+			}
+			return false;
+		}
+		return true;
 	}
 	return false;
 }

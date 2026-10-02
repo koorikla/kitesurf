@@ -50,6 +50,7 @@ public:
 	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
 	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
+	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }

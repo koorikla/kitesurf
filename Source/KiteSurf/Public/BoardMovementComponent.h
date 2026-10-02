@@ -23,6 +23,15 @@ enum class EBoardState : uint8
 	Landing      UMETA(DisplayName = "Landing")
 };
 
+UENUM(BlueprintType)
+enum class EJumpRejectReason : uint8
+{
+	None       UMETA(DisplayName = "None"),
+	NotPlaning UMETA(DisplayName = "Not Planing"),
+	TooSlow    UMETA(DisplayName = "Too Slow"),
+	NotEdged   UMETA(DisplayName = "Not Edged")
+};
+
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
 {
@@ -56,9 +65,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|State")
 	void SetBoardState(EBoardState InState) { CurrentBoardState = InState; }
 
-	/** Attempt to trigger a kite-powered jump. Returns true if jump conditions were met. */
+	/** Attempt to trigger a kite-powered jump. Returns EJumpRejectReason::None if jump conditions were met, or specific rejection reason. */
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
-	bool Jump();
+	EJumpRejectReason Jump();
+
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	static FString JumpRejectReasonToString(EJumpRejectReason Reason);
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	bool WasLastLandingClean() const { return bLastLandingClean; }

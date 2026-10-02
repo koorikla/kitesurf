@@ -116,28 +116,46 @@ void UBoardMovementComponent::AddExternalForce(const FVector& Force)
 	AccumulatedExternalForce += Force;
 }
 
-bool UBoardMovementComponent::Jump()
+FString UBoardMovementComponent::JumpRejectReasonToString(EJumpRejectReason Reason)
+{
+	switch (Reason)
+	{
+	case EJumpRejectReason::NotPlaning:
+		return TEXT("Not planing");
+	case EJumpRejectReason::TooSlow:
+		return TEXT("Need more speed");
+	case EJumpRejectReason::NotEdged:
+		return TEXT("Edge harder");
+	default:
+		return FString();
+	}
+}
+
+EJumpRejectReason UBoardMovementComponent::Jump()
 {
 	// Jump only allowed while in Planing state
 	if (CurrentBoardState != EBoardState::Planing)
 	{
-		UE_LOG(LogKiteSurf, Verbose, TEXT("Jump rejected: Board is not in Planing state (CurrentState=%d)"), (int32)CurrentBoardState);
-		return false;
+		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::NotPlaning);
+		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
+		return EJumpRejectReason::NotPlaning;
 	}
 
 	// Board speed >= 8 kn (1 kn = 51.44 cm/s)
 	const float SpeedKnots = Velocity.Size2D() / 51.44f;
 	if (SpeedKnots < JumpMinSpeedKnots - KINDA_SMALL_NUMBER)
 	{
-		UE_LOG(LogKiteSurf, Verbose, TEXT("Jump rejected: Board speed %.2f kn < min %.2f kn"), SpeedKnots, JumpMinSpeedKnots);
-		return false;
+		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::TooSlow);
+		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
+		return EJumpRejectReason::TooSlow;
 	}
 
 	// Edge input >= 0.4
 	if (FMath::Abs(CurrentEdgeInput) < JumpMinEdgeInput - KINDA_SMALL_NUMBER)
 	{
-		UE_LOG(LogKiteSurf, Verbose, TEXT("Jump rejected: Edge input %.2f < min %.2f"), FMath::Abs(CurrentEdgeInput), JumpMinEdgeInput);
-		return false;
+		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::NotEdged);
+		UE_LOG(LogKiteSurf, Log, TEXT("Jump rejected: %s"), *ReasonStr);
+		return EJumpRejectReason::NotEdged;
 	}
 
 	float UpwardKiteForce = 0.0f;
@@ -164,7 +182,7 @@ bool UBoardMovementComponent::Jump()
 	UE_LOG(LogKiteSurf, Log, TEXT("Board Jump initiated: Speed=%.1f kn, Edge=%.2f, KiteLiftZ=%.1f, Impulse=%.1f, VZ=%.1f cm/s"),
 		SpeedKnots, CurrentEdgeInput, UpwardKiteForce, Impulse, Velocity.Z);
 
-	return true;
+	return EJumpRejectReason::None;
 }
 
 void UBoardMovementComponent::SetEdgeInput(float Value)

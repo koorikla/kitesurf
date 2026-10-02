@@ -148,7 +148,6 @@ public:
 	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
 	UWindStreakComponent* GetWindStreaks() const { return WindStreaks.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
-	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
 	/** World yaw the rider's body faces (deg). Always square across the board: the feet are in the straps. */
@@ -403,10 +402,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BoardMesh;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<USkeletalMeshComponent> RiderMesh;
-
-	/** The jointed riders (Santa, wetsuit): a torso and eight limb parts, posed every frame by RiderRig. The robot uses the skeletal RiderMesh. */
+	/** The jointed riders (Santa, wetsuit): a torso and eight limb parts, posed every frame by RiderRig. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> RiderTorso;
 

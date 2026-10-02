@@ -457,7 +457,10 @@ bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
         const EKiteModel FirstModel = Gear->CurrentKiteModel;
         Gear->CycleKiteModel();
         TestNotEqual(TEXT("The kite button changes the model"), Gear->CurrentKiteModel, FirstModel);
-        Gear->CycleKiteModel();
+        for (int32 Click = 1; Click < static_cast<int32>(EKiteModel::Count); ++Click)
+        {
+            Gear->CycleKiteModel();
+        }
         TestEqual(TEXT("and comes back round"), Gear->CurrentKiteModel, FirstModel);
         const EBoardSize FirstBoard = Gear->CurrentBoardSize;
         for (int32 Click = 0; Click < static_cast<int32>(EBoardSize::Count); ++Click)

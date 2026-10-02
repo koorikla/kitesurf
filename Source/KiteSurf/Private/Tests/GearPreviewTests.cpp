@@ -116,15 +116,14 @@ bool FKiteSurfGearPreviewShowsTheChoice::RunTest(const FString& Parameters)
 	Preview->ShowGear(ERiderCharacter::Wetsuit, EKiteModel::Boost, 12.0f, EBoardSize::Large);
 	TestTrue(TEXT("Wetsuit: the posed mesh is shown"), Preview->GetRiderStaticMesh()->IsVisible()
 		&& Preview->GetRiderStaticMesh()->GetStaticMesh() == LoadObject<UStaticMesh>(nullptr, RiderCharacter::GetStaticMeshPath(ERiderCharacter::Wetsuit)));
-	TestFalse(TEXT("and the mannequin is not"), Preview->GetRiderSkeletalMesh()->IsVisible());
+
 	TestTrue(TEXT("The boost kite is shown"), Preview->GetKiteMesh()->GetStaticMesh() == LoadObject<UStaticMesh>(nullptr, KiteGear::GetMeshPath(EKiteModel::Boost)));
 	TestNearlyEqual(TEXT("A 12 m kite at the size it was modelled"), static_cast<float>(Preview->GetKiteMesh()->GetRelativeScale3D().X), 1.0f, 0.001f);
 	TestNearlyEqual(TEXT("The 145 is longer than the 138 (length scale)"), static_cast<float>(Preview->GetBoardMesh()->GetRelativeScale3D().X), 145.0f / 138.0f, 0.001f);
 
-	// The mannequin, the loop kite in 6 m, the 132.
+	// The robot, the loop kite in 6 m, the 132.
 	Preview->ShowGear(ERiderCharacter::Robot, EKiteModel::Loop, 6.0f, EBoardSize::Small);
-	TestTrue(TEXT("Robot: the mannequin is shown"), Preview->GetRiderSkeletalMesh()->IsVisible() && Preview->GetRiderSkeletalMesh()->GetSkeletalMeshAsset() != nullptr);
-	TestFalse(TEXT("and the posed mesh is not"), Preview->GetRiderStaticMesh()->IsVisible());
+	TestTrue(TEXT("Robot: the posed mesh is shown"), Preview->GetRiderStaticMesh()->IsVisible() && Preview->GetRiderStaticMesh()->GetStaticMesh() == LoadObject<UStaticMesh>(nullptr, RiderCharacter::GetStaticMeshPath(ERiderCharacter::Robot)));
 	TestTrue(TEXT("The loop kite is shown"), Preview->GetKiteMesh()->GetStaticMesh() == LoadObject<UStaticMesh>(nullptr, KiteGear::GetMeshPath(EKiteModel::Loop)));
 	TestNearlyEqual(TEXT("A 6 m kite is drawn at sqrt(6/12) of the 12 m"), static_cast<float>(Preview->GetKiteMesh()->GetRelativeScale3D().X), FMath::Sqrt(0.5f), 0.001f);
 	TestNearlyEqual(TEXT("The 132 is shorter (length scale)"), static_cast<float>(Preview->GetBoardMesh()->GetRelativeScale3D().X), 132.0f / 138.0f, 0.001f);

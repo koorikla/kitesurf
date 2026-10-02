@@ -20,6 +20,10 @@ case "$SCHEME" in
     loop)  LIME='#b9e21c'; TEAL='#12a5a0'; TAG='K9' ;;
     # The boost kite: hot orange with navy and sky blue.
     boost) LIME='#ff6a13'; TEAL='#3fa7e0'; TAG='B5' ;;
+    # The wave kite: cyan with navy and pink.
+    wave) LIME='#00d1e3'; TEAL='#e300d1'; TAG='W7' ;;
+    # The freestyle kite: red with black and white.
+    freestyle) LIME='#cc0000'; TEAL='#ffffff'; TAG='F4' ;;
     *) echo "unknown colour scheme: $SCHEME" >&2; exit 1 ;;
 esac
 

@@ -2,14 +2,24 @@
 
 const TCHAR* KiteGear::GetDisplayName(EKiteModel Model)
 {
-	return Model == EKiteModel::Boost ? TEXT("BOOST (5 STRUT)") : TEXT("LOOP (3 STRUT)");
+	switch (Model)
+	{
+	case EKiteModel::Boost: return TEXT("BOOST (5 STRUT)");
+	case EKiteModel::Wave: return TEXT("WAVE");
+	case EKiteModel::Freestyle: return TEXT("FREESTYLE (C-SHAPE)");
+	default: return TEXT("LOOP (3 STRUT)");
+	}
 }
 
 const TCHAR* KiteGear::GetDescription(EKiteModel Model)
 {
-	return Model == EKiteModel::Boost
-		? TEXT("More lift and glide: higher jumps and longer hangtime. Slower to turn and loop.")
-		: TEXT("Light and quick: tight, fast loops and a kite that climbs back to catch you.");
+	switch (Model)
+	{
+	case EKiteModel::Boost: return TEXT("More lift and glide: higher jumps and longer hangtime. Slower to turn and loop.");
+	case EKiteModel::Wave: return TEXT("Drifts well, turns fast with low power, great for riding waves.");
+	case EKiteModel::Freestyle: return TEXT("Slack lines after a pop, explosive power for unhooked tricks.");
+	default: return TEXT("Light and quick: tight, fast loops and a kite that climbs back to catch you.");
+	}
 }
 
 EKiteModel KiteGear::Next(EKiteModel Model)
@@ -34,12 +44,32 @@ FKiteModelTraits KiteGear::GetTraits(EKiteModel Model)
 		Traits.InducedDragScale = 0.85f;
 		Traits.MassScale = 1.2f;
 	}
+	else if (Model == EKiteModel::Wave)
+	{
+		Traits.TurnRadiusScale = 0.8f;
+		Traits.LiftScale = 0.9f;
+		Traits.InducedDragScale = 1.1f;
+		Traits.MassScale = 0.9f;
+	}
+	else if (Model == EKiteModel::Freestyle)
+	{
+		Traits.TurnRadiusScale = 1.1f;
+		Traits.LiftScale = 1.0f;
+		Traits.InducedDragScale = 1.2f;
+		Traits.MassScale = 1.1f;
+	}
 	return Traits;
 }
 
 const TCHAR* KiteGear::GetMeshPath(EKiteModel Model)
 {
-	return Model == EKiteModel::Boost ? TEXT("/Game/Meshes/SM_KiteBoost") : TEXT("/Game/Meshes/SM_Kite");
+	switch (Model)
+	{
+	case EKiteModel::Boost: return TEXT("/Game/Meshes/SM_KiteBoost");
+	case EKiteModel::Wave: return TEXT("/Game/Meshes/SM_KiteWave");
+	case EKiteModel::Freestyle: return TEXT("/Game/Meshes/SM_KiteFreestyle");
+	default: return TEXT("/Game/Meshes/SM_Kite");
+	}
 }
 
 float KiteGear::GetLengthScale(EBoardSize Size)

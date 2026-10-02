@@ -55,13 +55,6 @@ AKiteSurfGearPreview::AKiteSurfGearPreview()
 	RiderStaticMesh->SetRelativeLocationAndRotation(FVector(0.0f, 0.0f, 2.0f), FRotator(0.0f, 90.0f, 0.0f));
 	MakePreviewOnly(RiderStaticMesh);
 
-	RiderSkeletalMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mannequin"));
-	RiderSkeletalMesh->SetupAttachment(Stand);
-	RiderSkeletalMesh->PrimaryComponentTick.bTickEvenWhenPaused = true;
-	// The mannequin faces a quarter turn round from the posed riders.
-	RiderSkeletalMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-	MakePreviewOnly(RiderSkeletalMesh);
-
 	// The kite flies behind the rider and above, leading edge up and its underside (with the struts)
 	// to the camera, so the three- and five-strut kites read apart.
 	KiteMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Kite"));
@@ -167,21 +160,6 @@ void AKiteSurfGearPreview::ShowGear(ERiderCharacter Rider, EKiteModel KiteModel,
 	{
 		RiderStaticMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, MeshPath));
 		RiderStaticMesh->SetVisibility(true);
-		RiderSkeletalMesh->SetVisibility(false);
-		RiderSkeletalMesh->Stop();
-	}
-	else
-	{
-		if (!RiderSkeletalMesh->GetSkeletalMeshAsset())
-		{
-			RiderSkeletalMesh->SetSkeletalMesh(LoadObject<USkeletalMesh>(nullptr, RiderCharacter::MannequinMeshPath));
-		}
-		RiderSkeletalMesh->SetVisibility(true);
-		if (UAnimationAsset* Idle = LoadObject<UAnimationAsset>(nullptr, RiderCharacter::MannequinIdlePath))
-		{
-			RiderSkeletalMesh->PlayAnimation(Idle, true);
-		}
-		RiderStaticMesh->SetVisibility(false);
 	}
 
 	KiteMesh->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, KiteGear::GetMeshPath(KiteModel)));

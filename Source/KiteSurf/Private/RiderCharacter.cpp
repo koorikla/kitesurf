@@ -33,7 +33,7 @@ const TCHAR* RiderCharacter::GetStaticMeshPath(ERiderCharacter Character)
 	case ERiderCharacter::Wetsuit:
 		return TEXT("/Game/Meshes/SM_RiderWetsuit");
 	case ERiderCharacter::Robot:
-		return nullptr;
+		return TEXT("/Game/Meshes/SM_RiderRobot");
 	default:
 		return TEXT("/Game/Meshes/SM_RiderSanta");
 	}

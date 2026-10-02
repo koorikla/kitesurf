@@ -11,6 +11,10 @@ enum class EKiteModel : uint8
 	Loop  UMETA(DisplayName = "Loop (3 strut)"),
 	/** Five struts: more lift and glide for height and hangtime, slower to turn. */
 	Boost UMETA(DisplayName = "Boost (5 strut)"),
+	/** Drifts well, turns fast with low power, great for riding waves. */
+	Wave UMETA(DisplayName = "Wave"),
+	/** C-shape, slack lines after a pop, explosive power for unhooked tricks. */
+	Freestyle UMETA(DisplayName = "Freestyle"),
 	Count UMETA(Hidden)
 };
 

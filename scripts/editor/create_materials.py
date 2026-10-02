@@ -52,6 +52,8 @@ def make_kite_canopy(name='M_KiteCanopy', texture_name='T_KiteCanopy'):
 materials = {
     'KiteCanopy': make_kite_canopy(),
     'KiteCanopyBoost': make_kite_canopy('M_KiteCanopyBoost', 'T_KiteCanopyBoost'),
+    'KiteCanopyWave': make_kite_canopy('M_KiteCanopyWave', 'T_KiteCanopyWave'),
+    'KiteCanopyFreestyle': make_kite_canopy('M_KiteCanopyFreestyle', 'T_KiteCanopyFreestyle'),
     'KiteTube': make_flat('M_KiteTube', unreal.LinearColor(0.9, 0.9, 0.88, 1.0)),
     'KiteBoard': make_flat('M_KiteBoard', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),
     'ControlBar': make_flat('M_ControlBar', unreal.LinearColor(0.1, 0.1, 0.1, 1.0)),
@@ -61,12 +63,15 @@ materials = {
     'RiderBlack': make_flat('M_RiderBlack', unreal.LinearColor(0.02, 0.02, 0.02, 1.0)),
     'RiderWetsuit': make_flat('M_RiderWetsuit', unreal.LinearColor(0.03, 0.04, 0.06, 1.0)),
     'RiderAccent': make_flat('M_RiderAccent', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),
+    'RiderRobotMetal': make_flat('M_RiderRobotMetal', unreal.LinearColor(0.5, 0.5, 0.55, 1.0)),
+    'RiderRobotDark': make_flat('M_RiderRobotDark', unreal.LinearColor(0.15, 0.15, 0.18, 1.0)),
+    'RiderRobotAccent': make_flat('M_RiderRobotAccent', unreal.LinearColor(0.0, 0.8, 1.0, 1.0)),
 }
 make_flat('M_KiteLines', unreal.LinearColor(0.95, 0.95, 0.95, 1.0))
 
 # Meshes whose slots are named after the materials above; the board and bar have a single unnamed slot.
 SINGLE_SLOT = {'SM_KiteBoard': 'KiteBoard', 'SM_ControlBar': 'ControlBar'}
-for mesh_name in ['SM_Kite', 'SM_KiteBoost', 'SM_KiteBoard', 'SM_ControlBar', 'SM_RiderSanta', 'SM_RiderWetsuit']:
+for mesh_name in ['SM_Kite', 'SM_KiteBoost', 'SM_KiteWave', 'SM_KiteFreestyle', 'SM_KiteBoard', 'SM_ControlBar', 'SM_RiderSanta', 'SM_RiderWetsuit', 'SM_RiderRobot']:
     mesh = unreal.EditorAssetLibrary.load_asset(f'/Game/Meshes/{mesh_name}')
     if not mesh:
         raise RuntimeError(f'{mesh_name} is missing: run import_geometry.py first')

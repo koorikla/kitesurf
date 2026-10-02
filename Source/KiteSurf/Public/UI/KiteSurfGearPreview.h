@@ -51,7 +51,6 @@ public:
 
 	UStaticMeshComponent* GetBoardMesh() const { return BoardMesh; }
 	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderStaticMesh; }
-	USkeletalMeshComponent* GetRiderSkeletalMesh() const { return RiderSkeletalMesh; }
 	UStaticMeshComponent* GetKiteMesh() const { return KiteMesh; }
 	USceneCaptureComponent2D* GetCapture() const { return Capture; }
 
@@ -77,9 +76,6 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<UStaticMeshComponent> RiderStaticMesh;
-
-	UPROPERTY(VisibleAnywhere, Category = "Preview")
-	TObjectPtr<USkeletalMeshComponent> RiderSkeletalMesh;
 
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<UStaticMeshComponent> KiteMesh;

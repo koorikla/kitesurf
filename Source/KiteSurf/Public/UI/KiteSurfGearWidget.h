@@ -47,15 +47,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
 	EKiteModel CurrentKiteModel = EKiteModel::Loop;
 
-	/** 0 means the size recommended for the chosen wind. */
+	/** 9 m unless chosen otherwise; 0 means the size recommended for the chosen wind. */
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
-	float CurrentKiteSizeM2 = 0.0f;
+	float CurrentKiteSizeM2 = 9.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
 	EBoardSize CurrentBoardSize = EBoardSize::Medium;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
-	float CurrentWindKnots = 15.0f;
+	float CurrentWindKnots = 20.0f;
 
 	/** What is in the water at the spot. */
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
@@ -85,6 +85,10 @@ public:
 	/** Steps through: recommended for the wind, then each kite size. */
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void CycleKiteSize();
+
+	/** A size from UKiteComponent::GetKiteSizesM2, or 0 (or anything else) for the recommended one. */
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void SetKiteSizeM2(float SizeM2);
 
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void CycleBoardSize();

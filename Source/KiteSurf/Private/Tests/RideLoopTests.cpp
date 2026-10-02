@@ -434,19 +434,24 @@ bool FKiteSurfPawnSheetStaysWherePut::RunTest(const FString& Parameters)
 
 	TestNearlyEqual(TEXT("Ride starts at the default bar position"), Pawn->GetCurrentSheetInput(), AKiteSurfGameMode::StartSheet, 0.001f);
 
-	Pawn->SetSheetRateInput(1.0f);
-	Ride.Simulate(0.25f);
-	const float SheetedIn = Pawn->GetCurrentSheetInput();
-	TestNearlyEqual(TEXT("Holding sheet-in moves the bar at SheetRatePerSec"), SheetedIn, AKiteSurfGameMode::StartSheet + 0.25f * Pawn->SheetRatePerSec, 0.02f);
+	// A tap moves the bar a little, at SheetRatePerSec.
+	Pawn->SetSheetRateInput(-1.0f);
+	Ride.Simulate(0.1f);
+	const float SheetedOut = Pawn->GetCurrentSheetInput();
+	TestNearlyEqual(TEXT("Holding sheet-out moves the bar at SheetRatePerSec"), SheetedOut, AKiteSurfGameMode::StartSheet - 0.1f * Pawn->SheetRatePerSec, 0.05f);
 
 	Pawn->SetSheetRateInput(0.0f);
 	Ride.Simulate(1.0f);
-	TestNearlyEqual(TEXT("Releasing the key leaves the bar where it is"), Pawn->GetCurrentSheetInput(), SheetedIn, 0.001f);
-	TestNearlyEqual(TEXT("The kite uses the bar position"), Ride.Kite->Sheet, SheetedIn, 0.001f);
+	TestNearlyEqual(TEXT("Releasing the key leaves the bar where it is"), Pawn->GetCurrentSheetInput(), SheetedOut, 0.001f);
+	TestNearlyEqual(TEXT("The kite uses the bar position"), Ride.Kite->Sheet, SheetedOut, 0.001f);
 
+	// The whole throw takes well under a second either way: the bar keeps up with the rider's hands.
+	Pawn->SetSheetRateInput(1.0f);
+	Ride.Simulate(0.5f);
+	TestNearlyEqual(TEXT("Half a second of sheet-in reaches full power"), Pawn->GetCurrentSheetInput(), 1.0f, 0.001f);
 	Pawn->SetSheetRateInput(-1.0f);
-	Ride.Simulate(3.0f);
-	TestNearlyEqual(TEXT("Holding sheet-out reaches fully depowered"), Pawn->GetCurrentSheetInput(), 0.0f, 0.001f);
+	Ride.Simulate(0.5f);
+	TestNearlyEqual(TEXT("Half a second of sheet-out reaches fully depowered"), Pawn->GetCurrentSheetInput(), 0.0f, 0.001f);
 	return true;
 }
 
@@ -1196,6 +1201,8 @@ bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
 	// The game instance rigs the recommended size unless one has been chosen.
 	UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
 	GI->SetPendingWindKnots(30.0f);
+	TestEqual(TEXT("A new game instance rigs the 9 m"), GI->GetEffectiveKiteSizeM2(), 9.0f);
+	GI->SetKiteSizeM2(0.0f);
 	TestEqual(TEXT("With no size chosen the kite is the recommended one"), GI->GetEffectiveKiteSizeM2(), 6.0f);
 	GI->SetKiteSizeM2(9.0f);
 	TestEqual(TEXT("A chosen size is used"), GI->GetEffectiveKiteSizeM2(), 9.0f);
@@ -1484,6 +1491,39 @@ bool FKiteSurfSpotSharks::RunTest(const FString& Parameters)
 	Ride.Board->SetBoardState(EBoardState::Planing);
 	Spot->StepSpot(RideDeltaTime);
 	TestTrue(TEXT("On the water on top of a shark is a crash"), Ride.Board->IsCrashing());
+	return true;
+}
+
+// The bar is the throttle: right out the kite barely pulls, right in it pulls several times harder.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideBarIsTheThrottle, "KiteSurf.Ride.BarIsTheThrottle", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
+{
+	const float SheetValues[3] = { 0.0f, 0.5f, 1.0f };
+	float SpeedKn[3] = { 0.0f, 0.0f, 0.0f };
+	float TensionN[3] = { 0.0f, 0.0f, 0.0f };
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		// The default kite in the default wind.
+		FRideFixture Ride(20.0f);
+		if (!Ride.IsValid())
+		{
+			return false;
+		}
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.Pawn->SheetKite(SheetValues[Index]);
+		Ride.Simulate(20.0f);
+		SpeedKn[Index] = Ride.SpeedKnots();
+		TensionN[Index] = Ride.Kite->GetLineTensionN();
+		TestFalse(TEXT("The kite stays in the air at any bar position"), Ride.Kite->IsCrashed());
+		TestTrue(FString::Printf(TEXT("and does not stall (angle of attack %.1f deg)"), Ride.Kite->GetAngleOfAttackDeg()), Ride.Kite->GetAngleOfAttackDeg() < Ride.Kite->StallAngleDeg);
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("BarIsTheThrottle: 9 m in 20 kn, bar out %.1f kn / %.0f N, half %.1f kn / %.0f N, in %.1f kn / %.0f N"), SpeedKn[0], TensionN[0], SpeedKn[1], TensionN[1], SpeedKn[2], TensionN[2]);
+
+	TestTrue(FString::Printf(TEXT("Bar right in pulls at least five times as hard as bar right out (%.0f N against %.0f N)"), TensionN[2], TensionN[0]), TensionN[2] > 5.0f * TensionN[0]);
+	TestTrue(FString::Printf(TEXT("Half way is in between (%.0f N)"), TensionN[1]), TensionN[1] > 1.5f * TensionN[0] && TensionN[2] > 1.5f * TensionN[1]);
+	TestTrue(FString::Printf(TEXT("Bar right out slows the rider to a crawl (%.1f kn)"), SpeedKn[0]), SpeedKn[0] < 10.0f);
+	TestTrue(FString::Printf(TEXT("Bar right in is at least twice as fast (%.1f kn)"), SpeedKn[2]), SpeedKn[2] > 2.0f * SpeedKn[0] && SpeedKn[2] > 18.0f);
 	return true;
 }
 

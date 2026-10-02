@@ -367,6 +367,12 @@ void UKiteSurfGearWidget::CycleKiteSize()
 	UpdateTexts();
 }
 
+void UKiteSurfGearWidget::SetKiteSizeM2(float SizeM2)
+{
+	CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SizeM2) ? SizeM2 : 0.0f;
+	UpdateTexts();
+}
+
 void UKiteSurfGearWidget::CycleBoardSize()
 {
 	CurrentBoardSize = KiteGear::Next(CurrentBoardSize);

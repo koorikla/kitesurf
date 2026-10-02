@@ -258,8 +258,12 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	// Sampled at the wind field's reference height: at the water the shear profile reads 30% low.
 	const FVector WindSampleLocation = RiderPawn->GetActorLocation() + FVector(0.0f, 0.0f, WindComp ? WindComp->ShearHeightCm : 0.0f);
 	FVector WindVec = WindComp ? WindComp->GetWindAt(WindSampleLocation) : FVector(772.0f, 0.0f, 0.0f);
-	FString WindStr = FString::Printf(TEXT("WIND:  %s"), *FormatKnots(WindVec.Size()));
-	DrawText(WindStr, FLinearColor(0.3f, 0.8f, 1.0f), 32.0f, 94.0f, nullptr, 1.1f);
+	// Gusts and lulls are called out: they are what the rider has to sheet and steer for.
+	const float GustFactor = WindComp ? WindComp->GetGustFactorAt(RiderPawn->GetActorLocation()) : 1.0f;
+	const TCHAR* GustLabel = GustFactor > 1.12f ? TEXT("  GUST") : (GustFactor < 0.88f ? TEXT("  LULL") : TEXT(""));
+	const FLinearColor WindColor = GustFactor > 1.12f ? FLinearColor(1.0f, 0.6f, 0.2f) : (GustFactor < 0.88f ? FLinearColor(0.6f, 0.7f, 0.8f) : FLinearColor(0.3f, 0.8f, 1.0f));
+	FString WindStr = FString::Printf(TEXT("WIND:  %s%s"), *FormatKnots(WindVec.Size()), GustLabel);
+	DrawText(WindStr, WindColor, 32.0f, 94.0f, nullptr, 1.1f);
 
 	DrawWindCompass(WindVec, 255.0f, 96.0f, 18.0f);
 
@@ -292,6 +296,15 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 
 	if (const UKiteComponent* KiteComp = RiderPawn->GetKite())
 	{
+		if (!KiteComp->IsCrashed() && !KiteComp->AreLinesTaut())
+		{
+			DrawText(TEXT("LINES SLACK - kite falling"), FLinearColor(1.0f, 0.35f, 0.35f), 32.0f, 192.0f, nullptr, 1.2f);
+		}
+		else if (!KiteComp->IsCrashed() && KiteComp->GetAngleOfAttackDeg() > KiteComp->StallAngleDeg)
+		{
+			DrawText(TEXT("KITE STALLED - sheet out"), FLinearColor(1.0f, 0.6f, 0.2f), 32.0f, 192.0f, nullptr, 1.2f);
+		}
+
 		if (KiteComp->IsCrashed())
 		{
 			DrawText(FString::Printf(TEXT("KITE DOWN - relaunch in %.0f s (or steer)"), FMath::CeilToFloat(KiteComp->GetRelaunchSecondsRemaining())),
@@ -299,7 +312,7 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		}
 
 		const int32 Loops = FMath::FloorToInt(FMath::Abs(KiteComp->GetTurnDeg()) / 360.0f);
-		if (Loops > 0 && !KiteComp->IsCrashed())
+		if (Loops > 0 && !KiteComp->IsCrashed() && KiteComp->AreLinesTaut())
 		{
 			DrawText(FString::Printf(TEXT("KITE LOOP x%d"), Loops), FLinearColor(1.0f, 0.5f, 0.1f), 32.0f, 192.0f, nullptr, 1.2f);
 		}

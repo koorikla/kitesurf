@@ -61,8 +61,10 @@ bool FKiteSurfKiteZenithTension::RunTest(const FString& Parameters)
 			UWindComponent* WindComp = Pawn->FindComponentByClass<UWindComponent>();
 			if (WindComp)
 			{
-				// 15 knots approx 772 cm/s
+				// 15 knots approx 772 cm/s, steady so the settled tension is repeatable
 				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f);
+				WindComp->GustStrength = 0.0f;
+				WindComp->DirectionDriftDeg = 0.0f;
 			}
 
 			// Set kite at zenith: Azimuth = 0, Elevation = 90
@@ -70,7 +72,14 @@ bool FKiteSurfKiteZenithTension::RunTest(const FString& Parameters)
 			Pawn->Kite->SetElevationDeg(90.0f);
 			Pawn->SheetKite(1.0f); // sheeted in
 
-			Pawn->Kite->UpdateKite(0.1f);
+			// The kite is a flying object. Dead overhead is past the edge of the window: it luffs,
+			// drops back, and flies up again to settle a few degrees downwind of the zenith, where
+			// the wind along the lines balances its drag. Measure it once it has.
+			for (int32 Step = 0; Step < 450; ++Step)
+			{
+				Pawn->Kite->UpdateKite(0.0333f);
+			}
+			TestTrue(TEXT("The kite is still overhead"), Pawn->Kite->GetElevationDeg() > 70.0f);
 
 			const float Tension = Pawn->Kite->GetLineTensionN();
 			TestTrue(FString::Printf(TEXT("Tension at zenith (%.1f N) in plausible range 200-900 N"), Tension),
@@ -102,18 +111,29 @@ bool FKiteSurfKiteSheetMonotonic::RunTest(const FString& Parameters)
 			if (WindComp)
 			{
 				WindComp->BaseWind = FVector(772.0f, 0.0f, 0.0f);
+				WindComp->GustStrength = 0.0f;
+				WindComp->DirectionDriftDeg = 0.0f;
 			}
 
-			Pawn->Kite->SetAzimuthDeg(0.0f);
-			Pawn->Kite->SetElevationDeg(45.0f);
+			// Parked overhead at the window edge, flown there before anything is measured.
+			Pawn->Kite->SetWindowPosition(0.0f, 10.0f);
+			Pawn->SheetKite(1.0f);
+			for (int32 Step = 0; Step < 300; ++Step)
+			{
+				Pawn->Kite->UpdateKite(0.0333f);
+			}
 
 			float PrevTension = 1e9f;
 			const float SheetSteps[] = { 1.0f, 0.75f, 0.5f, 0.25f, 0.0f };
 
 			for (float SheetVal : SheetSteps)
 			{
+				// Let the kite settle at each bar position: its pull is what it flies to, not a formula.
 				Pawn->SheetKite(SheetVal);
-				Pawn->Kite->UpdateKite(0.0f);
+				for (int32 Step = 0; Step < 120; ++Step)
+				{
+					Pawn->Kite->UpdateKite(0.0333f);
+				}
 				const float CurrentTension = Pawn->Kite->GetLineTensionN();
 
 				TestTrue(FString::Printf(TEXT("Tension at sheet %.2f (%.1f N) <= previous sheet (%.1f N)"),
@@ -123,13 +143,17 @@ bool FKiteSurfKiteSheetMonotonic::RunTest(const FString& Parameters)
 			}
 
 			// Verify sheeted in has strictly greater tension than sheeted out
-			Pawn->SheetKite(1.0f);
-			Pawn->Kite->UpdateKite(0.0f);
-			const float MaxTension = Pawn->Kite->GetLineTensionN();
-
-			Pawn->SheetKite(0.0f);
-			Pawn->Kite->UpdateKite(0.0f);
-			const float MinTension = Pawn->Kite->GetLineTensionN();
+			auto SettledTension = [Pawn](float SheetVal)
+			{
+				Pawn->SheetKite(SheetVal);
+				for (int32 Step = 0; Step < 120; ++Step)
+				{
+					Pawn->Kite->UpdateKite(0.0333f);
+				}
+				return Pawn->Kite->GetLineTensionN();
+			};
+			const float MaxTension = SettledTension(1.0f);
+			const float MinTension = SettledTension(0.0f);
 
 			TestTrue(TEXT("Sheeted in tension is strictly greater than sheeted out tension"), MaxTension > MinTension);
 		}
@@ -214,7 +238,7 @@ bool FKiteSurfKiteSteerBothWays::RunTest(const FString& Parameters)
 		Pawn->SheetKite(0.8f);
 		Pawn->SteerKite(-1.0f);
 		bool bCrossedZeroFromRight = false;
-		for (int32 i = 0; i < 90; ++i) // 3 seconds
+		for (int32 i = 0; i < 240; ++i) // 8 seconds: a real kite has to fly there
 		{
 			Pawn->Kite->UpdateKite(Dt);
 			if (Pawn->GetKiteAzimuthDeg() <= 0.0f)
@@ -223,14 +247,14 @@ bool FKiteSurfKiteSteerBothWays::RunTest(const FString& Parameters)
 				break;
 			}
 		}
-		TestTrue(TEXT("Steering left brings azimuth through 0 deg within 3 s from right edge (+85 deg)"), bCrossedZeroFromRight);
+		TestTrue(TEXT("Steering left brings azimuth through 0 deg within 8 s from right edge (+85 deg)"), bCrossedZeroFromRight);
 
 		// 2. From negative edge (-85 deg), steer right (+1.0) brings azimuth back through 0 within 3s
 		Pawn->Kite->SetAzimuthDeg(-85.0f);
 		Pawn->Kite->SetElevationDeg(30.0f);
 		Pawn->SteerKite(1.0f);
 		bool bCrossedZeroFromLeft = false;
-		for (int32 i = 0; i < 90; ++i) // 3 seconds
+		for (int32 i = 0; i < 240; ++i) // 8 seconds: a real kite has to fly there
 		{
 			Pawn->Kite->UpdateKite(Dt);
 			if (Pawn->GetKiteAzimuthDeg() >= 0.0f)
@@ -239,7 +263,7 @@ bool FKiteSurfKiteSteerBothWays::RunTest(const FString& Parameters)
 				break;
 			}
 		}
-		TestTrue(TEXT("Steering right brings azimuth through 0 deg within 3 s from left edge (-85 deg)"), bCrossedZeroFromLeft);
+		TestTrue(TEXT("Steering right brings azimuth through 0 deg within 8 s from left edge (-85 deg)"), bCrossedZeroFromLeft);
 	}
 
 	World->DestroyWorld(false);

@@ -152,4 +152,49 @@ bool FKiteSurfWindGustMean::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Gusts and lulls must be big enough for the rider to notice and react to.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfWindGustsAndLulls, "KiteSurf.Wind.GustsAndLulls", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfWindGustsAndLulls::RunTest(const FString& Parameters)
+{
+	UWindComponent* WindComp = NewObject<UWindComponent>();
+	TestNotNull(TEXT("WindComponent created"), WindComp);
+	if (!WindComp)
+	{
+		return false;
+	}
+
+	WindComp->BaseWind = FVector(1000.0, 0.0, 0.0);
+	const FVector AtWater(0.0, 0.0, 0.0);
+
+	// Two minutes of wind with the default gust settings
+	float MinFactor = 10.0f;
+	float MaxFactor = 0.0f;
+	float LargestStepPerSecond = 0.0f;
+	float PreviousFactor = 1.0f;
+	const float SampleSeconds = 0.25f;
+	for (int32 Sample = 0; Sample < 480; ++Sample)
+	{
+		WindComp->TimeOverride = Sample * SampleSeconds;
+		const float Factor = WindComp->GetGustFactorAt(AtWater);
+		MinFactor = FMath::Min(MinFactor, Factor);
+		MaxFactor = FMath::Max(MaxFactor, Factor);
+		if (Sample > 0)
+		{
+			LargestStepPerSecond = FMath::Max(LargestStepPerSecond, FMath::Abs(Factor - PreviousFactor) / SampleSeconds);
+		}
+		PreviousFactor = Factor;
+	}
+
+	TestTrue(FString::Printf(TEXT("Gusts reach at least 15%% over the base wind (peak %.0f%%)"), (MaxFactor - 1.0f) * 100.0f), MaxFactor >= 1.15f);
+	TestTrue(FString::Printf(TEXT("Lulls drop at least 15%% below the base wind (trough %.0f%%)"), (MinFactor - 1.0f) * 100.0f), MinFactor <= 0.85f);
+	TestTrue(TEXT("Gusts and lulls stay within GustStrength of the base wind"), MaxFactor <= 1.0f + WindComp->GustStrength + 0.001f && MinFactor >= 1.0f - WindComp->GustStrength - 0.001f);
+	TestTrue(FString::Printf(TEXT("The wind builds and fades rather than jumping (largest change %.0f%% per second)"), LargestStepPerSecond * 100.0f), LargestStepPerSecond < 0.5f);
+
+	// The gust factor is measured at the reference height, so wind shear does not read as a lull.
+	WindComp->GustStrength = 0.0f;
+	TestNearlyEqual(TEXT("With gusts off the factor is 1 even at the water"), WindComp->GetGustFactorAt(AtWater), 1.0f, 0.001f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

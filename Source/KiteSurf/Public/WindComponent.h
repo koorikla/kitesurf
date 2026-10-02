@@ -18,6 +18,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	FVector GetBaseWind() const { return BaseWind; }
 
+	/** Current wind speed over the base wind speed at this place: above 1 in a gust, below 1 in a lull. */
+	UFUNCTION(BlueprintCallable, Category = "Wind")
+	float GetGustFactorAt(const FVector& WorldLocation) const;
+
 	/** Reference base wind speed at 10 m elevation in knots (un-sheared baseline, 1 kn = 51.44 cm/s) */
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	float GetReferenceWindSpeedKnots() const { return BaseWind.Size() / 51.44f; }
@@ -28,6 +32,18 @@ public:
 	/** Gust variation strength as a fraction of base speed (0..1, default 0.3) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float GustStrength;
+
+	/** Quick puffs run this many times faster than the gust period. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (ClampMin = "1.0"))
+	float GustPuffRate;
+
+	/** Share of the gust variation that comes from the quick puffs (0..1); the rest is the slow swell. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GustPuffShare;
+
+	/** Perlin noise rarely gets near +-1; this stretches it so gusts and lulls reach most of GustStrength. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (ClampMin = "0.0"))
+	float GustNoiseGain;
 
 	/** Gust period in seconds (default 8) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wind", meta = (ClampMin = "0.1"))

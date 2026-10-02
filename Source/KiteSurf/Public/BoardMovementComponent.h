@@ -309,6 +309,7 @@ private:
 	float CurrentEdgeInput;
 	float CurrentWeightShift;
 	float SmoothedCarveInput;
+	bool bLiftedByKite;
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();

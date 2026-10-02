@@ -91,6 +91,8 @@ UKiteComponent::UKiteComponent()
 	bParkHoldAssist = false;
 	ParkHoldGain = 2.5f;
 	ParkHoldMaxDeg = 45.0f;
+	AirborneZenithGain = 2.0f;
+	AirborneZenithMaxHeadingDeg = 45.0f;
 	MinElevationDeg = 10.0f;
 	CrashHeightCm = 60.0f;
 	RelaunchDelaySeconds = 3.0f;
@@ -653,6 +655,15 @@ float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector&
 		// Bar over: travel round the window that way.
 		OffsetDeg = Bar * TravelHeadingDeg;
 		bHasParkClock = false;
+	}
+	else if (bRiderAirborne && AirborneZenithGain > 0.0f)
+	{
+		// Bar centred with the rider in the air: fly the kite to 12 over them and keep it there, as a
+		// rider's hands do through a jump. Overhead its pull is nearly straight up, holding them up.
+		bHasParkClock = false;
+		const float ZenithClockDeg = 0.0f;
+		const float DriftDeg = FMath::FindDeltaAngleDegrees(GetClockDeg(), ZenithClockDeg);
+		OffsetDeg = FMath::Clamp(AirborneZenithGain * DriftDeg, -AirborneZenithMaxHeadingDeg, AirborneZenithMaxHeadingDeg);
 	}
 	else if (bParkHoldAssist)
 	{

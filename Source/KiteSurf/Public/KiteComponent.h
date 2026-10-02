@@ -53,8 +53,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
  * after a dead time that grows as the bar goes out. A slow kite flying across the window drops its
  * nose. Normally an assist flies it: bar over means travel round the window that way; bar centred
  * lets the kite drift up the window edge to the zenith and sit there, as a real kite does with the
- * bar neutral (or, with bParkHoldAssist, holds it where the bar was centred). With the loop input
- * held the bar turns the kite directly, so holding it flies a loop.
+ * bar neutral (or, with bParkHoldAssist, holds it where the bar was centred). With the rider in the
+ * air (SetRiderAirborne) bar centred flies the kite to the zenith over them and holds it there. The
+ * assist judges where the window is from the wind the rider feels across the water: the true wind
+ * less their horizontal velocity. With the loop input held the bar turns the kite directly, so
+ * holding it flies a loop.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -457,6 +460,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float ParkHoldMaxDeg;
 
+	/**
+	 * The rider says each step whether they are in the air (the pawn does, from the board). In the air
+	 * with the bar centred the assist flies the kite to 12 o'clock over them and holds it there
+	 * (AirborneZenithGain), whatever bParkHoldAssist says: a kite overhead is what carries a rider
+	 * through a jump. Bar over still travels, bar towards the kite's own side still loops, and the
+	 * floor rule still applies.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void SetRiderAirborne(bool bAirborne) { bRiderAirborne = bAirborne; }
+
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	bool IsRiderAirborne() const { return bRiderAirborne; }
+
+	/**
+	 * With the rider in the air and the bar centred, the assist leans the kite's nose towards 12 by
+	 * this many degrees per degree of clock it still has to go... (on the water, ZenithDriftGain). At 2
+	 * a kite sent for the timed jump in 30 kn reaches 12 about 1.5 s after take-off and is above 60 deg
+	 * by 2.5 s; more gain does not get it there sooner (the rider's climb is what it waits for), and
+	 * at 6 it overshoots and stalls. 0 turns the hold off: bar centred then does in the air what it
+	 * does on the water (drift to 12, or bParkHoldAssist), as before phase 2.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0"))
+	float AirborneZenithGain;
+
+	/** ...up to this much (deg of nose lean). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float AirborneZenithMaxHeadingDeg;
+
 	/** The assist will not fly the kite lower than this; a loop, a stall or slack lines can take it lower. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float MinElevationDeg;
@@ -587,6 +618,7 @@ protected:
 	bool bHasParkClock;
 	bool bPlacementPending;
 	bool bLoopHeld;
+	bool bRiderAirborne = false;
 	bool bLooping;
 	float LoopSide;
 	bool bCrashed;

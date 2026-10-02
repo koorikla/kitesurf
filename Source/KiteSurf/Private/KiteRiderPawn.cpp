@@ -755,6 +755,9 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	// are; UBoardMovementComponent owns all velocity integration and hydrodynamics.
 	if (Kite)
 	{
+		// The kite's assist flies differently with the rider in the air (the board's state from its
+		// last step).
+		Kite->SetRiderAirborne(BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne);
 		Kite->StepKite(StepSeconds);
 	}
 	if (Kite && BoardMovement)

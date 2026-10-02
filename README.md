@@ -52,9 +52,10 @@ Kitesurfing game built on Unreal Engine 5.8 with C++ and Enhanced Input.
 scripts/run-editor.sh -game -windowed -ResX=1600 -ResY=900 -log
 ```
 
-You start planing across the wind with the kite parked low on your right. The kite and the
-bar stay where you leave them, so no key needs to be held to keep riding. The same table is
-shown in the main menu and the pause menu.
+You start planing across the wind with the kite parked low on your right. The bar stays where
+you leave it, so no key needs to be held to keep riding; with the bar centred the kite slowly
+climbs the edge of the window towards 12 o'clock, as a real one does. The same table is shown in
+the main menu and the pause menu.
 
 The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick.
 
@@ -78,10 +79,12 @@ who is up and riding alone unless you run one over, and come for you when you ar
 water. Anything you are above, you clear.
 
 **Steering and loops.** The bar works like a real one, with no extra key. Steer away from the
-side the kite is on and it flies up over the top to the other side; let go and it parks where it
-is. Keep the bar held towards the side the kite is already on and it turns down and round: a
-loop, for as long as you hold it. So holding the bar through a change of direction ends in a
-loop on the new side; let go as the kite gets there if you do not want one.
+side the kite is on and it flies up over the top to the other side; let go and it drifts up the
+edge of the window to 12 o'clock overhead and sits there. In the air, with the bar centred, the
+kite is flown to 12 over you and held there, so it carries you down. Keep the bar held towards the
+side the kite is already on and it turns down and round: a loop, for as long as you hold it. So
+holding the bar through a change of direction ends in a loop on the new side; let go as the kite
+gets there if you do not want one.
 
 **Jumping.** You can always pop while you are up on the board: tap the jump button for a hop
 of about a metre. The height comes from the kite. Hold the jump button to crouch with your weight

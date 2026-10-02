@@ -44,9 +44,20 @@ public:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	// Core simulation update (callable directly from automation tests or TickComponent)
+	/** Advances the kite by DeltaTime in sub-steps no longer than MaxStepSeconds. For tests and for a kite nobody else steps. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void UpdateKite(float DeltaTime);
+
+	/** One fixed step of the kite, with the rider where they are now. The pawn calls this inside its own step loop. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void StepKite(float StepSeconds);
+
+	/** Time the kite's simulation has advanced (s); the wind is sampled at this time. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	float GetSimTimeSeconds() const { return SimTimeSeconds; }
+
+	/** Places the mesh and lines. Alpha blends from the previous step's position to the current one, for rendering between steps. */
+	void UpdateVisuals(float Alpha = 1.0f);
 
 	// Inputs
 	UFUNCTION(BlueprintCallable, Category = "Kite")
@@ -339,6 +350,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Debug")
 	bool bDrawDebug;
 
+	/** The flight is stepped in sub-steps no longer than this (s), whatever UpdateKite is given. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Simulation", meta = (ClampMin = "0.0001"))
+	float MaxStepSeconds;
+
+	/** Most sub-steps one UpdateKite call will take; past that the sub-step grows. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Simulation", meta = (ClampMin = "1"))
+	int32 MaxStepsPerUpdate;
+
 protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UWindComponent> WindComponent;
@@ -353,7 +372,6 @@ protected:
 	TObjectPtr<UCableComponent> RightLine;
 
 	void SetupVisuals();
-	void UpdateVisuals();
 
 	FVector GetWindAt(const FVector& Location) const;
 	FVector GetRiderPosition() const;
@@ -369,7 +387,7 @@ protected:
 	void UpdateAngles();
 
 	/** One fixed step of the flight dynamics; returns the line tension during the step (N). */
-	float StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderPosAfterStep, const FVector& RiderVelocity, const FVector& Wind);
+	float StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderVelocity, const FVector& Wind);
 
 	/** Lift and drag coefficients for an angle of attack in degrees, valid at any angle. */
 	void GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag) const;
@@ -392,9 +410,11 @@ protected:
 	FVector KiteWorldPosition;
 	FRotator KiteWorldRotation;
 
-	/** Where the rider was at the last update, so their motion can be spread over the flight steps. */
-	FVector LastRiderPosition;
-	bool bHasLastRiderPosition;
+	/** Where the kite was before the last step, for drawing it between steps. */
+	FVector PrevKiteWorldPosition;
+
+	/** Time the kite's simulation has advanced (s). */
+	float SimTimeSeconds;
 
 	float AirspeedCmS;
 	float AngleOfAttackDeg;

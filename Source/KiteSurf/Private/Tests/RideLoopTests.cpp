@@ -68,9 +68,7 @@ namespace
 			const int32 Steps = FMath::RoundToInt(Seconds / RideDeltaTime);
 			for (int32 Step = 0; Step < Steps; ++Step)
 			{
-				Kite->UpdateKite(RideDeltaTime);
 				Pawn->Tick(RideDeltaTime);
-				Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
 			}
 		}
 
@@ -947,6 +945,7 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 	// their toes the whole way, and so has their back to the kite half way; the bar stays in
 	// front of them with the lines coming over their shoulder.
 	Ride.Board->SetBoardState(EBoardState::Airborne);
+	Pawn->bStepSimulation = false; // the board is turned by hand from here on; Tick only poses the rider
 	float RiderTurnedDeg = 0.0f;
 	float PreviousFacingDeg = Pawn->GetRiderFacingYawDeg();
 	float FacingKiteAtHalfTurn = 1.0f;
@@ -997,6 +996,7 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("and the slide round has finished"), static_cast<float>(FRotator::NormalizeAxis(Pawn->GetRiderBodyYawDeg() - Pawn->GetRiderFacingYawDeg())), 0.0f, 0.01f);
 
 	// A reset puts the rider back on the board facing the kite.
+	Pawn->bStepSimulation = true;
 	Ride.Board->ResetToTack(12.0f);
 	Ride.Simulate(1.0f);
 	TestNearlyEqual(TEXT("After a reset the rider is square across the board"), FMath::Abs(FacingOffBoardDeg()), 90.0f, 0.02f);

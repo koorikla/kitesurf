@@ -13,8 +13,13 @@ class KITESURF_API UWindComponent : public UActorComponent
 public:
 	UWindComponent();
 
+	/** The wind at a place now (world time, or TimeOverride without a world). */
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	FVector GetWindAt(const FVector& WorldLocation) const;
+
+	/** The wind at a place and a time. The simulation samples this at its own fixed-step time, so a ride is the same whatever the frame rate. */
+	UFUNCTION(BlueprintCallable, Category = "Wind")
+	FVector GetWindAtTime(const FVector& WorldLocation, float TimeSeconds) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Wind")
 	FVector GetBaseWind() const { return BaseWind; }

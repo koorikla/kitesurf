@@ -42,6 +42,13 @@ void UWindComponent::BeginPlay()
 
 FVector UWindComponent::GetWindAt(const FVector& WorldLocation) const
 {
+	// Time source: GetWorld()->GetTimeSeconds() when a world exists, else injectable TimeOverride for tests
+	const float Time = (GetWorld() != nullptr) ? GetWorld()->GetTimeSeconds() : TimeOverride;
+	return GetWindAtTime(WorldLocation, Time);
+}
+
+FVector UWindComponent::GetWindAtTime(const FVector& WorldLocation, float Time) const
+{
 	const float BaseSpeed = BaseWind.Size();
 	if (FMath::IsNearlyZero(BaseSpeed))
 	{
@@ -50,8 +57,6 @@ FVector UWindComponent::GetWindAt(const FVector& WorldLocation) const
 
 	const FVector BaseDir = BaseWind / BaseSpeed;
 
-	// Time source: GetWorld()->GetTimeSeconds() when a world exists, else injectable TimeOverride for tests
-	const float Time = (GetWorld() != nullptr) ? GetWorld()->GetTimeSeconds() : TimeOverride;
 	const float Period = FMath::Max(GustPeriodSeconds, 0.001f);
 	const float TimeCoord = Time / Period;
 

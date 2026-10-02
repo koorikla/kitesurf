@@ -46,7 +46,8 @@ void UBoardWakeComponent::BeginPlay()
 		BoardMovement = Owner->FindComponentByClass<UBoardMovementComponent>();
 		if (BoardMovement)
 		{
-			AddTickPrerequisiteComponent(BoardMovement);
+			// The owning pawn steps the board inside its own tick; the wake follows that.
+			AddTickPrerequisiteActor(Owner);
 			BoardMovement->OnBoardLanding.AddDynamic(this, &UBoardWakeComponent::HandleBoardLanding);
 			BoardMovement->OnBoardCrash.AddDynamic(this, &UBoardWakeComponent::HandleBoardCrash);
 		}

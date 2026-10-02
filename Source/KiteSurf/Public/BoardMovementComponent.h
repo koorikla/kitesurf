@@ -63,7 +63,15 @@ public:
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** Accumulate an external force in kg*cm/s^2 (applied during next tick) */
+	/** Advances the board by DeltaTime in sub-steps no longer than MaxStepSeconds; a force added before the call acts for the whole of it. For tests and for a board nobody else steps. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	void Simulate(float DeltaTime);
+
+	/** One fixed step with the external force accumulated since the last one. The pawn calls this inside its own step loop. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	void StepBoard(float StepSeconds);
+
+	/** Accumulate an external force in kg*cm/s^2, applied during the next step */
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	void AddExternalForce(const FVector& Force);
 
@@ -335,6 +343,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Tuning")
 	float GetMaxBoardSpeedCmS() const { return MaxBoardSpeedCmS; }
+
+	/** The board is stepped in sub-steps no longer than this (s), whatever Simulate is given. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Simulation", meta = (ClampMin = "0.0001"))
+	float MaxStepSeconds;
+
+	/** Most sub-steps one Simulate call will take; past that the sub-step grows. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Simulation", meta = (ClampMin = "1"))
+	int32 MaxStepsPerUpdate;
 
 protected:
 	virtual void BeginPlay() override;

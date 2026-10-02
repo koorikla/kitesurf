@@ -126,6 +126,16 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Kite component: aerodynamics producing the line force consumed by BoardMovement
 	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
 
+	// The pawn steps the kite and the board itself, at a fixed rate and in a fixed order (see
+	// Tick), so neither ticks on its own. Their step functions stay callable for tests.
+	Kite->PrimaryComponentTick.bCanEverTick = false;
+	BoardMovement->PrimaryComponentTick.bCanEverTick = false;
+	SimStepSeconds = 1.0f / 240.0f;
+	MaxFrameSeconds = 0.1f;
+	MaxSimStepsPerFrame = 32;
+	bInterpolateRendering = true;
+	bStepSimulation = true;
+
 	// Foam trail and spray behind the board
 	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
 
@@ -182,6 +192,16 @@ AKiteRiderPawn::AKiteRiderPawn()
 	LastPauseToggleFrame = MAX_uint64;
 	KiteAzimuthDeg = 0.0f;
 	BoardVelocity = FVector::ZeroVector;
+	SimAccumulatorSeconds = 0.0f;
+	SimTimeSeconds = 0.0f;
+	LastFrameSimSteps = 0;
+	bHasSimState = false;
+	PrevSimLocation = FVector::ZeroVector;
+	SimLocation = FVector::ZeroVector;
+	PrevSimRotation = FQuat::Identity;
+	SimRotation = FQuat::Identity;
+	LastRenderLocation = FVector::ZeroVector;
+	LastRenderRotation = FQuat::Identity;
 }
 
 void AKiteRiderPawn::BeginPlay()
@@ -421,16 +441,41 @@ float AKiteRiderPawn::GetKiteAzimuthDeg() const
 	return KiteAzimuthDeg;
 }
 
-void AKiteRiderPawn::Tick(float DeltaTime)
+void AKiteRiderPawn::StepSimulation(float StepSeconds)
 {
-	Super::Tick(DeltaTime);
+	if (RootComponent)
+	{
+		PrevSimLocation = RootComponent->GetComponentLocation();
+		PrevSimRotation = RootComponent->GetComponentQuat();
+	}
+	SimTimeSeconds += StepSeconds;
 
-	// UKiteComponent computes the aerodynamic line force (kg*cm/s^2);
-	// UBoardMovementComponent owns all velocity integration and hydrodynamics.
+	// UKiteComponent computes the aerodynamic line force (kg*cm/s^2) with the rider where they
+	// are; UBoardMovementComponent owns all velocity integration and hydrodynamics.
+	if (Kite)
+	{
+		Kite->StepKite(StepSeconds);
+	}
 	if (Kite && BoardMovement)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	if (BoardMovement)
+	{
+		BoardMovement->StepBoard(StepSeconds);
+	}
+
+	if (RootComponent)
+	{
+		SimLocation = RootComponent->GetComponentLocation();
+		SimRotation = RootComponent->GetComponentQuat();
+	}
+	bHasSimState = true;
+}
+
+void AKiteRiderPawn::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
 
 	if (!FMath::IsNearlyZero(SheetRateInput))
 	{
@@ -440,6 +485,52 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	if (GetController())
 	{
 		UpdateMouseBar();
+	}
+
+	// The rig is stepped at a fixed rate however long the frame was, so the ride is the same at
+	// any frame rate, and a hitch slows it rather than breaking it. The root is drawn between the
+	// last two steps and put back on the simulation's own transform before stepping again.
+	const float Step = FMath::Max(SimStepSeconds, KINDA_SMALL_NUMBER);
+	if (!bStepSimulation)
+	{
+		// Placed by hand: whatever is there now is the truth, and nothing is drawn between steps.
+		SimAccumulatorSeconds = 0.0f;
+		bHasSimState = false;
+	}
+	if (bHasSimState && bInterpolateRendering && RootComponent)
+	{
+		const bool bStillWhereWeDrewIt = RootComponent->GetComponentLocation().Equals(LastRenderLocation, 0.01f)
+			&& RootComponent->GetComponentQuat().Equals(LastRenderRotation, 1e-4f);
+		if (bStillWhereWeDrewIt)
+		{
+			RootComponent->SetWorldLocationAndRotation(SimLocation, SimRotation, false, nullptr, ETeleportType::TeleportPhysics);
+		}
+		else
+		{
+			// Something outside the step loop moved the rider (a reset, a test): that is the new truth.
+			PrevSimLocation = SimLocation = RootComponent->GetComponentLocation();
+			PrevSimRotation = SimRotation = RootComponent->GetComponentQuat();
+		}
+	}
+	SimAccumulatorSeconds += FMath::Clamp(DeltaTime, 0.0f, MaxFrameSeconds);
+	int32 Steps = 0;
+	while (bStepSimulation && SimAccumulatorSeconds >= Step && Steps < MaxSimStepsPerFrame)
+	{
+		StepSimulation(Step);
+		SimAccumulatorSeconds -= Step;
+		++Steps;
+	}
+	if (Steps >= MaxSimStepsPerFrame)
+	{
+		SimAccumulatorSeconds = 0.0f; // a hitch: drop the rest of it rather than try to catch up
+	}
+	LastFrameSimSteps = Steps;
+	const float RenderAlpha = (bHasSimState && bInterpolateRendering) ? FMath::Clamp(SimAccumulatorSeconds / Step, 0.0f, 1.0f) : 1.0f;
+	if (bHasSimState && bInterpolateRendering && RootComponent)
+	{
+		LastRenderLocation = FMath::Lerp(PrevSimLocation, SimLocation, RenderAlpha);
+		LastRenderRotation = FQuat::Slerp(PrevSimRotation, SimRotation, RenderAlpha);
+		RootComponent->SetWorldLocationAndRotation(LastRenderLocation, LastRenderRotation, false, nullptr, ETeleportType::TeleportPhysics);
 	}
 
 	// The rider and the camera follow where the kite generally is, not every swing of a loop.
@@ -452,6 +543,11 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	}
 
 	UpdateRiderPose(DeltaTime);
+	if (Kite)
+	{
+		// After the pose, which tells the kite where the bar is.
+		Kite->UpdateVisuals(RenderAlpha);
+	}
 	UpdateCamera(DeltaTime);
 	bViewInitialized = true;
 

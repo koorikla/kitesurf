@@ -66,6 +66,8 @@ UBoardMovementComponent::UBoardMovementComponent()
 	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
 	CrashRespawnDelay = 1.0f;   // 1.0 s (total crash-to-reset: 1.5 s)
+	MaxStepSeconds = 1.0f / 240.0f;
+	MaxStepsPerUpdate = 48;
 
 	CurrentDragRegime = EBoardDragRegime::Displacement;
 	CurrentBoardState = EBoardState::Displacement;
@@ -281,7 +283,29 @@ float UBoardMovementComponent::GetLateralSpeed() const
 void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	Simulate(DeltaTime);
+}
 
+void UBoardMovementComponent::Simulate(float DeltaTime)
+{
+	if (DeltaTime <= 0.0f)
+	{
+		return;
+	}
+	const int32 NumSteps = FMath::Clamp(FMath::CeilToInt(DeltaTime / FMath::Max(MaxStepSeconds, KINDA_SMALL_NUMBER)), 1, FMath::Max(MaxStepsPerUpdate, 1));
+	const float StepSeconds = DeltaTime / NumSteps;
+	// A force added before this update is held for the whole of it.
+	const FVector HeldForce = AccumulatedExternalForce;
+	for (int32 Step = 0; Step < NumSteps; ++Step)
+	{
+		AccumulatedExternalForce = HeldForce;
+		StepBoard(StepSeconds);
+	}
+}
+
+void UBoardMovementComponent::StepBoard(float StepSeconds)
+{
+	const float DeltaTime = StepSeconds;
 	if (!ShouldSkipUpdate(DeltaTime) && UpdatedComponent)
 	{
 		const FVector Location = UpdatedComponent->GetComponentLocation();

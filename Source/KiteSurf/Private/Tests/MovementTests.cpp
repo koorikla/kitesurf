@@ -47,9 +47,7 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 600; ++i) // 20 seconds of simulation
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float SpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
@@ -62,9 +60,7 @@ bool FKiteSurfMovementSpeedEnvelope::RunTest(const FString& Parameters)
 			Pawn->SheetKite(0.0f);
 			for (int32 i = 0; i < 300; ++i) // 10 seconds of sheet-out decay
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float DecayedSpeedKnots = BoardComp->GetForwardSpeed() / 51.44f;
@@ -111,7 +107,6 @@ bool FKiteSurfMovementDepowerToStop::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 150; ++i) // 5 seconds
 			{
-				Pawn->Tick(DeltaTime);
 				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
@@ -161,9 +156,7 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 			const float DeltaTime = 0.0333f;
 			for (int32 i = 0; i < 450; ++i) // 15 seconds
 			{
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 			}
 
 			const float ForwardSpeed = BoardComp->GetForwardSpeed();
@@ -212,9 +205,7 @@ bool FKiteSurfMovementNoNaNGuard::RunTest(const FString& Parameters)
 				Pawn->SheetKite(Sheet);
 				Pawn->SteerKite(Edge);
 
-				KiteComp->UpdateKite(DeltaTime);
 				Pawn->Tick(DeltaTime);
-				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 
 				const FVector Vel = Pawn->GetBoardVelocity();
 				TestFalse(TEXT("Velocity does not contain NaN"), Vel.ContainsNaN());

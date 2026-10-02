@@ -37,7 +37,6 @@ bool FKiteSurfBoardSettlesAtRest::RunTest(const FString& Parameters)
 				const float DeltaTime = 3.0f / 90.0f;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 
@@ -151,7 +150,8 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 					BoardComp->AddExternalForce(LateralForce);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
-				const float LateralSpeedNoEdge = BoardComp->GetLateralSpeed();
+				// Sideways over the water: the board heels under the load, and its own right axis would read some of the vertical motion.
+				const float LateralSpeedNoEdge = FMath::Abs(BoardComp->Velocity.Y);
 
 				// Run 2: Full Edge (EdgeInput = 1.0f)
 				Pawn->SetActorLocation(FVector::ZeroVector);
@@ -164,7 +164,7 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 					BoardComp->AddExternalForce(LateralForce);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
-				const float LateralSpeedFullEdge = BoardComp->GetLateralSpeed();
+				const float LateralSpeedFullEdge = FMath::Abs(BoardComp->Velocity.Y);
 
 				const float Ratio = LateralSpeedFullEdge / FMath::Max(LateralSpeedNoEdge, 0.001f);
 				UE_LOG(LogKiteSurf, Log, TEXT("EdgeResistsLateralForce: No Edge = %.1f cm/s, Full Edge = %.1f cm/s, Ratio = %.1f%%"),
@@ -373,9 +373,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				float MaxHeightReached = 0.0f;
 				for (int32 i = 0; i < 90; ++i) // 3 seconds
 				{
-					KiteComp->UpdateKite(DeltaTime);
 					Pawn->Tick(DeltaTime);
-					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 					MaxHeightReached = FMath::Max(MaxHeightReached, Pawn->GetActorLocation().Z);
 				}
 
@@ -684,7 +682,6 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 				const float DeltaTime = 3.0f / 90.0f;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 
@@ -698,7 +695,6 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 				BoardComp->Velocity = FVector::ZeroVector;
 				for (int32 i = 0; i < 90; ++i)
 				{
-					Pawn->Tick(DeltaTime);
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 

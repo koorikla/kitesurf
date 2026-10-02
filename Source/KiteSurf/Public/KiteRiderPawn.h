@@ -41,6 +41,40 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	/**
+	 * One fixed step of the whole rig, in this order: the kite with the rider where they are, the
+	 * line force to the board, the board. Tick runs as many of these as the frame holds.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Simulation")
+	void StepSimulation(float StepSeconds);
+
+	/** Time the simulation has advanced (s). */
+	UFUNCTION(BlueprintCallable, Category = "Simulation")
+	float GetSimTimeSeconds() const { return SimTimeSeconds; }
+
+	/** How many fixed steps the last frame ran. */
+	int32 GetLastFrameSimSteps() const { return LastFrameSimSteps; }
+
+	/** The fixed step the kite, lines and board are simulated with (s). The same ride at any frame rate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation", meta = (ClampMin = "0.0001"))
+	float SimStepSeconds;
+
+	/** Frame time above this is clamped (s), so a hitch slows the simulation down instead of blowing it up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation", meta = (ClampMin = "0.001"))
+	float MaxFrameSeconds;
+
+	/** Most fixed steps one frame will run; the rest of that frame's time is dropped. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation", meta = (ClampMin = "1"))
+	int32 MaxSimStepsPerFrame;
+
+	/** Draw the rider and kite between the last two simulation states, so motion is smooth however the frame rate divides the step. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation")
+	bool bInterpolateRendering;
+
+	/** Step the kite and board from Tick. Off, they stay where they are and Tick only poses the rider, camera and sound: for tests that place the rider by hand. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation")
+	bool bStepSimulation;
+
 	// Public API
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SteerKite(float Axis /* -1..1 */);
@@ -341,4 +375,18 @@ private:
 	uint64 LastPauseToggleFrame;
 	float KiteAzimuthDeg;
 	FVector BoardVelocity;
+
+	// Fixed-step driver state
+	float SimAccumulatorSeconds;
+	float SimTimeSeconds;
+	int32 LastFrameSimSteps;
+	bool bHasSimState;
+	/** The simulation's own transform, before and after the last step. */
+	FVector PrevSimLocation;
+	FVector SimLocation;
+	FQuat PrevSimRotation;
+	FQuat SimRotation;
+	/** Where the root was last drawn, so a teleport from outside the step loop can be told apart from our own interpolation. */
+	FVector LastRenderLocation;
+	FQuat LastRenderRotation;
 };

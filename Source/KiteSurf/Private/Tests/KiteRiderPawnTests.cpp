@@ -121,6 +121,8 @@ bool FKiteSurfAudioMixFollowsTheRide::RunTest(const FString& Parameters)
 			Wind->BaseWind = FVector(20.0f * 51.44f, 0.0f, 0.0f);
 			Wind->GustStrength = 0.0f;
 		}
+		// Standing still in the wind: the rig is not stepped, so the kite does not drag the rider off downwind.
+		Pawn->bStepSimulation = false;
 		for (int32 Step = 0; Step < 120; ++Step)
 		{
 			Pawn->Tick(1.0f / 60.0f);

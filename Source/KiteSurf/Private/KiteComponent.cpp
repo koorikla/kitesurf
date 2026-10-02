@@ -14,9 +14,6 @@ namespace
 	constexpr float AirDensityKgM3 = KiteUnits::AirDensityKgM3;
 	constexpr float GravityMS2 = KiteUnits::GravityMS2;
 	constexpr float CmPerM = KiteUnits::CmPerM;
-	// The flight dynamics are stepped at least this often, whatever the frame rate.
-	const float MaxFlightStepSeconds = 1.0f / 240.0f;
-	const int32 MaxFlightStepsPerUpdate = 24;
 	// Bar travel below this counts as centred.
 	const float CentredBarThreshold = 0.05f;
 	// The loop counter restarts once the bar has been centred this long.
@@ -87,6 +84,8 @@ UKiteComponent::UKiteComponent()
 	MinRelaunchWindCmS = 350.0f;
 	MaxLineTensionN = 6000.0f;
 	bDrawDebug = false;
+	MaxStepSeconds = 1.0f / 240.0f;
+	MaxStepsPerUpdate = 48;
 
 	KiteDir = FVector(FMath::Cos(FMath::DegreesToRadians(45.0f)), 0.0f, FMath::Sin(FMath::DegreesToRadians(45.0f)));
 	KiteHeading = FVector::UpVector;
@@ -108,8 +107,8 @@ UKiteComponent::UKiteComponent()
 	LoopClockDeg = 35.0f;
 	bCrashed = false;
 	bLinesTaut = true;
-	bHasLastRiderPosition = false;
-	LastRiderPosition = FVector::ZeroVector;
+	PrevKiteWorldPosition = FVector::ZeroVector;
+	SimTimeSeconds = 0.0f;
 	CrashedSeconds = 0.0f;
 
 	LineTensionN = 0.0f;
@@ -207,13 +206,17 @@ void UKiteComponent::SetupVisuals()
 	UpdateVisuals();
 }
 
-void UKiteComponent::UpdateVisuals()
+void UKiteComponent::UpdateVisuals(float Alpha)
 {
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
 		return;
 	}
+
+	// Drawn between the last two simulation states, so the canopy moves smoothly however the
+	// frame rate divides the fixed step.
+	const FVector DrawPosition = PrevKiteWorldPosition.IsZero() ? KiteWorldPosition : FMath::Lerp(PrevKiteWorldPosition, KiteWorldPosition, FMath::Clamp(Alpha, 0.0f, 1.0f));
 
 	// The canopy faces out along the lines with its leading edge towards the kite's heading,
 	// banked into the turn.
@@ -223,7 +226,7 @@ void UKiteComponent::UpdateVisuals()
 
 	if (KiteMesh)
 	{
-		KiteMesh->SetWorldLocationAndRotation(KiteWorldPosition, KiteWorldRotation);
+		KiteMesh->SetWorldLocationAndRotation(DrawPosition, KiteWorldRotation);
 	}
 
 	// Update line attachments: connecting from rider control bar to kite wing tips
@@ -232,8 +235,8 @@ void UKiteComponent::UpdateVisuals()
 
 	// The trailing corner of each wingtip, as built by generate_mesh_objs.kite_wingtip().
 	const float SizeScale = GetSizeScale();
-	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, -223.0f, -178.0f) * SizeScale);
-	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, 223.0f, -178.0f) * SizeScale);
+	const FVector LeftTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, -223.0f, -178.0f) * SizeScale);
+	const FVector RightTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, 223.0f, -178.0f) * SizeScale);
 
 	if (LeftLine)
 	{
@@ -447,13 +450,13 @@ FVector UKiteComponent::GetWindAt(const FVector& Location) const
 {
 	if (WindComponent)
 	{
-		return WindComponent->GetWindAt(Location);
+		return WindComponent->GetWindAtTime(Location, SimTimeSeconds);
 	}
 	if (const AActor* Owner = GetOwner())
 	{
 		if (const UWindComponent* FoundWind = Owner->FindComponentByClass<UWindComponent>())
 		{
-			return FoundWind->GetWindAt(Location);
+			return FoundWind->GetWindAtTime(Location, SimTimeSeconds);
 		}
 	}
 	return FVector::ZeroVector;
@@ -487,8 +490,7 @@ void UKiteComponent::PlaceParked()
 	KiteDir = DirectionFromAngles(AzimuthDeg, ElevationDeg);
 	KiteWorldPosition = RiderPos + KiteDir * LineLengthCm;
 	KiteVelocity = RiderVelocity;
-	LastRiderPosition = RiderPos;
-	bHasLastRiderPosition = true;
+	PrevKiteWorldPosition = KiteWorldPosition;
 
 	// A parked kite points its nose out of the window, into the wind blowing across the lines.
 	const FVector WindFelt = GetWindAt(KiteWorldPosition) - RiderVelocity;
@@ -657,7 +659,7 @@ float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVeloc
 	return FMath::Clamp(SteerAssistGain * ErrorRad, -1.0f, 1.0f);
 }
 
-float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderPosAfterStep, const FVector& RiderVelocity, const FVector& Wind)
+float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderVelocity, const FVector& Wind)
 {
 	// Everything in here is SI: metres, m/s, newtons. Engine units are converted at the edges.
 	const float LineLengthM = LineLengthCm / CmPerM;
@@ -770,14 +772,14 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	KiteVelocity += Force / InertiaKg * StepSeconds * CmPerM;
 	KiteWorldPosition += KiteVelocity * StepSeconds;
 
-	Offset = KiteWorldPosition - RiderPosAfterStep;
+	Offset = KiteWorldPosition - RiderPos;
 	const float NewDistanceCm = Offset.Size();
 	if (bTaut && NewDistanceCm > KINDA_SMALL_NUMBER)
 	{
 		// Tight lines are a rod: the kite stays at line length and moves round the rider, not
 		// towards or away from them.
 		const FVector NewDir = Offset / NewDistanceCm;
-		KiteWorldPosition = RiderPosAfterStep + NewDir * LineLengthCm;
+		KiteWorldPosition = RiderPos + NewDir * LineLengthCm;
 		KiteVelocity -= FVector::DotProduct(KiteVelocity - RiderVelocity, NewDir) * NewDir;
 		KiteDir = NewDir;
 	}
@@ -785,7 +787,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	{
 		// Slack lines snatch tight when the kite reaches their full length.
 		const FVector NewDir = Offset / NewDistanceCm;
-		KiteWorldPosition = RiderPosAfterStep + NewDir * LineLengthCm;
+		KiteWorldPosition = RiderPos + NewDir * LineLengthCm;
 		const float OutwardSpeed = FVector::DotProduct(KiteVelocity - RiderVelocity, NewDir);
 		if (OutwardSpeed > 0.0f)
 		{
@@ -804,10 +806,29 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 
 void UKiteComponent::UpdateKite(float DeltaTime)
 {
+	if (DeltaTime <= 0.0f)
+	{
+		StepKite(0.0f);
+		return;
+	}
+
+	// Fixed small steps: the kite's response is fast compared with a frame.
+	const int32 NumSteps = FMath::Clamp(FMath::CeilToInt(DeltaTime / FMath::Max(MaxStepSeconds, KINDA_SMALL_NUMBER)), 1, FMath::Max(MaxStepsPerUpdate, 1));
+	const float StepSeconds = DeltaTime / NumSteps;
+	for (int32 Step = 0; Step < NumSteps; ++Step)
+	{
+		StepKite(StepSeconds);
+	}
+}
+
+void UKiteComponent::StepKite(float StepSeconds)
+{
 	if (bPlacementPending)
 	{
 		PlaceParked();
 	}
+	SimTimeSeconds += FMath::Max(StepSeconds, 0.0f);
+	PrevKiteWorldPosition = KiteWorldPosition;
 
 	const FVector RiderPos = GetRiderPosition();
 	const FVector RiderVelocity = GetRiderVelocity();
@@ -815,7 +836,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 	if (bCrashed)
 	{
 		// On the water: slack lines, towed along if the rider rides away from it, until it relaunches.
-		CrashedSeconds += DeltaTime;
+		CrashedSeconds += StepSeconds;
 		FVector Offset = KiteWorldPosition - RiderPos;
 		if (Offset.Size() > LineLengthCm)
 		{
@@ -827,8 +848,6 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 		LineForce = FVector::ZeroVector;
 		AppliedSteer = 0.0f;
 		UpdateAngles();
-		LastRiderPosition = RiderPos;
-		bHasLastRiderPosition = true;
 
 		const float MinSecondsBeforeSteeredRelaunch = 1.0f;
 		const bool bSteeredUp = CrashedSeconds >= MinSecondsBeforeSteeredRelaunch && FMath::Abs(Steer) >= CentredBarThreshold;
@@ -842,45 +861,20 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 	}
 
 	const FVector Wind = GetWindAt(KiteWorldPosition);
-	const float SteerInput = ComputeSteering(DeltaTime, RiderVelocity, Wind);
+	const float SteerInput = ComputeSteering(StepSeconds, RiderVelocity, Wind);
 	AppliedSteer = SteerInput;
 
-	// Fixed small steps: the kite's response is fast compared with a frame.
-	float TensionSum = 0.0f;
-	int32 NumSteps = 1;
-	if (DeltaTime > 0.0f)
+	const float Tension = StepFlight(StepSeconds, SteerInput, RiderPos, RiderVelocity, Wind);
+	if (StepSeconds > 0.0f && KiteWorldPosition.Z <= CrashHeightCm)
 	{
-		NumSteps = FMath::Clamp(FMath::CeilToInt(DeltaTime / MaxFlightStepSeconds), 1, MaxFlightStepsPerUpdate);
-		const float StepSeconds = DeltaTime / NumSteps;
-
-		// The rider has moved since the last update. The lines are judged tight or slack against
-		// where the rider is during each step, not against where they ended up, or a rider moving
-		// towards the kite would slacken the lines at the start of every frame.
-		const FVector RiderPosBefore = bHasLastRiderPosition ? LastRiderPosition : RiderPos;
-		for (int32 Step = 0; Step < NumSteps; ++Step)
-		{
-			const FVector StepStart = FMath::Lerp(RiderPosBefore, RiderPos, static_cast<float>(Step) / NumSteps);
-			const FVector StepEnd = FMath::Lerp(RiderPosBefore, RiderPos, static_cast<float>(Step + 1) / NumSteps);
-			TensionSum += StepFlight(StepSeconds, SteerInput, StepStart, StepEnd, RiderVelocity, Wind);
-
-			if (KiteWorldPosition.Z <= CrashHeightCm)
-			{
-				Crash();
-				return;
-			}
-		}
+		Crash();
+		return;
 	}
-	else
-	{
-		TensionSum = StepFlight(0.0f, SteerInput, RiderPos, RiderPos, RiderVelocity, Wind);
-	}
-	LastRiderPosition = RiderPos;
-	bHasLastRiderPosition = true;
 
 	UpdateAngles();
 
-	// The rider feels the average pull over the frame, along the lines.
-	LineTensionN = FMath::Min(TensionSum / NumSteps, MaxLineTensionN);
+	// The rider feels the pull along the lines.
+	LineTensionN = FMath::Min(Tension, MaxLineTensionN);
 	LineForce = KiteDir * KiteUnits::NToUnrealForce(LineTensionN);
 
 #if !UE_BUILD_SHIPPING

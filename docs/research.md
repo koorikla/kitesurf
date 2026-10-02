@@ -565,7 +565,7 @@ Orientation is set directly: pitch and roll follow the water normal plus up to 4
 9. **Tricks and scoring.** No rotation in the air, no grab inputs, no score state.
 10. **Waves and kickers.** The water query excludes waves, so the board rides the flat rest surface.
 11. **Visuals.** No rider, board or kite mesh; lines are a debug draw only.
-12. **Camera.** The fixed boom cannot frame a kite 24 m away or a 20 m jump.
+12. **Camera.** The chase camera now turns and tilts towards the kite to keep it in frame while riding (`KiteSurf.Pawn.CameraFramesKite`); it still cannot frame a kite at the zenith or a 20 m jump.
 13. **Tuning data assets.** Every constant is a constructor default or an inline literal.
 14. **Physics regression tests.** Variable-step integration makes results frame-rate dependent; no golden trajectories.
 15. **World-level wind.** The wind field lives on the pawn, so each pawn would have its own wind.
@@ -573,14 +573,14 @@ Orientation is set directly: pitch and roll follow the water normal plus up to 4
 
 ### Bugs and dubious physics found
 
-- **Kite elevation only goes up.** With the sheet key released, the kite climbs to 85° in about 4 s and stays there (`KiteComponent.cpp:188`).
-- **Sheet does nothing above 0.5.** The lift coefficient hits its 1.2 clamp at about 11° (`KiteComponent.cpp:221-225`).
+- **Kite elevation only goes up** (fixed): steering now flies the kite around the window by clock position and it holds where it is put; see `KiteSurf.Kite.FliesAroundTheWindow`.
+- **Sheet does nothing above 0.5** (mostly fixed): angle of attack now runs 1.5° to 13°, so the lift clamp is reached at about 80% bar travel, and the bar position persists.
 - **Water forces act in the air.** Planing lift, drag and carve yaw are not gated on contact (`BoardMovementComponent.cpp:170-217`).
 - **Waves are ignored.** `GetWaterSurfaceInfoAtLocation` is called without the include-waves flag (`BoardMovementComponent.cpp:56-83`).
 - **Buoyancy is a force cap** with a jump of about 533 N at the 10 cm cut-off (`BoardMovementComponent.cpp:140-148`).
 - **Jumps would never end** (*inferred*): the kite is rigidly overhead with no gravity, so above about 19 kn the rider lifts off and keeps climbing.
 - **Landings would sink the board** (*inferred*): the 1,500 N cap gives about 0.8 g of deceleration, so a 10 m drop sinks about 12 m.
-- **HUD wind reads low.** It samples at water level, showing about 10.5 kn for a nominal 15 kn (`KiteSurfHUD.cpp:69`).
+- **HUD wind reads low** (fixed): the HUD samples the wind at the shear reference height.
 - **Wind window follows gust drift.** The downwind axis is resampled every frame, so the kite shifts sideways with direction noise (`KiteComponent.cpp:135-136`).
 - **Line force is one frame late** (*inferred*): the movement component ticks before the pawn that feeds it.
 - **Camera rolls with the board** (fixed): the spring arm now takes only the board's heading; see `KiteSurf.Pawn.CameraStaysLevel`.

@@ -46,6 +46,24 @@ Kitesurfing game built on Unreal Engine 5.8 with C++ and Enhanced Input.
    scripts/run-editor.sh
    ```
 
+## Playing
+
+```bash
+scripts/run-editor.sh -game -windowed -ResX=1600 -ResY=900 -log
+```
+
+You start planing across the wind with the kite powered up low on your right. The kite and the
+bar stay where you leave them, so no key needs to be held to keep riding.
+
+| Action | Keyboard | Gamepad |
+| --- | --- | --- |
+| Fly the kite round the window (over the top to change tack) | A / D or Left / Right | Left stick X |
+| Sheet in / out (the bar holds its position) | W / S or Up / Down | Right / left trigger |
+| Carve the board (hold to keep turning) | Q / E | Left stick Y |
+| Jump (while planing with an edge held) | Space | Bottom face button |
+| Reset | R | Right face button |
+| Pause | Esc | Start |
+
 ## Conventions
 
 - **Units**: Unreal cm, cm/s (1 knot = 51.44 cm/s).

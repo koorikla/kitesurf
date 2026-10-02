@@ -11,13 +11,21 @@ This document outlines the board movement, edging, planing transition, and physi
    - Rapid deceleration when unpowered: bringing rider from displacement speeds to $< 2$ knots within 5 seconds.
 2. **Planing Regime** ($v \ge 400 \text{ cm/s}$):
    - Linear drag: $F_{lin} = C_{planing} \cdot v$
-   - Quadratic high-speed spray drag: $F_{spray} = 0.015 \cdot v^2$
+   - Quadratic drag: $F_{quad} = C_{planing,quad} \cdot v^2$. This term dominates, so the settled board speed scales with the wind speed instead of running away in strong wind.
    - Planing hydrodynamic lift: raises the board towards the surface as speed increases, clamped by surface contact falloff.
 
-### Edging & Lateral Resistance
-- **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$.
+### Course keeping, edging and carving
+- **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$, capped at $m / \Delta t$ so one step can at most cancel the sideways speed. The base term is the fins and a neutral stance: with no edge input the board holds its heading against the kite's sideways pull.
 - **Edge Drive**: Hydrodynamic lift along the board rail converts lateral holding force into forward thrust: $F_{fwd} = |F_{lat}| \cdot |\text{EdgeInput}| \cdot \eta_{edge}$.
-- **Heading & Carving**: Edging carves board heading towards the desired angle ($v_{heading} + \text{EdgeInput} \cdot \text{MaxEdgeAngleDeg}$) at rate `CarveTurnRate`.
+- **Carving**: An edge input turns the board: its heading moves towards $v_{heading} + \text{EdgeInput} \cdot \text{MaxEdgeAngleDeg}$ at up to `CarveTurnRate`. Holding an edge keeps turning, so a steady course is ridden with the edge neutral.
+- **Switching stance**: A twin-tip rides either way. When the board is moving tail-first faster than `SwitchStanceSpeedCmS`, nose and tail swap, so after flying the kite to the other side the rider simply rides off on the new tack.
+- **Load heel**: The board heels away from the kite by up to `AutoHeelDeg` in proportion to the sideways line force.
+
+### How the kite drives the board
+- The kite is flown by **clock position** around the wind-window axis (steer input) and sits at a **depth** into the window set by the bar (see `UKiteComponent`). It stays where it is put.
+- The window axis follows the **apparent wind** (true wind minus the rider's smoothed velocity), so the kite falls back as the board speeds up. That is what limits board speed and upwind angle.
+- The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
+- A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn; pointed 30 degrees above a beam reach it gains about 1.8 m/s against the wind.
 
 ## Default Tunable Properties
 
@@ -32,12 +40,16 @@ All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Ca
 | `PlaningThresholdCmS` | `400.0f` | Speed threshold for planing transition (~7.78 kn). |
 | `DisplacementDragCoef` | `0.1f` | Quadratic displacement drag coefficient. |
 | `LinearDisplacementDragCoef` | `8.0f` | Linear displacement drag coefficient. |
-| `PlaningDragCoef` | `45.0f` | Linear planing drag coefficient. |
-| `EdgeGripCoef` | `400.0f` | Lateral grip resistance multiplier when edging. |
+| `PlaningDragCoef` | `8.0f` | Linear planing drag coefficient. |
+| `PlaningQuadraticDragCoef` | `0.03f` | Quadratic planing drag coefficient. |
+| `BaseLateralDragCoef` | `500.0f` | Lateral grip with no edge input (fins, neutral stance). |
+| `EdgeGripCoef` | `1700.0f` | Extra lateral grip at full edge input. |
 | `EdgeDriveEfficiency` | `0.35f` | Forward drive efficiency gained from rail edging. |
 | `MaxEdgeAngleDeg` | `35.0f` | Maximum board roll and yaw carve angle. |
 | `MaxBoardSpeed` | `1800.4f` (35 kn) | Velocity magnitude clamp in cm/s. |
-| `CarveTurnRate` | `90.0f` | Angular turning rate in degrees per second. |
+| `CarveTurnRate` | `45.0f` | Turn rate at full edge once planing, in degrees per second. |
+| `SwitchStanceSpeedCmS` | `100.0f` | Tail-first speed at which nose and tail swap. |
+| `AutoHeelDeg` | `12.0f` | Heel away from the kite at full sideways load. |
 | `BuoyancySpringStiffness` | `3000.0f` | Vertical water surface equilibrium spring constant. |
 | `BuoyancyDamping` | `800.0f` | Vertical damping constant. |
 | `PlaningLiftCoef` | `50.0f` | Planing hydrodynamic lift force coefficient. |

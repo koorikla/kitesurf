@@ -15,6 +15,12 @@
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
+#include "Capture/KiteSurfCinematicCamera.h"
+#include "GameFramework/HUD.h"
+#include "GameFramework/PlayerController.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 
 DEFINE_LOG_CATEGORY(LogKiteSurf);
 
@@ -119,6 +125,36 @@ public:
 						UE_LOG(LogKiteSurf, Log, TEXT("Audio recording written as %s.wav"), *Name);
 						break;
 					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Shot"),
+			TEXT("Films the player's rider with a cinematic camera, cutting to the shot. Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>"),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandleShot),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.CaptureFrames"),
+			TEXT("Saves every frame without UI to Saved/MenuVideo/<Name>/frame_00000.png and so on, then exits. Run with -benchmark -fps=30 for a fixed timestep. Usage: kitesurf.CaptureFrames <NumFrames> <Name>"),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandleCaptureFrames),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.HideUI"),
+			TEXT("Hides the HUD and any on-screen widgets, for filming."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				UWorld* World = GEngine ? GEngine->GetCurrentPlayWorld() : nullptr;
+				APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+				if (PC && PC->GetHUD())
+				{
+					PC->GetHUD()->bShowHUD = false;
+				}
+				if (World)
+				{
+					UWidgetLayoutLibrary::RemoveAllWidgets(World);
 				}
 			}),
 			ECVF_Default
@@ -241,6 +277,9 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MenuKey"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Shot"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.CaptureFrames"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HideUI"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MotionBar"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStart"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStop"));
@@ -252,6 +291,83 @@ public:
 private:
 	FTSTicker::FDelegateHandle TickerHandle;
 	int32 RemainingFrames = 0;
+
+	FTSTicker::FDelegateHandle CaptureHandle;
+	FString CaptureDir;
+	int32 CaptureFrameIndex = 0;
+	int32 CaptureFrameCount = 0;
+	TWeakObjectPtr<AKiteSurfCinematicCamera> CinematicCamera;
+
+	static AKiteRiderPawn* FindPlayerRider()
+	{
+		for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+		{
+			if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+			{
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	void HandleShot(const TArray<FString>& Args)
+	{
+		EKiteSurfShot Shot = EKiteSurfShot::Chase;
+		if (!Args.IsValidIndex(0) || !AKiteSurfCinematicCamera::ParseShot(Args[0], Shot))
+		{
+			UE_LOG(LogKiteSurf, Warning, TEXT("Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>"));
+			return;
+		}
+		AKiteRiderPawn* Rider = FindPlayerRider();
+		if (!Rider)
+		{
+			UE_LOG(LogKiteSurf, Warning, TEXT("kitesurf.Shot: no rider to film"));
+			return;
+		}
+		if (!CinematicCamera.IsValid() || CinematicCamera->GetWorld() != Rider->GetWorld())
+		{
+			CinematicCamera = Rider->GetWorld()->SpawnActor<AKiteSurfCinematicCamera>();
+		}
+		if (CinematicCamera.IsValid())
+		{
+			CinematicCamera->StartShot(Shot, Rider);
+			UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Shot %s"), *Args[0]);
+		}
+	}
+
+	void HandleCaptureFrames(const TArray<FString>& Args)
+	{
+		CaptureFrameCount = Args.IsValidIndex(0) ? FMath::Max(FCString::Atoi(*Args[0]), 1) : 300;
+		const FString Name = Args.IsValidIndex(1) ? Args[1] : TEXT("capture");
+		CaptureDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("MenuVideo") / Name);
+		IFileManager::Get().DeleteDirectory(*CaptureDir, false, true);
+		IFileManager::Get().MakeDirectory(*CaptureDir, true);
+		CaptureFrameIndex = 0;
+		UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.CaptureFrames: %d frames to %s"), CaptureFrameCount, *CaptureDir);
+
+		if (CaptureHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(CaptureHandle);
+		}
+		CaptureHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
+		{
+			// One request a frame; the viewport writes it when it next draws.
+			if (CaptureFrameIndex < CaptureFrameCount)
+			{
+				FScreenshotRequest::RequestScreenshot(CaptureDir / FString::Printf(TEXT("frame_%05d.png"), CaptureFrameIndex), false, false);
+				++CaptureFrameIndex;
+				return true;
+			}
+			// A few more frames so the last request is written before exiting.
+			if (++CaptureFrameIndex > CaptureFrameCount + 5)
+			{
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.CaptureFrames complete. Requesting exit."));
+				FPlatformMisc::RequestExit(false);
+				return false;
+			}
+			return true;
+		}));
+	}
 
 	// Frames before exit at which the screenshot is requested, leaving time for it to be written.
 	static constexpr int32 ScreenshotLeadFrames = 30;

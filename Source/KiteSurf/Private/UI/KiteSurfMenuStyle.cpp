@@ -1,4 +1,6 @@
 #include "UI/KiteSurfMenuStyle.h"
+#include "Engine/GameInstance.h"
+#include "UI/KiteSurfMenuVideo.h"
 #include "Engine/Texture2D.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
@@ -23,6 +25,31 @@ void KiteSurfMenuStyle::SetupBackgroundBrush(FSlateBrush& Brush, UTexture2D* Tex
 
 TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, const TSharedRef<SWidget>& Content)
 {
+	return BuildBackdrop(BackgroundBrush, bHasTexture, TAttribute<const FSlateBrush*>(), Content);
+}
+
+TAttribute<const FSlateBrush*> KiteSurfMenuStyle::MenuLoopBrush(UGameInstance* GameInstance)
+{
+	TWeakObjectPtr<UKiteSurfMenuVideoSubsystem> Videos = GameInstance ? GameInstance->GetSubsystem<UKiteSurfMenuVideoSubsystem>() : nullptr;
+	if (!Videos.IsValid())
+	{
+		return TAttribute<const FSlateBrush*>();
+	}
+	return TAttribute<const FSlateBrush*>::CreateLambda([Videos]() -> const FSlateBrush*
+	{
+		// Waits for the intro: the loop starts when it is over.
+		UKiteSurfMenuVideoSubsystem* Subsystem = Videos.Get();
+		if (!Subsystem || !Subsystem->HasPlayedIntro())
+		{
+			return nullptr;
+		}
+		const UKiteSurfVideoPlayer* Loop = Subsystem->GetLoop();
+		return Loop ? Loop->GetBrush() : nullptr;
+	});
+}
+
+TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* BackgroundBrush, bool bHasTexture, TAttribute<const FSlateBrush*> VideoBrush, const TSharedRef<SWidget>& Content)
+{
 	TSharedRef<SOverlay> Overlay = SNew(SOverlay);
 
 	// A solid colour underneath in any case, so nothing behind the menu shows through.
@@ -40,6 +67,16 @@ TSharedRef<SWidget> KiteSurfMenuStyle::BuildBackdrop(const FSlateBrush* Backgrou
 		.VAlign(VAlign_Fill)
 		[
 			SNew(SImage).Image(BackgroundBrush)
+		];
+	}
+	if (VideoBrush.IsBound() || VideoBrush.Get(nullptr))
+	{
+		// Transparent until its first frame, so the still above shows through while it starts.
+		Overlay->AddSlot()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
+		[
+			SNew(SImage).Image(VideoBrush)
 		];
 	}
 	Overlay->AddSlot()

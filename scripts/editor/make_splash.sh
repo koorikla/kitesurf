@@ -7,17 +7,23 @@
 #   <art dir>/menu_background.png             the same scene without the name, 1920x1080, which
 #                                             import_menu_art.py imports as T_MenuBackground.
 #
+# When scripts/render-menu-video.sh has filmed the menu video, the scene is a frame of it
+# (Saved/MenuVideo/keyframe.png), so the splash, the still background and the video match.
+# Otherwise it is drawn: a kite over open water.
+#
 # Needs ImageMagick 7 (`magick`).
 #
 #   scripts/editor/make_splash.sh [art directory, default Saved/MenuArt]
+#   scripts/editor/make_splash.sh --title-only <out.png> <width> <height>
+#       just the name, on a transparent canvas, laid out as on the splash; the intro video
+#       brings it in over the film.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SPLASH_DIR="$PROJECT_DIR/Content/Splash"
-ART_DIR="${1:-$PROJECT_DIR/Saved/MenuArt}"
 FONT="${KITE_FONT:-Adwaita-Sans-Black-Italic}"
-mkdir -p "$SPLASH_DIR" "$ART_DIR"
+KEYFRAME="$PROJECT_DIR/Saved/MenuVideo/keyframe.png"
 
 LIME='#b9e21c'
 NAVY='#0c2340'
@@ -53,18 +59,46 @@ scene() {
         -depth 8 "$out"
 }
 
-# Splash: the scene with the name on it.
-scene 1 "$ART_DIR/scene.png"
-magick "$ART_DIR/scene.png" \
-    -font "$FONT" -fill "$WHITE" -pointsize 62 -gravity SouthWest -annotate +28+58 'KITESURF' \
-    -fill "$LIME" -pointsize 22 -annotate +32+26 'koorikla  big air' \
-    -depth 8 "$SPLASH_DIR/Splash.png"
-cp "$SPLASH_DIR/Splash.png" "$SPLASH_DIR/EdSplash.png"
+# The name, laid out on a canvas of the given size: scaled from the 720x370 splash layout by
+# height, bottom left, with a soft shadow so it reads over a bright sky or sea.
+title() {
+    local w="$1" h="$2" out="$3"
+    px() { awk -v v="$1" -v h="$h" 'BEGIN { printf "%.0f", v * h / 370 }'; }
+    magick -size "${w}x${h}" xc:none \
+        -font "$FONT" -gravity SouthWest \
+        -fill "$NAVY" -pointsize "$(px 62)" -annotate +"$(px 30)"+"$(px 56)" 'KITESURF' \
+        -fill "$NAVY" -pointsize "$(px 22)" -annotate +"$(px 34)"+"$(px 24)" 'koorikla  big air' \
+        -channel A -blur 0x"$(px 4)" -evaluate multiply 0.6 +channel \
+        -fill "$WHITE" -pointsize "$(px 62)" -annotate +"$(px 28)"+"$(px 58)" 'KITESURF' \
+        -fill "$LIME" -pointsize "$(px 22)" -annotate +"$(px 32)"+"$(px 26)" 'koorikla  big air' \
+        -depth 8 "$out"
+}
 
-# Menu background: the scene alone, drawn three times the size and cropped to 16:9. The menus
-# draw their own text over it. 8 bits per channel throughout: the editor imports a 16-bit PNG
-# as linear data, which washes the colours out on screen.
-scene 3 "$ART_DIR/scene_large.png"
-magick "$ART_DIR/scene_large.png" -gravity Center -crop 1920x1080+0+0 +repage -depth 8 "$ART_DIR/menu_background.png"
+if [[ "${1:-}" == "--title-only" ]]; then
+    title "$3" "$4" "$2"
+    echo "Wrote $2"
+    exit 0
+fi
+
+ART_DIR="${1:-$PROJECT_DIR/Saved/MenuArt}"
+mkdir -p "$SPLASH_DIR" "$ART_DIR"
+
+# The scene at splash size and at menu size. 8 bits per channel throughout: the editor imports a
+# 16-bit PNG as linear data, which washes the colours out on screen.
+if [[ -f "$KEYFRAME" ]]; then
+    echo "Using the menu video frame $KEYFRAME"
+    magick "$KEYFRAME" -resize 720x370^ -gravity Center -extent 720x370 -depth 8 "$ART_DIR/scene.png"
+    magick "$KEYFRAME" -resize 1920x1080^ -gravity Center -extent 1920x1080 -depth 8 "$ART_DIR/menu_background.png"
+else
+    scene 1 "$ART_DIR/scene.png"
+    # Drawn three times the size and cropped to 16:9.
+    scene 3 "$ART_DIR/scene_large.png"
+    magick "$ART_DIR/scene_large.png" -gravity Center -crop 1920x1080+0+0 +repage -depth 8 "$ART_DIR/menu_background.png"
+fi
+
+# Splash: the scene with the name on it. The menus draw their own text over the background.
+title 720 370 "$ART_DIR/title.png"
+magick "$ART_DIR/scene.png" "$ART_DIR/title.png" -composite -depth 8 "$SPLASH_DIR/Splash.png"
+cp "$SPLASH_DIR/Splash.png" "$SPLASH_DIR/EdSplash.png"
 
 echo "Wrote $SPLASH_DIR/Splash.png, EdSplash.png and $ART_DIR/menu_background.png"

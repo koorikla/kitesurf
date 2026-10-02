@@ -59,16 +59,40 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void FocusFirst();
 
+	/** True while the startup intro video covers the menu. */
+	UFUNCTION(BlueprintPure, Category = "Menu")
+	bool IsIntroPlaying() const { return bIntroPlaying; }
+
+	/** Ends the intro (any key or click does this) and brings in the menu. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void SkipIntro();
+
+	/** How long the intro may take to show its first frame before the menu is shown without it (s). */
+	static constexpr double IntroStartTimeoutSeconds = 4.0;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
+	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
 public:
 	FKiteMenuNavigator& GetNavigator();
 
 private:
+	class UKiteSurfMenuVideoSubsystem* GetVideos() const;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UKiteSurfVideoPlayer> IntroPlayer;
+
+	bool bIntroPlaying = false;
+	double IntroStartTime = 0.0;
+	/** When the intro ended into the menu, for the white flash that fades off it; 0 for none. */
+	double FlashStartTime = 0.0;
+
 	void BuildNavigation();
 	FKiteMenuNavigator Navigator;
 

@@ -325,7 +325,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 	}
 	else
 	{
-		Root = KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, Root);
+		Root = KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, KiteSurfMenuStyle::MenuLoopBrush(GetGameInstance()), Root);
 	}
 
 	UpdateTexts();

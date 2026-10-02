@@ -17,7 +17,7 @@
 UKiteSurfMainMenuWidget::UKiteSurfMainMenuWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	bIsFocusable = true;
+	SetIsFocusable(true);
 }
 
 void UKiteSurfMainMenuWidget::NativeConstruct()

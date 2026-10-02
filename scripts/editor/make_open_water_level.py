@@ -1,8 +1,33 @@
 import unreal
 
+# Run with a renderer, or the ocean is saved without a mesh and is invisible in game:
+#   scripts/run-python.sh scripts/editor/make_open_water_level.py -AllowCommandletRendering -vulkan -RenderOffScreen
+# The Water plugin skips building water body render data when FApp::CanEverRender() is
+# false (UWaterBodyComponent::UpdateWaterBodyRenderData), which is the case for a plain
+# pythonscript commandlet. The script checks for this before saving.
+
 print("=== Creating Open-Water Level L_OpenWater ===")
 
 map_path = '/Game/Maps/L_OpenWater'
+
+# Sun elevation 40 deg, shining from behind-left of the downwind (+X) spawn heading.
+SUN_PITCH_DEG = -40.0
+SUN_YAW_DEG = -30.0
+
+# Water mesh tile size. The quadtree is capped at 256 tiles per side
+# (r.Water.WaterMesh.MaxDimensionInTiles), so the zone is 256 tiles: 12.3 km square,
+# about 8 minutes of riding in a straight line at 25 kn from the centre to the edge.
+WATER_TILE_SIZE_CM = 4800.0
+ZONE_EXTENT_CM = 256 * WATER_TILE_SIZE_CM
+# Beyond the zone the flat far-distance mesh carries the ocean to the horizon.
+FAR_MESH_EXTENT_CM = 4000000.0
+# An ocean body cuts a hole for its "island": the bounding box of its spline plus its own
+# origin (WaterBodyOceanComponent.cpp, GenerateWaterBodyMesh). The default island is a
+# 200 m square around the actor, so park the actor near the zone corner, 5.6 km from spawn.
+OCEAN_ISLAND_OFFSET_CM = -(ZONE_EXTENT_CM / 2.0 - 50000.0)
+
+# Light sea haze; the engine default (0.02) hides the horizon and the water surface.
+FOG_DENSITY = 0.004
 
 # 1. Create or load the level
 level_editor_subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -24,7 +49,8 @@ for actor in existing_actors:
 sun_actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
     unreal.DirectionalLight,
     unreal.Vector(0, 0, 1000),
-    unreal.Rotator(-45, -30, 0)
+    # Positional Rotator args are (roll, pitch, yaw), so name them.
+    unreal.Rotator(roll=0.0, pitch=SUN_PITCH_DEG, yaw=SUN_YAW_DEG)
 )
 if sun_actor:
     sun_actor.set_actor_label('DirectionalLight_Sun')
@@ -66,10 +92,9 @@ if fog:
     fog.set_actor_label('ExponentialHeightFog')
     fog_comp = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     if fog_comp:
-        try:
-            fog_comp.set_editor_property('enable_volumetric_fog', True)
-        except Exception as e:
-            print(f"Warning: Failed to enable volumetric fog: {e}")
+        fog_comp.set_editor_property('fog_density', FOG_DENSITY)
+        # Volumetric fog adds a dense near-field haze over open water and costs GPU time.
+        fog_comp.set_editor_property('enable_volumetric_fog', False)
     print("Spawned and configured ExponentialHeightFog")
 
 # 6. Spawn VolumetricCloud
@@ -81,66 +106,76 @@ if cloud:
     cloud.set_actor_label('VolumetricCloud')
     print("Spawned VolumetricCloud")
 
-# 7. Spawn WaterZone if required by Water plugin, or WaterBodyOcean
-# In UE 5.x, WaterBodyOcean requires or works with a WaterZone in the level
-water_zone = None
-if hasattr(unreal, 'WaterZone'):
-    water_zone = unreal.EditorLevelLibrary.spawn_actor_from_class(
-        unreal.WaterZone,
-        unreal.Vector(0, 0, 0)
-    )
-    if water_zone:
-        water_zone.set_actor_label('WaterZone')
-        print("Spawned WaterZone")
-
-# Spawn WaterBodyOcean at world Z=0
-ocean = unreal.EditorLevelLibrary.spawn_actor_from_class(
-    unreal.WaterBodyOcean,
+# 7. Spawn the WaterZone first so the ocean fills it when it is created
+water_zone = unreal.EditorLevelLibrary.spawn_actor_from_class(
+    unreal.WaterZone,
     unreal.Vector(0, 0, 0)
 )
-if ocean:
-    ocean.set_actor_label('WaterBodyOcean')
-    print("Spawned WaterBodyOcean at Z=0")
+if not water_zone:
+    raise RuntimeError("Failed to spawn WaterZone")
+water_zone.set_actor_label('WaterZone')
+water_zone.set_editor_property('zone_extent', unreal.Vector2D(ZONE_EXTENT_CM, ZONE_EXTENT_CM))
+for c in water_zone.get_components_by_class(unreal.WaterMeshComponent):
+    far_mat = unreal.EditorAssetLibrary.load_asset('/Water/Materials/WaterSurface/Water_FarMesh')
+    if far_mat:
+        c.set_editor_property('far_distance_material', far_mat)
+        c.set_editor_property('far_distance_mesh_extent', FAR_MESH_EXTENT_CM)
+        print("Configured WaterMeshComponent far distance mesh")
+    c.set_editor_property('tile_size', WATER_TILE_SIZE_CM)
+    break
+print(f"Spawned WaterZone with extent {ZONE_EXTENT_CM} cm")
 
-    # Configure Gerstner Waves on ocean
-    print("Setting up Gerstner Water Waves...")
-    waves = unreal.new_object(unreal.GerstnerWaterWaves, ocean)
-    gen = unreal.new_object(unreal.GerstnerWaterWaveGeneratorSimple, waves)
-    waves.set_editor_property('gerstner_wave_generator', gen)
+# Spawn WaterBodyOcean at world Z=0, with its island hole near the zone corner
+ocean = unreal.EditorLevelLibrary.spawn_actor_from_class(
+    unreal.WaterBodyOcean,
+    unreal.Vector(OCEAN_ISLAND_OFFSET_CM, OCEAN_ISLAND_OFFSET_CM, 0)
+)
+if not ocean:
+    raise RuntimeError("Failed to spawn WaterBodyOcean")
+ocean.set_actor_label('WaterBodyOcean')
+print("Spawned WaterBodyOcean at Z=0")
 
-    gen.set_editor_property('num_waves', 16)
-    gen.set_editor_property('min_wavelength', 1200.0)
-    gen.set_editor_property('max_wavelength', 6000.0)
-    gen.set_editor_property('min_amplitude', 15.0)
-    gen.set_editor_property('max_amplitude', 60.0)
-    gen.set_editor_property('wind_angle_deg', 45.0)
-    gen.set_editor_property('direction_angular_spread_deg', 40.0)
-    gen.set_editor_property('small_wave_steepness', 0.25)
-    gen.set_editor_property('large_wave_steepness', 0.15)
+# Configure Gerstner Waves on ocean
+print("Setting up Gerstner Water Waves...")
+waves = unreal.new_object(unreal.GerstnerWaterWaves, ocean)
+gen = unreal.new_object(unreal.GerstnerWaterWaveGeneratorSimple, waves)
 
-    ocean.set_editor_property('water_waves', waves)
-    print("Configured Gerstner waves on ocean")
+# Wind chop for ~18 kn: crest-to-trough up to about a metre. Each wave shifts the surface
+# sideways by steepness / wavenumber regardless of its amplitude (FGerstnerWave::Recompute),
+# so the surface folds over itself into foam-white lumps once the steepness values sum past
+# 1. Keep num_waves * steepness well below that.
+gen.set_editor_property('num_waves', 8)
+gen.set_editor_property('min_wavelength', 800.0)
+gen.set_editor_property('max_wavelength', 4000.0)
+gen.set_editor_property('min_amplitude', 4.0)
+gen.set_editor_property('max_amplitude', 30.0)
+gen.set_editor_property('wind_angle_deg', 0.0)
+gen.set_editor_property('direction_angular_spread_deg', 40.0)
+gen.set_editor_property('small_wave_steepness', 0.10)
+gen.set_editor_property('large_wave_steepness', 0.06)
 
-    # Offset ocean spline center island away from origin to guarantee player is in open water
-    spline = ocean.get_water_spline()
-    if spline:
-        num_pts = spline.get_number_of_spline_points()
-        for i in range(num_pts):
-            pos = spline.get_location_at_spline_point(i, unreal.SplineCoordinateSpace.WORLD)
-            new_pos = unreal.Vector(pos.x - 200000.0, pos.y - 200000.0, pos.z)
-            spline.set_location_at_spline_point(i, new_pos, unreal.SplineCoordinateSpace.WORLD, False)
-        spline.update_spline()
-        print("Relocated ocean spline boundary points for open water")
+# Assign the generator last: UGerstnerWaterWaves caches the generated wave list and only
+# recomputes it when one of its own properties is set, not when the generator is edited.
+waves.set_editor_property('gerstner_wave_generator', gen)
 
-# Configure WaterZone mesh component (far distance mesh)
-if water_zone:
-    for c in water_zone.get_components_by_class(unreal.WaterMeshComponent):
-        far_mat = unreal.EditorAssetLibrary.load_asset('/Water/Materials/WaterSurface/Water_FarMesh')
-        if far_mat:
-            c.set_editor_property('far_distance_material', far_mat)
-            c.set_editor_property('far_distance_mesh_extent', 600000.0)
-            print("Configured WaterMeshComponent far distance mesh")
-        break
+ocean.set_editor_property('water_waves', waves)
+print("Configured Gerstner waves on ocean")
+
+# The ocean sizes itself to the zone and builds its mesh when it is spawned
+# (UWaterBodyOceanComponent::OnPostActorCreated), which is why the zone is spawned first.
+ocean_comp = ocean.get_water_body_component()
+ocean_extents = ocean_comp.get_editor_property('ocean_extents')
+if abs(ocean_extents.x - ZONE_EXTENT_CM) > 1.0 or abs(ocean_extents.y - ZONE_EXTENT_CM) > 1.0:
+    raise RuntimeError(f"Ocean did not fill the water zone: extents {ocean_extents}")
+
+# Refuse to save an ocean with no mesh (see the note at the top of this file).
+info_meshes = ocean.get_components_by_class(unreal.WaterBodyInfoMeshComponent)
+if not info_meshes or any(c.get_editor_property('static_mesh') is None for c in info_meshes):
+    raise RuntimeError(
+        "Ocean render data was not built. Re-run with: "
+        "-AllowCommandletRendering -vulkan -RenderOffScreen"
+    )
+print(f"Ocean fills the {ZONE_EXTENT_CM} cm zone; island parked at ({OCEAN_ISLAND_OFFSET_CM}, {OCEAN_ISLAND_OFFSET_CM})")
 
 # 8. Spawn PlayerStart at roughly (0, 0, 50)
 player_start = unreal.EditorLevelLibrary.spawn_actor_from_class(

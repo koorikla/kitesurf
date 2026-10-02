@@ -39,12 +39,8 @@ jobs:
 
       - name: Run GPU Smoke Test
         run: |
-          mkdir -p Saved/Screenshots/LinuxEditor
-          rm -f Saved/Screenshots/LinuxEditor/*.png
-          scripts/run-editor.sh -game -RenderOffScreen -ResX=1280 -ResY=720 -log -ExecCmds="HighResShot 1, kitesurf.SmokeFrames 600" -unattended
-
-      - name: Scan Game Log
-        run: python3 scripts/ci/scan_game_log.py Saved/Logs/KiteSurf.log
+          # Runs the gameplay map so the screenshot shows the ocean, rider and HUD.
+          scripts/smoke-test.sh /Game/Maps/L_OpenWater 600
 
       - name: Upload GPU Smoke Test Artifacts
         if: always()

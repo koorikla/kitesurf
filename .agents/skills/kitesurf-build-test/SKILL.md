@@ -45,13 +45,14 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    scripts/run-editor.sh -game -windowed -ResX=1920 -ResY=1080 -log
    ```
    Without `-game` the same script opens the editor.
-5. **Run the GPU smoke test headless** (exercises real Vulkan SM6 rendering, captures screenshot, and exits cleanly):
+5. **Run the GPU smoke test headless** (real Vulkan SM6 rendering; saves
+   `Saved/Screenshots/LinuxEditor/smoke.png` 30 frames before exiting, scans the log, and
+   fails if either is bad):
    ```bash
-   scripts/smoke-test.sh
-   # or:
-   scripts/run-editor.sh -game -RenderOffScreen -ResX=1280 -ResY=720 -log -ExecCmds="HighResShot 1, kitesurf.SmokeFrames 600" -unattended
-   python3 scripts/ci/scan_game_log.py Saved/Logs/KiteSurf.log
+   scripts/smoke-test.sh                              # main menu, 600 frames
+   scripts/smoke-test.sh /Game/Maps/L_OpenWater 600   # gameplay map
    ```
+   Look at the screenshot: a clean log does not prove the ocean is visible.
 6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh

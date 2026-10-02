@@ -3,6 +3,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Containers/Ticker.h"
 #include "Misc/CoreDelegates.h"
+#include "UnrealClient.h"
 
 DEFINE_LOG_CATEGORY(LogKiteSurf);
 
@@ -15,7 +16,7 @@ public:
 
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.SmokeFrames"),
-			TEXT("Runs the game for N frames and then exits. Usage: kitesurf.SmokeFrames <NumFrames>"),
+			TEXT("Runs the game for N frames, saves Saved/Screenshots/<Platform>/smoke.png near the end, then exits. Usage: kitesurf.SmokeFrames <NumFrames>"),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandleSmokeFrames),
 			ECVF_Default
 		);
@@ -30,6 +31,9 @@ public:
 private:
 	FTSTicker::FDelegateHandle TickerHandle;
 	int32 RemainingFrames = 0;
+
+	// Frames before exit at which the screenshot is requested, leaving time for it to be written.
+	static constexpr int32 ScreenshotLeadFrames = 30;
 
 	void HandleSmokeFrames(const TArray<FString>& Args)
 	{
@@ -59,6 +63,11 @@ private:
 	bool TickSmokeFrames(float DeltaTime)
 	{
 		RemainingFrames--;
+		if (RemainingFrames == ScreenshotLeadFrames)
+		{
+			// Captured late so the frame shows gameplay with shaders compiled, not the first frame.
+			FScreenshotRequest::RequestScreenshot(TEXT("smoke"), true, false);
+		}
 		if (RemainingFrames <= 0)
 		{
 			UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.SmokeFrames complete! Requesting exit."));

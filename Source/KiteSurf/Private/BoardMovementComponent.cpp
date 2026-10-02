@@ -21,7 +21,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	DisplacementDragCoef = 0.1f;
 	PlaningDragCoef = 8.0f;
 	PlaningQuadraticDragCoef = 0.03f; // mostly quadratic, so board speed scales with wind speed
-	EdgeGripCoef = 1700.0f;
+	EdgeGripCoef = 2000.0f;
 	MaxEdgeAngleDeg = 35.0f;
 	MaxBoardSpeed = 35.0f * 51.44f; // 1800.4 cm/s (35 kn)
 	LinearDisplacementDragCoef = 8.0f;
@@ -32,18 +32,21 @@ UBoardMovementComponent::UBoardMovementComponent()
 	BuoyancySpringStiffness = 3000.0f;
 	BuoyancyDamping = 800.0f;
 	PlaningLiftCoef = 50.0f;
-	CarveTurnRate = 45.0f; // deg/s at full edge once planing: about a 12 m carve at 20 kn
+	CarveTurnRate = 60.0f; // deg/s at full turn input once planing: about a 10 m carve at 20 kn
 	SwitchStanceSpeedCmS = 100.0f;
 	CarveResponse = 6.0f;
 	LowSpeedPivotMaxSpeedCmS = 400.0f; // the planing threshold: a planing board holds its own course
 	LowSpeedPivotRate = 120.0f;
 	LowSpeedPivotMinForce = 8000.0f; // 80 N
-	EdgePressureGripScale = 2.5f;
-	EdgePressureDrag = 0.35f;
-	EdgePressureHeelDeg = 12.0f;
+	TailWeightGripScale = 2.5f;
+	TailWeightDrag = 0.35f;
+	NoseWeightDragSaving = 0.15f;
+	TailWeightHeelDeg = 12.0f;
+	WeightShiftPitchDeg = 8.0f;
+	AirWeightShiftPitchDeg = 30.0f;
 	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
 	AirSpinRate = 200.0f;
-	EdgePressurePopBonus = 0.5f;
+	TailWeightPopBonus = 0.5f;
 	AutoHeelDeg = 12.0f;
 	AutoHeelFullLoadForce = 50000.0f; // 500 N
 
@@ -61,7 +64,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	CurrentDragRegime = EBoardDragRegime::Displacement;
 	CurrentBoardState = EBoardState::Displacement;
 	CurrentEdgeInput = 0.0f;
-	CurrentEdgePressure = 0.0f;
+	CurrentWeightShift = 0.0f;
 	SmoothedCarveInput = 0.0f;
 	AccumulatedExternalForce = FVector::ZeroVector;
 
@@ -175,8 +178,8 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 		return EJumpRejectReason::TooSlow;
 	}
 
-	// The edge must be loaded: either carving or pressing the rail in, by at least 0.4
-	const float EdgeLoad = FMath::Max(FMath::Abs(CurrentEdgeInput), CurrentEdgePressure);
+	// The edge must be loaded: either turning or with the weight back on the tail, by at least 0.4
+	const float EdgeLoad = FMath::Max(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift);
 	if (EdgeLoad < JumpMinEdgeInput - KINDA_SMALL_NUMBER)
 	{
 		const FString ReasonStr = JumpRejectReasonToString(EJumpRejectReason::NotEdged);
@@ -193,7 +196,7 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 		}
 	}
 
-	const float PopImpulse = BaseJumpImpulse * (1.0f + EdgePressurePopBonus * FMath::Max(CurrentEdgePressure, 0.0f));
+	const float PopImpulse = BaseJumpImpulse * (1.0f + TailWeightPopBonus * FMath::Max(-CurrentWeightShift, 0.0f));
 	const float Impulse = PopImpulse + KiteLiftFactor * UpwardKiteForce;
 	const float EffectiveMass = FMath::Max(MassKg, 1.0f);
 	const float VerticalDeltaV = Impulse / EffectiveMass;
@@ -217,9 +220,9 @@ void UBoardMovementComponent::BeginAirborne()
 	LandingStateTimer = 0.0f;
 }
 
-void UBoardMovementComponent::SetEdgePressure(float Value)
+void UBoardMovementComponent::SetWeightShift(float Value)
 {
-	CurrentEdgePressure = FMath::Clamp(Value, -1.0f, 1.0f);
+	CurrentWeightShift = FMath::Clamp(Value, -1.0f, 1.0f);
 }
 
 void UBoardMovementComponent::SetEdgeInput(float Value)
@@ -403,8 +406,8 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				else
 				{
 					// Planing regime: linear drag + high-speed form/spray drag
-					// A rail pressed into the water drags more.
-					const float EdgeDragScale = 1.0f + EdgePressureDrag * FMath::Max(CurrentEdgePressure, 0.0f);
+					// A sunk tail drags more; weight forward flattens the board and frees it up.
+					const float EdgeDragScale = 1.0f + TailWeightDrag * FMath::Max(-CurrentWeightShift, 0.0f) - NoseWeightDragSaving * FMath::Max(CurrentWeightShift, 0.0f);
 					ForwardDragMagnitude = (PlaningDragCoef * FMath::Abs(ForwardSpeed) + PlaningQuadraticDragCoef * (ForwardSpeed * ForwardSpeed)) * EdgeDragScale * ForwardSign;
 
 					// Hydrodynamic lift raising the board with surface contact falloff
@@ -419,8 +422,8 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 			if (FMath::Abs(LateralSpeed) > KINDA_SMALL_NUMBER)
 			{
 				const float EdgeFactor = FMath::Abs(CurrentEdgeInput);
-				// Edge pressure scales the grip: pressed in it bites harder, flattened it lets go.
-				const float PressureGripScale = FMath::Pow(EdgePressureGripScale, CurrentEdgePressure);
+				// Weight on the tail digs the rail in and bites harder; on the nose the board lets go.
+				const float PressureGripScale = FMath::Pow(TailWeightGripScale, -CurrentWeightShift);
 				// Capped so one explicit step can at most cancel the sideways speed, whatever the frame time.
 				const float LateralResistanceCoef = FMath::Min((BaseLateralDragCoef + EdgeGripCoef * EdgeFactor) * PressureGripScale, MassKg / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
 				const float LateralDragMagnitude = LateralResistanceCoef * LateralSpeed;
@@ -474,19 +477,24 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				const float MaxStep = AirSpinRate * DeltaTime;
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + FMath::Clamp(YawError, -MaxStep, MaxStep));
 			}
-			TargetRotation.Pitch = FMath::FInterpTo(Rotation.Pitch, 0.0f, DeltaTime, 4.0f);
+			TargetRotation.Pitch = FMath::FInterpTo(Rotation.Pitch, -CurrentWeightShift * AirWeightShiftPitchDeg, DeltaTime, 4.0f);
 			TargetRotation.Roll = FMath::FInterpTo(Rotation.Roll, 0.0f, DeltaTime, 4.0f);
 		}
 		else
 		{
-			const float SurfacePitch = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(WaterNormal, Forward), FVector::DotProduct(WaterNormal, FVector::UpVector)));
-			const float SurfaceRoll = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(WaterNormal, Right), FVector::DotProduct(WaterNormal, FVector::UpVector)));
+			// Slope of the water along and across the board's heading. Measured against the level
+			// heading, not the board's current tilt, or the tilt would feed back into itself.
+			const FVector LevelForward = FRotator(0.0f, Rotation.Yaw, 0.0f).Vector();
+			const FVector LevelRight = FVector::CrossProduct(FVector::UpVector, LevelForward);
+			const float SurfacePitch = FMath::RadiansToDegrees(FMath::Atan2(-FVector::DotProduct(WaterNormal, LevelForward), FVector::DotProduct(WaterNormal, FVector::UpVector)));
+			const float SurfaceRoll = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(WaterNormal, LevelRight), FVector::DotProduct(WaterNormal, FVector::UpVector)));
 
-			TargetRotation.Pitch = FMath::Clamp(SurfacePitch, -15.0f, 15.0f);
+			// Positive pitch is nose up: weight on the tail lifts the nose.
+			TargetRotation.Pitch = FMath::Clamp(SurfacePitch - CurrentWeightShift * WeightShiftPitchDeg, -20.0f, 20.0f);
 			// The rider leans away from the kite, so the rail on the kite's side lifts with the load.
-			// Pressing the edge in heels further, flattening takes the heel off.
+			// Weight back heels further, weight forward takes the heel off.
 			const float LoadSide = FMath::Clamp(ExternalLateralForce / AutoHeelFullLoadForce, -1.0f, 1.0f);
-			const float LoadHeelDeg = -LoadSide * FMath::Max(AutoHeelDeg + EdgePressureHeelDeg * CurrentEdgePressure, 0.0f);
+			const float LoadHeelDeg = -LoadSide * FMath::Max(AutoHeelDeg - TailWeightHeelDeg * CurrentWeightShift, 0.0f);
 			TargetRotation.Roll = FMath::Clamp(SurfaceRoll + LoadHeelDeg + SmoothedCarveInput * MaxEdgeAngleDeg, -MaxEdgeAngleDeg, MaxEdgeAngleDeg);
 
 			// A twin-tip rides either way: once it is moving tail-first, the tail becomes the nose.

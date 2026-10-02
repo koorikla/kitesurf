@@ -1,5 +1,6 @@
 #include "BoardWakeComponent.h"
 #include "BoardMovementComponent.h"
+#include "KiteComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
@@ -47,6 +48,14 @@ void UBoardWakeComponent::BeginPlay()
 			AddTickPrerequisiteComponent(BoardMovement);
 			BoardMovement->OnBoardLanding.AddDynamic(this, &UBoardWakeComponent::HandleBoardLanding);
 			BoardMovement->OnBoardCrash.AddDynamic(this, &UBoardWakeComponent::HandleBoardCrash);
+		}
+	}
+
+	if (AActor* Owner = GetOwner())
+	{
+		if (UKiteComponent* Kite = Owner->FindComponentByClass<UKiteComponent>())
+		{
+			Kite->OnKiteCrashed.AddDynamic(this, &UBoardWakeComponent::HandleKiteCrashed);
 		}
 	}
 
@@ -192,19 +201,27 @@ void UBoardWakeComponent::AddSprayDrop(const FVector& Position, const FVector& V
 
 void UBoardWakeComponent::EmitSplash(float Intensity)
 {
-	const AActor* Owner = GetOwner();
-	if (!Owner)
+	if (const AActor* Owner = GetOwner())
 	{
-		return;
+		EmitSplashAt(Owner->GetActorLocation(), Intensity);
 	}
+}
+
+void UBoardWakeComponent::EmitSplashAt(const FVector& Location, float Intensity)
+{
 	const int32 NumDrops = FMath::Clamp(FMath::RoundToInt(40.0f * Intensity), 10, 120);
 	for (int32 Index = 0; Index < NumDrops; ++Index)
 	{
 		const float AngleRad = Random.FRandRange(0.0f, 2.0f * UE_PI);
 		const FVector Outward(FMath::Cos(AngleRad), FMath::Sin(AngleRad), 0.0f);
-		AddSprayDrop(Owner->GetActorLocation() + Outward * Random.FRandRange(10.0f, 60.0f),
+		AddSprayDrop(Location + Outward * Random.FRandRange(10.0f, 60.0f),
 			Outward * Random.FRandRange(120.0f, 380.0f) + FVector::UpVector * Random.FRandRange(250.0f, 600.0f) * FMath::Clamp(Intensity, 0.5f, 1.5f));
 	}
+}
+
+void UBoardWakeComponent::HandleKiteCrashed(FVector WaterLocation)
+{
+	EmitSplashAt(FVector(WaterLocation.X, WaterLocation.Y, 0.0f), 2.5f);
 }
 
 void UBoardWakeComponent::HandleBoardLanding(float LandingG)

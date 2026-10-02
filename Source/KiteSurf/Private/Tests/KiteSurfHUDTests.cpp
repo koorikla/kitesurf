@@ -118,7 +118,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			{ EKeys::Up, TEXT("IA_Sheet") }, { EKeys::Down, TEXT("IA_Sheet") }, { EKeys::Gamepad_RightY, TEXT("IA_Sheet") },
 			{ EKeys::LeftShift, TEXT("IA_Loop") }, { EKeys::Gamepad_RightShoulder, TEXT("IA_Loop") },
 			{ EKeys::A, TEXT("IA_Edge") }, { EKeys::D, TEXT("IA_Edge") }, { EKeys::Gamepad_LeftX, TEXT("IA_Edge") },
-			{ EKeys::W, TEXT("IA_EdgePressure") }, { EKeys::S, TEXT("IA_EdgePressure") }, { EKeys::Gamepad_LeftY, TEXT("IA_EdgePressure") },
+			{ EKeys::W, TEXT("IA_WeightShift") }, { EKeys::S, TEXT("IA_WeightShift") }, { EKeys::Gamepad_LeftY, TEXT("IA_WeightShift") },
 			{ EKeys::SpaceBar, TEXT("IA_Jump") }, { EKeys::Escape, TEXT("IA_Pause") }, { EKeys::R, TEXT("IA_Reset") },
 		};
 		for (const FExpectedMapping& Expected : ExpectedMappings)
@@ -149,7 +149,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has SteerAction"), CDO->GetSteerAction());
 			TestNotNull(TEXT("BP_KiteRider has SheetAction"), CDO->GetSheetAction());
 			TestNotNull(TEXT("BP_KiteRider has EdgeAction (IA_Edge wired to BoardMovement edging)"), CDO->GetEdgeAction());
-			TestNotNull(TEXT("BP_KiteRider has EdgePressureAction"), CDO->GetEdgePressureAction());
+			TestNotNull(TEXT("BP_KiteRider has WeightShiftAction"), CDO->GetWeightShiftAction());
 			TestNotNull(TEXT("BP_KiteRider has LoopAction"), CDO->GetLoopAction());
 			TestNotNull(TEXT("BP_KiteRider has JumpAction"), CDO->GetJumpAction());
 			TestNotNull(TEXT("BP_KiteRider has PauseAction"), CDO->GetPauseAction());

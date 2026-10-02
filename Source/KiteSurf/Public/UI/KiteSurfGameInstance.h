@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
+#include "RiderCharacter.h"
 #include "KiteSurfGameInstance.generated.h"
 
 class UKiteSurfSaveGame;
@@ -31,6 +32,13 @@ public:
 	/** Whether onboarding tutorial has been completed */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bOnboardingCompleted;
+
+	/** Who rides the board */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	ERiderCharacter RiderCharacter;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetRiderCharacter(ERiderCharacter InCharacter);
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetSkipOnboarding(bool bInSkip);

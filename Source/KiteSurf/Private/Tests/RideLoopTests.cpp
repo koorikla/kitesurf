@@ -228,6 +228,66 @@ bool FKiteSurfKiteParksAtWindowEdge::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A loop taken too low puts the kite in the water; it lies there with slack lines and then relaunches.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteCrashesAndRelaunches, "KiteSurf.Kite.CrashesAndRelaunches", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteCrashesAndRelaunches::RunTest(const FString& Parameters)
+{
+	FStandingFixture Standing;
+	UKiteComponent* Kite = Standing.Kite;
+	TestNotNull(TEXT("Kite created"), Kite);
+	if (!Kite)
+	{
+		return false;
+	}
+
+	// Parked low on the right, then pulled hard right: the nose swings down into the water.
+	Kite->SetWindowPosition(70.0f, 10.0f);
+	FKiteFlight Settle;
+	Settle.Fly(Kite, 0.0f, 4.0f);
+	TestFalse(TEXT("A parked kite is flying"), Kite->IsCrashed());
+
+	Kite->SetLoopHeld(true);
+	Kite->SteerKite(1.0f);
+	float SecondsToCrash = 0.0f;
+	while (!Kite->IsCrashed() && SecondsToCrash < 5.0f)
+	{
+		Kite->UpdateKite(RideDeltaTime);
+		SecondsToCrash += RideDeltaTime;
+	}
+	Kite->SetLoopHeld(false);
+	Kite->SteerKite(0.0f);
+
+	TestTrue(FString::Printf(TEXT("Looping a low kite puts it in the water (%.1f s)"), SecondsToCrash), Kite->IsCrashed());
+	TestNearlyEqual(TEXT("The kite is at the water"), Kite->GetElevationDeg(), Kite->CrashElevationDeg, 0.5f);
+	TestNearlyEqual(TEXT("A kite on the water does not pull"), Kite->GetLineTensionN(), 0.0f, 0.001f);
+	TestTrue(TEXT("It is on the side it was flying on"), Kite->GetAzimuthDeg() > 20.0f);
+
+	// It stays down for the relaunch delay...
+	FKiteFlight Down;
+	Down.Fly(Kite, 0.0f, Kite->RelaunchDelaySeconds - 0.5f);
+	TestTrue(TEXT("It stays down until the relaunch delay has passed"), Kite->IsCrashed());
+	TestNearlyEqual(TEXT("Still no pull while it is down"), Down.PeakTensionN, 0.0f, 0.001f);
+
+	// ...then relaunches by itself and flies again.
+	FKiteFlight Up;
+	Up.Fly(Kite, 0.0f, 4.0f);
+	TestFalse(TEXT("It relaunches by itself"), Kite->IsCrashed());
+	TestTrue(FString::Printf(TEXT("and is back above the water (%.1f deg)"), Kite->GetElevationDeg()), Kite->GetElevationDeg() >= Kite->MinElevationDeg - 0.5f);
+	TestTrue(FString::Printf(TEXT("and pulling again (%.0f N)"), Kite->GetLineTensionN()), Kite->GetLineTensionN() > 100.0f);
+
+	// With no wind at all the kite cannot fly: it falls out of the sky.
+	if (UWindComponent* Wind = Standing.Pawn->GetWind())
+	{
+		Wind->BaseWind = FVector::ZeroVector;
+	}
+	Kite->SetWindowPosition(0.0f, 45.0f);
+	FKiteFlight Becalmed;
+	Becalmed.Fly(Kite, 0.0f, 10.0f);
+	TestTrue(TEXT("With no wind the kite falls into the water"), Kite->IsCrashed());
+	return true;
+}
+
 // Plain steering travels the kite round the window edge and it stops where the bar is centred.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteSteeringTravelsRoundTheWindow, "KiteSurf.Kite.SteeringTravelsRoundTheWindow", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
@@ -304,7 +364,7 @@ bool FKiteSurfKiteLoopsWhenSteerHeld::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("Steer %+.0f for 6 s flies at least two full loops (%.0f deg)"), SteerDirection, TurnedDeg), TurnedDeg >= 720.0f);
 		TestTrue(FString::Printf(TEXT("Looping peaks at %.0f N, at least twice the parked %.0f N"), Loop.PeakTensionN, ParkedTensionN), Loop.PeakTensionN >= 2.0f * ParkedTensionN);
 		TestTrue(TEXT("Tension stays within the cap"), Loop.PeakTensionN <= Kite->MaxLineTensionN + 0.1f);
-		TestTrue(FString::Printf(TEXT("The kite stays off the water (lowest %.1f deg)"), Loop.MinElevationDeg), Loop.MinElevationDeg >= Kite->MinElevationDeg - 0.5f);
+		TestFalse(TEXT("Loops started from the top of the window stay out of the water"), Kite->IsCrashed());
 
 		// Centre the bar: the kite flies back out to the edge and settles down again.
 		FKiteFlight Recovery;
@@ -497,30 +557,37 @@ bool FKiteSurfRideCarveIsSymmetric::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Edge pressure trades grip for speed: pressed in, the board slips less; flattened, it slides off downwind.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideEdgePressureChangesLeeway, "KiteSurf.Ride.EdgePressureChangesLeeway", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+// Weight along the board trades grip for speed: on the tail the rail digs in and the board slips
+// less; on the nose the board runs flatter and slides off downwind more.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideWeightShiftChangesLeeway, "KiteSurf.Ride.WeightShiftChangesLeeway", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
-bool FKiteSurfRideEdgePressureChangesLeeway::RunTest(const FString& Parameters)
+bool FKiteSurfRideWeightShiftChangesLeeway::RunTest(const FString& Parameters)
 {
-	auto LeewayDeg = [](float EdgePressure) -> float
+	struct FRun { float LeewayDeg; float PitchDeg; };
+	auto RideWithWeight = [](float WeightShift) -> FRun
 	{
 		FRideFixture Ride;
 		if (!Ride.IsValid())
 		{
-			return 0.0f;
+			return { 0.0f, 0.0f };
 		}
-		Ride.Board->SetEdgePressure(EdgePressure);
+		Ride.Board->SetWeightShift(WeightShift);
 		Ride.Simulate(15.0f);
-		return FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Ride.Board->GetLateralSpeed()), Ride.Board->GetForwardSpeed()));
+		return {
+			FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Ride.Board->GetLateralSpeed()), Ride.Board->GetForwardSpeed())),
+			static_cast<float>(Ride.Pawn->GetActorRotation().Pitch) };
 	};
 
-	const float Flat = LeewayDeg(-1.0f);
-	const float Neutral = LeewayDeg(0.0f);
-	const float Edged = LeewayDeg(1.0f);
-	UE_LOG(LogKiteSurf, Log, TEXT("EdgePressureChangesLeeway: flat %.1f deg, neutral %.1f deg, edged %.1f deg"), Flat, Neutral, Edged);
+	const FRun OnNose = RideWithWeight(1.0f);
+	const FRun Neutral = RideWithWeight(0.0f);
+	const FRun OnTail = RideWithWeight(-1.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("WeightShiftChangesLeeway: nose %.1f deg, neutral %.1f deg, tail %.1f deg; pitch nose %.1f, tail %.1f"),
+		OnNose.LeewayDeg, Neutral.LeewayDeg, OnTail.LeewayDeg, OnNose.PitchDeg, OnTail.PitchDeg);
 
-	TestTrue(FString::Printf(TEXT("Edging hard slips less than neutral (%.1f < %.1f deg)"), Edged, Neutral), Edged < Neutral);
-	TestTrue(FString::Printf(TEXT("A flat board slips more than neutral (%.1f > %.1f deg)"), Flat, Neutral), Flat > Neutral);
+	TestTrue(FString::Printf(TEXT("Weight on the tail slips less than neutral (%.1f < %.1f deg)"), OnTail.LeewayDeg, Neutral.LeewayDeg), OnTail.LeewayDeg < Neutral.LeewayDeg);
+	TestTrue(FString::Printf(TEXT("Weight on the nose slips more than neutral (%.1f > %.1f deg)"), OnNose.LeewayDeg, Neutral.LeewayDeg), OnNose.LeewayDeg > Neutral.LeewayDeg);
+	TestTrue(FString::Printf(TEXT("Weight on the nose tips the nose down (pitch %.1f)"), OnNose.PitchDeg), OnNose.PitchDeg < -4.0f);
+	TestTrue(FString::Printf(TEXT("Weight on the tail lifts the nose (pitch %.1f)"), OnTail.PitchDeg), OnTail.PitchDeg > 4.0f);
 	return true;
 }
 

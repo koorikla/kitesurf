@@ -9,6 +9,7 @@ UKiteSurfSaveGame::UKiteSurfSaveGame()
 	, MasterVolume(1.0f)
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
+	, RiderCharacterIndex(0)
 {
 }
 

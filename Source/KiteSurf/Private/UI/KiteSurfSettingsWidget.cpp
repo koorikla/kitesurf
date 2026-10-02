@@ -27,6 +27,7 @@ UKiteSurfSettingsWidget::UKiteSurfSettingsWidget(const FObjectInitializer& Objec
 	, CurrentResolution(1600, 900)
 	, bCurrentVSync(false)
 	, CurrentQualityPreset(3)
+	, CurrentRiderCharacter(ERiderCharacter::Santa)
 {
 	SetIsFocusable(true);
 	if (!HasAnyFlags(RF_ClassDefaultObject))
@@ -52,6 +53,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			CurrentWindKnots = GI->PendingWindKnots;
 			CurrentVolume = GI->MasterVolume;
 			bSkipOnboarding = GI->bSkipOnboarding;
+			CurrentRiderCharacter = GI->RiderCharacter;
 		}
 		else
 		{
@@ -61,6 +63,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 				CurrentWindKnots = SaveGame->WindStrengthKnots;
 				CurrentVolume = SaveGame->MasterVolume;
 				bSkipOnboarding = SaveGame->bSkipOnboarding;
+				CurrentRiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
 			}
 		}
 	}
@@ -397,6 +400,42 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						]
 					]
 				]
+				// Rider row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("RIDER:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateRiderButton, SButton)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							CycleRiderCharacter();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateRiderText, STextBlock)
+							.Text(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
 				// VSync row
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -573,6 +612,12 @@ void UKiteSurfSettingsWidget::SetQualityPreset(int32 InPresetIndex)
 	UpdateTextDisplays();
 }
 
+void UKiteSurfSettingsWidget::CycleRiderCharacter()
+{
+	CurrentRiderCharacter = RiderCharacter::Next(CurrentRiderCharacter);
+	UpdateTextDisplays();
+}
+
 void UKiteSurfSettingsWidget::ToggleSkipOnboarding()
 {
 	bSkipOnboarding = !bSkipOnboarding;
@@ -671,6 +716,11 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 		SlateResolutionText->SetText(FText::FromString(ResStr));
 	}
 
+	if (SlateRiderText.IsValid())
+	{
+		SlateRiderText->SetText(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)));
+	}
+
 	const FString VSyncStr = bCurrentVSync ? TEXT("ENABLED") : TEXT("DISABLED");
 	if (VSyncValueText)
 	{
@@ -698,6 +748,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			GI->SetPendingWindKnots(CurrentWindKnots);
 			GI->SetMasterVolume(CurrentVolume);
 			GI->SetSkipOnboarding(bSkipOnboarding);
+			GI->SetRiderCharacter(CurrentRiderCharacter);
 			GI->SaveSettingsToDisk();
 		}
 		else
@@ -708,6 +759,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 				SaveGame->WindStrengthKnots = CurrentWindKnots;
 				SaveGame->MasterVolume = CurrentVolume;
 				SaveGame->bSkipOnboarding = bSkipOnboarding;
+				SaveGame->RiderCharacterIndex = static_cast<int32>(CurrentRiderCharacter);
 				SaveGame->SaveSettings();
 			}
 		}

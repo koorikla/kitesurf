@@ -61,12 +61,12 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_Reset', False)
         print(f'IA_Reset configured and saved: {ia_reset}')
 
-        # 7. IA_EdgePressure (Axis1D): dig the edge in / flatten the board
-        ia_edge_pressure = get_or_create_asset('IA_EdgePressure', '/Game/Input', unreal.InputAction, None)
-        ia_edge_pressure.set_editor_property('value_type', unreal.InputActionValueType.AXIS1D)
-        editor_asset_lib.save_loaded_asset(ia_edge_pressure)
-        editor_asset_lib.save_asset('/Game/Input/IA_EdgePressure', False)
-        print(f'IA_EdgePressure configured and saved: {ia_edge_pressure}')
+        # 7. IA_WeightShift (Axis1D): weight on the nose (+) or the tail (-) of the board
+        ia_weight_shift = get_or_create_asset('IA_WeightShift', '/Game/Input', unreal.InputAction, None)
+        ia_weight_shift.set_editor_property('value_type', unreal.InputActionValueType.AXIS1D)
+        editor_asset_lib.save_loaded_asset(ia_weight_shift)
+        editor_asset_lib.save_asset('/Game/Input/IA_WeightShift', False)
+        print(f'IA_WeightShift configured and saved: {ia_weight_shift}')
 
         # 8. IA_Loop (Digital bool): held, steering loops the kite
         ia_loop = get_or_create_asset('IA_Loop', '/Game/Input', unreal.InputAction, None)
@@ -74,6 +74,11 @@ def build_assets():
         editor_asset_lib.save_loaded_asset(ia_loop)
         editor_asset_lib.save_asset('/Game/Input/IA_Loop', False)
         print(f'IA_Loop configured and saved: {ia_loop}')
+
+        # Assets from earlier control schemes
+        for stale in ['/Game/Input/IA_EdgePressure']:
+            if editor_asset_lib.does_asset_exist(stale):
+                editor_asset_lib.delete_asset(stale)
 
         print('=== Creating Input Mapping Context ===')
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
@@ -96,14 +101,14 @@ def build_assets():
             (ia_loop, 'LeftShift', False),
             (ia_loop, 'RightShift', False),
             (ia_loop, 'Gamepad_RightShoulder', False),
-            # Carve the board (IA_Edge keeps its name; it has always driven the carve)
+            # Turn the board (IA_Edge keeps its name; it has always driven the carve)
             (ia_edge, 'D', False),
             (ia_edge, 'A', True),
             (ia_edge, 'Gamepad_LeftX', False),
-            # Edge pressure
-            (ia_edge_pressure, 'W', False),
-            (ia_edge_pressure, 'S', True),
-            (ia_edge_pressure, 'Gamepad_LeftY', False),
+            # Weight on the nose / tail
+            (ia_weight_shift, 'W', False),
+            (ia_weight_shift, 'S', True),
+            (ia_weight_shift, 'Gamepad_LeftY', False),
             # Jump
             (ia_jump, 'SpaceBar', False),
             (ia_jump, 'Gamepad_FaceButton_Bottom', False),
@@ -144,7 +149,7 @@ def build_assets():
         cdo_rider.set_editor_property('steer_action', ia_steer)
         cdo_rider.set_editor_property('sheet_action', ia_sheet)
         cdo_rider.set_editor_property('edge_action', ia_edge)
-        cdo_rider.set_editor_property('edge_pressure_action', ia_edge_pressure)
+        cdo_rider.set_editor_property('weight_shift_action', ia_weight_shift)
         cdo_rider.set_editor_property('loop_action', ia_loop)
         cdo_rider.set_editor_property('jump_action', ia_jump)
         cdo_rider.set_editor_property('pause_action', ia_pause)

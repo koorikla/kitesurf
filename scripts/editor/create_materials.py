@@ -1,47 +1,89 @@
+"""Creates the materials for the kite, board, bar and riders and assigns them to the mesh slots.
+
+Run after import_geometry.py:  scripts/run-python.sh scripts/editor/create_materials.py
+"""
 import unreal
 
-print('=== Creating Project Materials for Kite, Board, and Bar ===')
+print('=== Creating project materials ===')
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+mel = unreal.MaterialEditingLibrary
+MATERIAL_DIR = '/Game/Materials'
 
-# Base parent material: /Engine/BasicShapes/BasicShapeMaterial
 base_mat = unreal.EditorAssetLibrary.load_asset('/Engine/BasicShapes/BasicShapeMaterial')
-print('Loaded base material:', base_mat)
 
-mats_to_create = [
-    ('M_KiteCanopy', unreal.LinearColor(0.9, 0.2, 0.1, 1.0)),   # Vibrant Red/Orange for kite
-    ('M_KiteBoard', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),   # Cyan/Teal for board
-    ('M_ControlBar', unreal.LinearColor(0.1, 0.1, 0.1, 1.0)),   # Dark charcoal/black for bar
-    ('M_KiteLines', unreal.LinearColor(0.95, 0.95, 0.95, 1.0)), # Bright white/silver for lines
-]
 
-for mat_name, color in mats_to_create:
-    dest_path = f'/Game/Materials/{mat_name}'
-    if unreal.EditorAssetLibrary.does_asset_exist(dest_path):
-        unreal.EditorAssetLibrary.delete_asset(dest_path)
-    
-    mi_factory = unreal.MaterialInstanceConstantFactoryNew()
-    mi = asset_tools.create_asset(mat_name, '/Game/Materials', unreal.MaterialInstanceConstant, mi_factory)
-    if mi and base_mat:
-        mi.set_editor_property('parent', base_mat)
-        # Set Color parameter if parameter exists
-        unreal.MaterialEditingLibrary.set_material_instance_vector_parameter_value(mi, 'Color', color)
-        unreal.EditorAssetLibrary.save_loaded_asset(mi, only_if_is_dirty=False)
-        print(f'Successfully created and saved {mat_name}')
+def recreate(name, asset_class, factory):
+    path = f'{MATERIAL_DIR}/{name}'
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        unreal.EditorAssetLibrary.delete_asset(path)
+    return asset_tools.create_asset(name, MATERIAL_DIR, asset_class, factory)
 
-# Assign materials to imported static meshes
-mesh_mat_map = [
-    ('/Game/Meshes/SM_Kite', '/Game/Materials/M_KiteCanopy'),
-    ('/Game/Meshes/SM_KiteBoard', '/Game/Materials/M_KiteBoard'),
-    ('/Game/Meshes/SM_ControlBar', '/Game/Materials/M_ControlBar'),
-]
 
-for mesh_path, mat_path in mesh_mat_map:
-    mesh = unreal.EditorAssetLibrary.load_asset(mesh_path)
-    mat = unreal.EditorAssetLibrary.load_asset(mat_path)
-    if mesh and mat:
-        mesh.set_material(0, mat)
-        unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
-        print(f'Assigned {mat_path} to {mesh_path}')
+def make_flat(name, color):
+    """A plain coloured instance of the engine's basic shape material."""
+    instance = recreate(name, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
+    instance.set_editor_property('parent', base_mat)
+    mel.set_material_instance_vector_parameter_value(instance, 'Color', color)
+    unreal.EditorAssetLibrary.save_loaded_asset(instance, only_if_is_dirty=False)
+    print(f'Created {name}')
+    return instance
 
-print('=== Materials Setup Finished ===')
+
+def make_kite_canopy():
+    """Two-sided cloth carrying the canopy texture, so the kite reads from above and from the rider's side."""
+    texture = unreal.EditorAssetLibrary.load_asset('/Game/Textures/T_KiteCanopy')
+    if not texture:
+        raise RuntimeError('T_KiteCanopy is missing: run import_geometry.py first')
+    material = recreate('M_KiteCanopy', unreal.Material, unreal.MaterialFactoryNew())
+    material.set_editor_property('two_sided', True)
+    sample = mel.create_material_expression(material, unreal.MaterialExpressionTextureSample, -500, 0)
+    sample.set_editor_property('texture', texture)
+    mel.connect_material_property(sample, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
+    roughness = mel.create_material_expression(material, unreal.MaterialExpressionConstant, -300, 250)
+    roughness.set_editor_property('r', 0.55)
+    mel.connect_material_property(roughness, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    mel.recompile_material(material)
+    unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False)
+    print('Created M_KiteCanopy')
+    return material
+
+
+materials = {
+    'KiteCanopy': make_kite_canopy(),
+    'KiteTube': make_flat('M_KiteTube', unreal.LinearColor(0.9, 0.9, 0.88, 1.0)),
+    'KiteBoard': make_flat('M_KiteBoard', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),
+    'ControlBar': make_flat('M_ControlBar', unreal.LinearColor(0.1, 0.1, 0.1, 1.0)),
+    'RiderSkin': make_flat('M_RiderSkin', unreal.LinearColor(0.80, 0.50, 0.38, 1.0)),
+    'RiderRed': make_flat('M_RiderRed', unreal.LinearColor(0.70, 0.03, 0.04, 1.0)),
+    'RiderWhite': make_flat('M_RiderWhite', unreal.LinearColor(0.92, 0.92, 0.92, 1.0)),
+    'RiderBlack': make_flat('M_RiderBlack', unreal.LinearColor(0.02, 0.02, 0.02, 1.0)),
+    'RiderWetsuit': make_flat('M_RiderWetsuit', unreal.LinearColor(0.03, 0.04, 0.06, 1.0)),
+    'RiderAccent': make_flat('M_RiderAccent', unreal.LinearColor(0.05, 0.6, 0.8, 1.0)),
+}
+make_flat('M_KiteLines', unreal.LinearColor(0.95, 0.95, 0.95, 1.0))
+
+# Meshes whose slots are named after the materials above; the board and bar have a single unnamed slot.
+SINGLE_SLOT = {'SM_KiteBoard': 'KiteBoard', 'SM_ControlBar': 'ControlBar'}
+for mesh_name in ['SM_Kite', 'SM_KiteBoard', 'SM_ControlBar', 'SM_RiderSanta', 'SM_RiderWetsuit']:
+    mesh = unreal.EditorAssetLibrary.load_asset(f'/Game/Meshes/{mesh_name}')
+    if not mesh:
+        raise RuntimeError(f'{mesh_name} is missing: run import_geometry.py first')
+    slots = mesh.get_editor_property('static_materials')
+    for index, slot in enumerate(slots):
+        slot_name = str(slot.get_editor_property('material_slot_name'))
+        key = SINGLE_SLOT.get(mesh_name, slot_name)
+        if key not in materials:
+            raise RuntimeError(f'{mesh_name} slot {index} is named {slot_name!r}, which has no material')
+        mesh.set_material(index, materials[key])
+        print(f'{mesh_name}[{index}] {slot_name} -> {key}')
+    unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
+
+# The OBJ importer leaves a material asset per MTL entry next to the meshes; ours replace them.
+for name in list(materials.keys()):
+    stray = f'/Game/Meshes/{name}'
+    if unreal.EditorAssetLibrary.does_asset_exist(stray):
+        unreal.EditorAssetLibrary.delete_asset(stray)
+        print(f'Removed imported material {stray}')
+
+print('=== Materials setup finished ===')

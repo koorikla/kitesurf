@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
+#include "RiderCharacter.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -52,7 +53,7 @@ public:
 	UInputAction* GetSteerAction() const { return SteerAction.Get(); }
 	UInputAction* GetSheetAction() const { return SheetAction.Get(); }
 	UInputAction* GetEdgeAction() const { return EdgeAction.Get(); }
-	UInputAction* GetEdgePressureAction() const { return EdgePressureAction.Get(); }
+	UInputAction* GetWeightShiftAction() const { return WeightShiftAction.Get(); }
 	UInputAction* GetLoopAction() const { return LoopAction.Get(); }
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
@@ -71,7 +72,16 @@ public:
 	float GetCurrentSheetInput() const { return CurrentSheetInput; }
 
 	/** Sets every held input at once, as the keys or sticks would. Used by the kitesurf.Input console command to script smoke runs. */
-	void ApplyScriptedInput(float Steer, float SheetRate, float Carve, float EdgePressure, bool bLoop);
+	void ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop);
+
+	/** Shows the chosen rider on the board. */
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	void SetRiderCharacter(ERiderCharacter InCharacter);
+
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	ERiderCharacter GetRiderCharacter() const { return RiderCharacter; }
+
+	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderStaticMesh.Get(); }
 
 	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
@@ -137,6 +147,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USkeletalMeshComponent> RiderMesh;
 
+	/** The posed riders (Santa, wetsuit); the robot uses the skeletal RiderMesh. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> RiderStaticMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rider")
+	ERiderCharacter RiderCharacter;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> ControlBarMesh;
 
@@ -185,7 +202,7 @@ protected:
 	TObjectPtr<UInputAction> EdgeAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
-	TObjectPtr<UInputAction> EdgePressureAction;
+	TObjectPtr<UInputAction> WeightShiftAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> LoopAction;
@@ -210,7 +227,7 @@ private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
 	void OnEdgeTriggered(const FInputActionValue& Value);
-	void OnEdgePressureTriggered(const FInputActionValue& Value);
+	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void OnLoopStarted(const FInputActionValue& Value);
 	void OnLoopCompleted(const FInputActionValue& Value);
 	void UpdateMouseBar();

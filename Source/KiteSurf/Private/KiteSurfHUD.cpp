@@ -163,7 +163,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 2:
 		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:
-		return TEXT("Send it: weight back on the tail and pop off the water to jump [S + SPACE or Bottom Face Button]");
+		return TEXT("Big air: hold your weight back [S], steer the kite up, then pull the bar in and pop to jump as it loads up [SPACE or Bottom Face Button]");
 	default:
 		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
 	}
@@ -264,7 +264,9 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	const float GustFactor = WindComp ? WindComp->GetGustFactorAt(RiderPawn->GetActorLocation()) : 1.0f;
 	const TCHAR* GustLabel = GustFactor > 1.12f ? TEXT("  GUST") : (GustFactor < 0.88f ? TEXT("  LULL") : TEXT(""));
 	const FLinearColor WindColor = GustFactor > 1.12f ? FLinearColor(1.0f, 0.6f, 0.2f) : (GustFactor < 0.88f ? FLinearColor(0.6f, 0.7f, 0.8f) : FLinearColor(0.3f, 0.8f, 1.0f));
-	FString WindStr = FString::Printf(TEXT("WIND:  %s%s"), *FormatKnots(WindVec.Size()), GustLabel);
+	const UKiteComponent* RiggedKite = RiderPawn->GetKite();
+	const FString KiteSizeStr = RiggedKite ? FString::Printf(TEXT("  |  KITE %.0f m"), RiggedKite->AreaM2) : FString();
+	FString WindStr = FString::Printf(TEXT("WIND:  %s%s%s"), *FormatKnots(WindVec.Size()), *KiteSizeStr, GustLabel);
 	DrawText(WindStr, WindColor, 32.0f, 94.0f, nullptr, 1.1f);
 
 	DrawWindCompass(WindVec, 255.0f, 96.0f, 18.0f);

@@ -32,6 +32,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 RiderCharacterIndex;
 
+	/** Chosen kite size in m^2; 0 means the size recommended for the wind */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float KiteSizeM2;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

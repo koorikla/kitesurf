@@ -61,6 +61,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	bool IsLoopHeld() const { return bLoopHeld; }
 
+	/** The kite sizes on offer (m^2), smallest first. */
+	static TConstArrayView<float> GetKiteSizesM2();
+
+	/** The size from GetKiteSizesM2 a rider of this weight would rig for this wind: about 2.2 x kg / knots. */
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	static float RecommendKiteSizeM2(float WindKnots, float RiderMassKg = 85.0f);
+
+	/**
+	 * Rigs a kite of this area. Its mass, the air it has to push and its turning circle follow the
+	 * size: a small kite is light and turns tightly, a big one is slow and powerful.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void SetKiteSize(float InAreaM2);
+
+	/** Linear size of this kite against the 12 m^2 the mesh and the tuning are built for. */
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	float GetSizeScale() const { return FMath::Sqrt(FMath::Max(AreaM2, 1.0f) / ReferenceAreaM2); }
+
+	static constexpr float ReferenceAreaM2 = 12.0f;
+
 	/**
 	 * The steering actually reaching the kite, -1..1: the rider's bar while looping, otherwise what
 	 * the assist asks for to carry out the bar's intent. 0 while the kite is in the water.
@@ -165,6 +185,10 @@ public:
 	/** Where each line meets the bar, in front of the rider on the kite's side. */
 	FVector GetBarEndWorldPosition(bool bLeft) const;
 
+	/** The rider holds the bar: they say where its ends are, and the lines run from there to the kite. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void SetBarEnds(const FVector& LeftEnd, const FVector& RightEnd);
+
 	// Visual Components
 	UStaticMeshComponent* GetKiteMesh() const { return KiteMesh; }
 	UCableComponent* GetLeftLine() const { return LeftLine; }
@@ -227,6 +251,10 @@ public:
 	/** Drag coefficient of a kite that is not flying (slack lines), on its full area. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
 	float SlackDragCoefficient;
+
+	/** Slack in the lines (cm) at which the canopy has lost its shape completely and only drags. With less it still flies. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics", meta = (ClampMin = "1.0"))
+	float SlackCollapseCm;
 
 	/** Canopy trim angle with the bar out (deg): depowered. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Aerodynamics")
@@ -355,6 +383,9 @@ protected:
 	float ParkClockDeg;
 	float TurnRateRadS;
 	float AppliedSteer = 0.0f;
+	FVector BarLeftEnd = FVector::ZeroVector;
+	FVector BarRightEnd = FVector::ZeroVector;
+	bool bHasBarEnds = false;
 	bool bHasParkClock;
 	bool bPlacementPending;
 	bool bLoopHeld;

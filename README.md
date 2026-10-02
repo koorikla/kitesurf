@@ -66,12 +66,21 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Bar on the mouse | Hold right button: move to steer and sheet, left button loops | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
-| Jump (pop, with the edge loaded) | Space | Bottom face button |
+| Pop (hold S and send the kite first for a real jump) | Space | Bottom face button |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, settings, main menu, quit) | Esc or P | Start |
 
-Sending the kite up over your head with the bar in lifts you off the water without a pop, and a
-kite looped through the middle of the window pulls several times harder than a parked one.
+**Jumping.** A pop on its own is a hop of about a metre: the height comes from the kite. Hold
+your weight back (S) to dig the edge in, steer the kite up hard, and as the pull builds pull the
+bar in and pop. Let go too early and the kite has not loaded up yet; hold on too long and it
+rips you off your edge, which is a much lower jump. Timed well, that is 5 m in 15 kn, 15 m in
+30 kn and 25 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
+water. A kite looped through the middle of the window pulls several times harder than a parked one.
+
+**Kite size.** Settings picks the kite a rider would rig for the wind (12 m in 15 kn, 6 m in
+30 kn), or you can choose one from 5 to 17 m. Small kites turn and loop faster; big ones pull
+harder and are a handful when it blows. Wind goes from 8 to 40 kn.
+
 Without enough speed the board does not carry you: you float chest-deep until the kite pulls you
 back up onto the plane. The BAR panel at the bottom right shows what your hands are doing: the bar
 slides down as you pull it in and tilts as you steer, with a marker for the steering that actually

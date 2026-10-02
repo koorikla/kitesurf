@@ -37,19 +37,29 @@ bool FKiteSurfSaveGameDefaultsAndClampingTest::RunTest(const FString& Parameters
     TestFalse(TEXT("Default bSkipOnboarding is false"), SaveGame->bSkipOnboarding);
     TestFalse(TEXT("Default bOnboardingCompleted is false"), SaveGame->bOnboardingCompleted);
 
+    // Saved to a slot of its own: the default slot is the player's real settings file.
+    const FString TestSlot = TEXT("SettingsAutomationTest");
+
     // Test underflow clamping (min wind = 8.0, min volume = 0.0)
     SaveGame->WindStrengthKnots = 2.0f;
     SaveGame->MasterVolume = -0.5f;
-    SaveGame->SaveSettings();
+    SaveGame->SaveSettings(TestSlot);
     TestEqual(TEXT("Wind clamped to minimum 8.0 kn"), SaveGame->WindStrengthKnots, 8.0f);
     TestEqual(TEXT("Volume clamped to minimum 0.0"), SaveGame->MasterVolume, 0.0f);
 
-    // Test overflow clamping (max wind = 30.0, max volume = 1.0)
+    // Test overflow clamping (max wind = 40.0, max volume = 1.0)
     SaveGame->WindStrengthKnots = 55.0f;
     SaveGame->MasterVolume = 2.5f;
-    SaveGame->SaveSettings();
-    TestEqual(TEXT("Wind clamped to maximum 30.0 kn"), SaveGame->WindStrengthKnots, 30.0f);
+    SaveGame->SaveSettings(TestSlot);
+    TestEqual(TEXT("Wind clamped to maximum 40.0 kn"), SaveGame->WindStrengthKnots, 40.0f);
     TestEqual(TEXT("Volume clamped to maximum 1.0"), SaveGame->MasterVolume, 1.0f);
+
+    // The kite size travels with the rest of the settings.
+    SaveGame->KiteSizeM2 = 9.0f;
+    SaveGame->SaveSettings(TestSlot);
+    const UKiteSurfSaveGame* Reloaded = UKiteSurfSaveGame::LoadOrCreateSettings(TestSlot);
+    TestTrue(TEXT("The chosen kite size is saved and loaded"), Reloaded && Reloaded->KiteSizeM2 == 9.0f);
+    UGameplayStatics::DeleteGameInSlot(TestSlot, UKiteSurfSaveGame::DefaultUserIndex);
 
     return true;
 }
@@ -79,7 +89,7 @@ bool FKiteSurfGameInstanceSettingsTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("PendingWindKnots clamped at 8.0 kn"), GI->PendingWindKnots, 8.0f);
 
     GI->SetPendingWindKnots(45.0f);
-    TestEqual(TEXT("PendingWindKnots clamped at 30.0 kn"), GI->PendingWindKnots, 30.0f);
+    TestEqual(TEXT("PendingWindKnots clamped at 40.0 kn"), GI->PendingWindKnots, 40.0f);
 
     GI->SetMasterVolume(-0.2f);
     TestEqual(TEXT("MasterVolume clamped at 0.0"), GI->MasterVolume, 0.0f);

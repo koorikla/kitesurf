@@ -30,6 +30,11 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 				const float BaseKnots = GI->PendingWindKnots;
 				WindComp->BaseWind = FVector(BaseKnots * 51.44f, 0.0f, 0.0f);
 			}
+			// Rig the chosen kite, or the one a rider would pick for this wind.
+			if (UKiteComponent* KiteComp = RiderPawn->GetKite())
+			{
+				KiteComp->SetKiteSize(GI->GetEffectiveKiteSizeM2());
+			}
 		}
 	}
 

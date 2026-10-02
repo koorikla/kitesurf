@@ -54,6 +54,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnSettingsClosed();
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pause")
+	TObjectPtr<class UKiteSurfGearWidget> ActiveGearWidget;
+
+	/** Opens the gear screen over the paused ride; applying re-rigs the rider on the spot. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnGearClicked();
+
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnGearClosed();
+
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnMainMenuClicked();
 
@@ -71,6 +81,7 @@ protected:
 private:
 	TSharedPtr<SButton> SlateResumeButton;
 	TSharedPtr<SButton> SlateRestartButton;
+	TSharedPtr<SButton> SlateGearButton;
 	TSharedPtr<SButton> SlateSettingsButton;
 	TSharedPtr<SButton> SlateMainMenuButton;
 	TSharedPtr<SButton> SlateQuitButton;

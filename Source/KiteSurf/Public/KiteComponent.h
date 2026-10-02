@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "KiteGear.h"
 #include "KiteComponent.generated.h"
 
 class UWindComponent;
@@ -86,6 +87,13 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetKiteSize(float InAreaM2);
+
+	/** Rigs this kind of kite at the current size: its lift, glide, weight and turning follow the model. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	void SetKiteModel(EKiteModel InModel);
+
+	UFUNCTION(BlueprintPure, Category = "Kite")
+	EKiteModel GetKiteModel() const { return KiteModel; }
 
 	/** Linear size of this kite against the 12 m^2 the mesh and the tuning are built for. */
 	UFUNCTION(BlueprintPure, Category = "Kite")
@@ -395,6 +403,7 @@ protected:
 	float ParkClockDeg;
 	float TurnRateRadS;
 	float AppliedSteer = 0.0f;
+	EKiteModel KiteModel = EKiteModel::Loop;
 	FVector BarLeftEnd = FVector::ZeroVector;
 	FVector BarRightEnd = FVector::ZeroVector;
 	bool bHasBarEnds = false;

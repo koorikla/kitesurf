@@ -1,6 +1,7 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
+#include "UI/KiteSurfGearWidget.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
 #include "Widgets/Layout/SBorder.h"
@@ -120,6 +121,26 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 					[
 						SNew(STextBlock)
 						.Text(FText::FromString(TEXT("RESTART")))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
+						.Margin(FMargin(10.0f, 8.0f))
+					]
+				]
+				// Gear Button
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					SAssignNew(SlateGearButton, SButton)
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						OnGearClicked();
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(TEXT("GEAR")))
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
 						.Margin(FMargin(10.0f, 8.0f))
 					]
@@ -260,6 +281,38 @@ void UKiteSurfPauseMenuWidget::OnSettingsClicked()
 void UKiteSurfPauseMenuWidget::OnSettingsClosed()
 {
 	ActiveSettingsWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
+	FocusFirst();
+}
+
+void UKiteSurfPauseMenuWidget::OnGearClicked()
+{
+	UWorld* World = GetWorld();
+	if (!World || ActiveGearWidget)
+	{
+		return;
+	}
+
+	ActiveGearWidget = CreateWidget<UKiteSurfGearWidget>(World, UKiteSurfGearWidget::StaticClass());
+	if (ActiveGearWidget)
+	{
+		ActiveGearWidget->bDuringRide = true;
+		ActiveGearWidget->OnConfirmedDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnGearClosed);
+		ActiveGearWidget->OnCancelledDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnGearClosed);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveGearWidget->AddToViewport(110); // above the pause menu
+		}
+		ActiveGearWidget->FocusFirst();
+
+		// One screen at a time: the pause menu comes back when the gear screen closes.
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UKiteSurfPauseMenuWidget::OnGearClosed()
+{
+	ActiveGearWidget = nullptr;
 	SetVisibility(ESlateVisibility::Visible);
 	FocusFirst();
 }

@@ -83,9 +83,17 @@ rips you off your edge, which is a much lower jump. Timed well, that is 5 m in 1
 30 kn and 25 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
 water. A kite looped through the middle of the window pulls several times harder than a parked one.
 
-**Kite size.** Settings picks the kite a rider would rig for the wind (12 m in 15 kn, 6 m in
-30 kn), or you can choose one from 5 to 17 m. Small kites turn and loop faster; big ones pull
-harder and are a handful when it blows. Wind goes from 8 to 40 kn.
+**Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
+Pick the wind (8 to 40 kn), then rig for it:
+
+- *Kite size*: AUTO is what a rider would rig for that wind (12 m in 15 kn, 6 m in 30 kn), or
+  choose from 5 to 17 m. Small kites turn and loop faster; big ones pull harder and are a
+  handful when it blows.
+- *Kite*: the 3-strut loop kite turns tight and fast; the 5-strut boost kite has more lift and
+  glide for height and hangtime, and turns slower.
+- *Board*: the 132 pops harder and turns quicker but needs more speed to plane and sinks sooner
+  in light wind; the 145 planes early and grips, with less pop; the 138 is the all-rounder.
+- *Rider*: who is on the board.
 
 Without enough speed the board does not carry you: you float chest-deep until the kite pulls you
 back up onto the plane. The BAR panel at the bottom right shows what your hands are doing: the bar

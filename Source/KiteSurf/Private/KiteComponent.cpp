@@ -397,14 +397,24 @@ void UKiteComponent::SetKiteSize(float InAreaM2)
 	AreaM2 = FMath::Clamp(InAreaM2, 1.0f, 25.0f);
 	const float AreaRatio = AreaM2 / ReferenceAreaM2;
 	const float Scale = GetSizeScale();
-	// Reference 12 m^2 kite: 3 kg, 3 kg of air to push, 4.2 m turning radius.
-	MassKg = 3.0f * AreaRatio;
+	const FKiteModelTraits Traits = KiteGear::GetTraits(KiteModel);
+	// Reference 12 m^2 loop kite: 3 kg, 3 kg of air to push, 4.2 m turning radius, lift
+	// coefficient up to 1.2, induced drag factor 0.085.
+	MassKg = 3.0f * AreaRatio * Traits.MassScale;
 	AddedMassKg = 3.0f * AreaRatio * Scale;
-	MinTurnRadiusCm = 420.0f * Scale;
+	MinTurnRadiusCm = 420.0f * Scale * Traits.TurnRadiusScale;
+	MaxLiftCoefficient = 1.2f * Traits.LiftScale;
+	InducedDragFactor = 0.085f * Traits.InducedDragScale;
 	if (KiteMesh)
 	{
 		KiteMesh->SetWorldScale3D(FVector(Scale));
 	}
+}
+
+void UKiteComponent::SetKiteModel(EKiteModel InModel)
+{
+	KiteModel = KiteGear::KiteModelFromIndex(static_cast<int32>(InModel));
+	SetKiteSize(AreaM2);
 }
 
 void UKiteComponent::SetBarEnds(const FVector& LeftEnd, const FVector& RightEnd)

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "KiteGear.h"
 #include "BoardMovementComponent.generated.h"
 
 class AWaterBody;
@@ -127,6 +128,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	float GetBestJumpHeight() const { return BestJumpHeight; }
+
+	/** Puts the rider on a board of this size: pop, the speed it planes at, drag, grip and turning follow it. */
+	UFUNCTION(BlueprintCallable, Category = "Board")
+	void SetBoardSize(EBoardSize InSize);
+
+	UFUNCTION(BlueprintPure, Category = "Board")
+	EBoardSize GetBoardSize() const { return BoardSize; }
 
 	/** How many times the rider has been put back on the board by ResetToTack. Polled by code that cannot rely on OnBoardReset being bound. */
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
@@ -342,6 +350,7 @@ private:
 	float CurrentWeightShift;
 	float CurrentFloatDepthCm;
 	int32 ResetCount = 0;
+	EBoardSize BoardSize = EBoardSize::Medium;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
 

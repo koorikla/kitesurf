@@ -32,6 +32,9 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
      defaults.
    - `scripts/editor/make_sound_assets.py` synthesises the sounds (`make_sound_wavs.py`, standard
      library only) and imports them as `SW_*` sound waves in `/Game/Audio`.
+   - `scripts/editor/import_menu_art.py` draws the startup splash (`Content/Splash/`, loose PNGs the
+     engine reads directly) and the menu background (`T_MenuBackground`) with `make_splash.sh`.
+     Keep the art 8 bits per channel: a 16-bit PNG imports as linear data and looks washed out.
    - `scripts/editor/import_geometry.py` generates and imports the kite, board, bar and rider
      meshes (`generate_mesh_objs.py`) and the kite canopy texture (`make_kite_texture.sh`,
      needs ImageMagick); run `scripts/editor/create_materials.py` after it to assign materials.

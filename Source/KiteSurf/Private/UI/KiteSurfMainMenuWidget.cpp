@@ -1,5 +1,8 @@
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfSettingsWidget.h"
+#include "UI/KiteSurfGearWidget.h"
+#include "UI/KiteSurfMenuStyle.h"
+#include "Engine/Texture2D.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Components/Button.h"
@@ -57,21 +60,25 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 		return Super::RebuildWidget();
 	}
 
-	// Fallback Slate UI
-	// A solid brush: the default border brush is a hollow frame, which leaves the centre see-through.
-	return SNew(SBorder)
-		.HAlign(HAlign_Center)
+	// Fallback Slate UI: the key art fills the screen, with the menu and the controls on dark
+	// panels on its emptier left side.
+	BackgroundTexture = KiteSurfMenuStyle::LoadBackgroundTexture();
+	KiteSurfMenuStyle::SetupBackgroundBrush(BackgroundBrush, BackgroundTexture);
+
+	const TSharedRef<SWidget> MenuContent = SNew(SBox)
+		.HAlign(HAlign_Left)
 		.VAlign(VAlign_Center)
-		.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-		.BorderBackgroundColor(FLinearColor(0.01f, 0.03f, 0.08f, 1.0f))
+		.Padding(FMargin(70.0f, 0.0f, 0.0f, 0.0f))
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
+			// Stacked down the left, clear of the kite and rider in the art.
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Left)
 			[
+			KiteSurfMenuStyle::BuildPanel(
 			SNew(SBox)
-			.WidthOverride(420.0f)
+			.WidthOverride(360.0f)
 			[
 				SNew(SVerticalBox)
 				// Title
@@ -92,7 +99,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.HAlign(HAlign_Center)
 				[
 					SNew(STextBlock)
-					.Text(FText::FromString(TEXT("HYDRODYNAMICS & AERODYNAMICS SIMULATION")))
+					.Text(FText::FromString(TEXT("koorikla big air")))
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
 					.ColorAndOpacity(FLinearColor(0.4f, 0.75f, 1.0f))
 				]
@@ -156,24 +163,57 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 						.Margin(FMargin(10.0f, 8.0f))
 					]
 				]
+			])
 			]
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(40.0f, 0.0f, 0.0f, 0.0f)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Left)
+			.Padding(0.0f, 18.0f, 0.0f, 0.0f)
 			[
-				KiteSurfControlsLegend::Build()
+				KiteSurfMenuStyle::BuildPanel(KiteSurfControlsLegend::Build())
 			]
 		];
+
+	return KiteSurfMenuStyle::BuildBackdrop(&BackgroundBrush, BackgroundTexture != nullptr, MenuContent);
 }
 
 void UKiteSurfMainMenuWidget::OnPlayClicked()
 {
+	UWorld* World = GetWorld();
+	if (!World || ActiveGearWidget)
+	{
+		return;
+	}
+
+	// Gear first: wind, kite, board and rider are chosen before the ride starts.
+	ActiveGearWidget = CreateWidget<UKiteSurfGearWidget>(World, UKiteSurfGearWidget::StaticClass());
+	if (ActiveGearWidget)
+	{
+		ActiveGearWidget->OnConfirmedDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::StartRide);
+		ActiveGearWidget->OnCancelledDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::OnGearCancelled);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveGearWidget->AddToViewport(20);
+		}
+		ActiveGearWidget->FocusFirst();
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UKiteSurfMainMenuWidget::StartRide()
+{
+	ActiveGearWidget = nullptr;
 	if (UWorld* World = GetWorld())
 	{
 		UGameplayStatics::OpenLevel(World, FName(TEXT("L_OpenWater")));
 	}
+}
+
+void UKiteSurfMainMenuWidget::OnGearCancelled()
+{
+	ActiveGearWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
+	FocusFirst();
 }
 
 void UKiteSurfMainMenuWidget::OnSettingsClicked()

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateBrush.h"
 #include "KiteSurfMainMenuWidget.generated.h"
 
 class UButton;
@@ -31,8 +32,19 @@ public:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Menu")
 	TObjectPtr<UKiteSurfSettingsWidget> ActiveSettingsWidget;
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Menu")
+	TObjectPtr<class UKiteSurfGearWidget> ActiveGearWidget;
+
+	/** Opens the gear screen; the ride starts when it is confirmed. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OnPlayClicked();
+
+	/** Gear chosen: load the open water level. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void StartRide();
+
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OnGearCancelled();
 
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OnSettingsClicked();
@@ -52,6 +64,10 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> BackgroundTexture;
+	FSlateBrush BackgroundBrush;
+
 	TSharedPtr<SButton> SlatePlayButton;
 	TSharedPtr<SButton> SlateSettingsButton;
 	TSharedPtr<SButton> SlateQuitButton;

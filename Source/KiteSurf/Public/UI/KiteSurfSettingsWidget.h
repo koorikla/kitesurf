@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "RiderCharacter.h"
 #include "KiteSurfSettingsWidget.generated.h"
@@ -91,6 +92,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleVSync();
 
+	/** Controller motion sensors as the bar, instead of the right stick. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bMotionBar = false;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleMotionBar();
+
+	/** What the motion bar row's note says: what it does, or which controller it found. */
+	UFUNCTION(BlueprintPure, Category = "Settings")
+	FString GetMotionBarNote() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetVSyncEnabled(bool bInVSync);
 
@@ -155,7 +167,14 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
+	void BuildNavigation();
+	FKiteMenuNavigator Navigator;
+
 	void InitializeSettings();
 	void UpdateTextDisplays();
 
@@ -183,6 +202,10 @@ private:
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;
+
+	TSharedPtr<SButton> SlateMotionBarButton;
+	TSharedPtr<STextBlock> SlateMotionBarText;
+	TSharedPtr<STextBlock> SlateMotionBarNote;
 
 	TSharedPtr<SButton> SlateVSyncButton;
 	TSharedPtr<STextBlock> SlateVSyncText;

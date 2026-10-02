@@ -17,6 +17,7 @@ namespace
 		{ TEXT("Pop (hold S + send the kite first)"), TEXT("Space"),                     TEXT("Bottom face button") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
 		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },
+		{ TEXT("In menus: move, change, select"),  TEXT("Arrows, Enter; Esc goes back"), TEXT("D-pad or left stick, bottom face button") },
 	};
 
 	const float ActionColumnWidth = 290.0f;

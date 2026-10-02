@@ -90,6 +90,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::BuildChoiceRow(const TCHAR* Label, TSha
 			.VAlign(VAlign_Center)
 			[
 				SAssignNew(OutButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([OnClicked]()
 				{
@@ -167,6 +168,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			.VAlign(VAlign_Center)
 			[
 				SAssignNew(WindSlider, SSlider)
+				.IsFocusable(false)
 				.Value((CurrentWindKnots - MinWindKnots) / (MaxWindKnots - MinWindKnots))
 				.StepSize(1.0f / (MaxWindKnots - MinWindKnots))
 				.OnValueChanged_Lambda([this](float Normalised)
@@ -213,6 +215,7 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SAssignNew(ConfirmButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([this]()
 				{
@@ -229,7 +232,8 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
-				SNew(SButton)
+				SAssignNew(BackButton, SButton)
+				.IsFocusable(false)
 				.HAlign(HAlign_Center)
 				.OnClicked_Lambda([this]()
 				{
@@ -373,6 +377,32 @@ void UKiteSurfGearWidget::SetKiteSizeM2(float SizeM2)
 	UpdateTexts();
 }
 
+FKiteMenuNavigator::FItem UKiteSurfGearWidget::MakeKiteSizeItem()
+{
+	// Accept steps on to the next size as a click does; left and right step either way through
+	// recommended, 5 m ... 17 m.
+	FKiteMenuNavigator::FItem Item;
+	Item.Activate = [this]() { CycleKiteSize(); };
+	Item.Adjust = [this](int32 Direction)
+	{
+		const TConstArrayView<float> Sizes = UKiteComponent::GetKiteSizesM2();
+		// Position in the cycle: 0 is "recommended", then the sizes.
+		const int32 Position = Sizes.IndexOfByKey(CurrentKiteSizeM2) + 1;
+		const int32 Count = Sizes.Num() + 1;
+		const int32 Next = ((Position + Direction) % Count + Count) % Count;
+		SetKiteSizeM2(Next == 0 ? 0.0f : Sizes[Next - 1]);
+	};
+	const TWeakPtr<SButton> WeakButton = KiteSizeButton;
+	Item.Highlight = [WeakButton](bool bSelected)
+	{
+		if (const TSharedPtr<SButton> Pinned = WeakButton.Pin())
+		{
+			Pinned->SetBorderBackgroundColor(bSelected ? FLinearColor(1.0f, 0.8f, 0.15f) : FLinearColor::White);
+		}
+	};
+	return Item;
+}
+
 void UKiteSurfGearWidget::CycleBoardSize()
 {
 	CurrentBoardSize = KiteGear::Next(CurrentBoardSize);
@@ -429,6 +459,14 @@ void UKiteSurfGearWidget::UpdateTexts()
 		}
 	};
 	Set(WindText, FString::Printf(TEXT("%.0f kn"), CurrentWindKnots));
+	if (WindSlider.IsValid())
+	{
+		const float Normalised = (CurrentWindKnots - MinWindKnots) / (MaxWindKnots - MinWindKnots);
+		if (!FMath::IsNearlyEqual(WindSlider->GetValue(), Normalised, 0.001f))
+		{
+			WindSlider->SetValue(Normalised); // moved by the keys rather than the mouse
+		}
+	}
 	Set(KiteSizeText, GetKiteSizeText());
 	Set(KiteSizeDescription, GetPowerText());
 	Set(KiteModelText, KiteGear::GetDisplayName(CurrentKiteModel));
@@ -500,15 +538,48 @@ void UKiteSurfGearWidget::Cancel()
 
 void UKiteSurfGearWidget::FocusFirst()
 {
-	if (ConfirmButton.IsValid())
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		FSlateApplication::Get().SetKeyboardFocus(ConfirmButton);
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
+}
+
+FKiteMenuNavigator& UKiteSurfGearWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
+	{
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
+	}
+	return Navigator;
+}
+
+void UKiteSurfGearWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.AddSlider(WindSlider, [this](int32 Direction) { SetWindKnots(CurrentWindKnots + Direction); });
+	Navigator.AddItem(MakeKiteSizeItem());
+	Navigator.AddButton(KiteModelButton, [this]() { CycleKiteModel(); }, true);
+	Navigator.AddButton(BoardButton, [this]() { CycleBoardSize(); }, true);
+	Navigator.AddButton(RiderButton, [this]() { CycleRider(); }, true);
+	Navigator.AddButton(SandbarsButton, [this]() { ToggleSandbars(); }, true);
+	Navigator.AddButton(IslandsButton, [this]() { ToggleIslands(); }, true);
+	Navigator.AddButton(SharksButton, [this]() { ToggleSharks(); }, true);
+	Navigator.DefaultIndex = Navigator.AddButton(ConfirmButton, [this]() { Confirm(); });
+	Navigator.AddButton(BackButton, [this]() { Cancel(); });
 }
 
 FReply UKiteSurfGearWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right)
 	{
 		Cancel();

@@ -557,7 +557,7 @@ void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 	const bool bFlying = !Kite->IsCrashed() && Kite->AreLinesTaut();
 
 	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.75f), ScreenX, ScreenY, Width, Height);
-	DrawText(TEXT("BAR"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + 10.0f, ScreenY + 6.0f, nullptr, 1.0f);
+	DrawText(RiderPawn->IsMotionBarActive() ? TEXT("BAR  (motion)") : TEXT("BAR"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + 10.0f, ScreenY + 6.0f, nullptr, 1.0f);
 	if (bLooping)
 	{
 		DrawText(TEXT("LOOP"), FLinearColor(1.0f, 0.5f, 0.1f), ScreenX + Width - 50.0f, ScreenY + 6.0f, nullptr, 1.0f);

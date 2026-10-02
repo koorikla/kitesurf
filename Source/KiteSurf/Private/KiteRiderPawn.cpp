@@ -196,6 +196,7 @@ void AKiteRiderPawn::BeginPlay()
 		if (const UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
 		{
 			SetRiderCharacter(GI->RiderCharacter);
+			SetMotionBarEnabled(GI->bMotionBar);
 		}
 	}
 
@@ -277,10 +278,90 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	PlayerInputComponent->BindKey(EKeys::Gamepad_Special_Left, IE_Pressed, this, &AKiteRiderPawn::ResetRider);
 }
 
+void AKiteRiderPawn::SetMotionBarEnabled(bool bEnabled)
+{
+	bMotionBarEnabled = bEnabled;
+	if (bEnabled)
+	{
+		if (!MotionSource)
+		{
+			MotionSource = KiteMotionBar::CreatePlatformSource();
+		}
+		MotionFilter.Reset();
+		bMotionRecentrePending = true;
+	}
+	else if (bMotionBarActive)
+	{
+		// Hand the bar back level, where it is.
+		bMotionBarActive = false;
+		SteerKite(KeySteerInput + MouseSteerInput);
+	}
+}
+
+void AKiteRiderPawn::RecentreMotionBar()
+{
+	bMotionRecentrePending = true;
+}
+
+FString AKiteRiderPawn::GetMotionDeviceName() const
+{
+	return MotionSource ? MotionSource->GetDeviceName() : FString();
+}
+
+void AKiteRiderPawn::SetMotionSource(TSharedPtr<IKiteMotionSource> InSource)
+{
+	MotionSource = InSource;
+	MotionFilter.Reset();
+	bMotionRecentrePending = true;
+}
+
+void AKiteRiderPawn::UpdateMotionBar(float DeltaTime)
+{
+	FKiteMotionSample Sample;
+	const bool bHaveReading = bMotionBarEnabled && MotionSource && MotionSource->Poll(Sample);
+	if (!bHaveReading)
+	{
+		if (bMotionBarActive)
+		{
+			// The controller went away: the stick and keys have the bar again.
+			bMotionBarActive = false;
+			MotionFilter.Reset();
+			SteerKite(KeySteerInput + MouseSteerInput);
+		}
+		return;
+	}
+
+	LastMotionSample = Sample;
+	MotionFilter.Update(Sample, DeltaTime);
+	if (!MotionFilter.IsInitialized())
+	{
+		return;
+	}
+	if (bMotionRecentrePending || !bMotionBarActive)
+	{
+		// However the pad is being held now is "bar level": no jump in steering or power.
+		MotionBarMapping.Calibrate(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg(), CurrentSheetInput);
+		bMotionRecentrePending = false;
+	}
+	bMotionBarActive = true;
+
+	// The right stick is taken out of the steering: the keys and the mouse still add to the tilt.
+	float StickSteer = 0.0f;
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		StickSteer = PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX);
+	}
+	SteerKite(KeySteerInput - StickSteer + MouseSteerInput + MotionBarMapping.GetSteer(MotionFilter.GetRollDeg()));
+	SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+}
+
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 {
 	KeySteerInput = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
-	SteerKite(KeySteerInput + MouseSteerInput);
+	if (!bMotionBarActive)
+	{
+		SteerKite(KeySteerInput + MouseSteerInput);
+	}
 }
 
 void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop)
@@ -435,7 +516,10 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
 
-	if (!FMath::IsNearlyZero(SheetRateInput))
+	UpdateMotionBar(DeltaTime);
+
+	// With the motion bar in the rider's hands, the stick, triggers and keys leave the bar alone.
+	if (!bMotionBarActive && !FMath::IsNearlyZero(SheetRateInput))
 	{
 		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
 	}
@@ -677,6 +761,7 @@ void AKiteRiderPawn::OnResetTriggered(const FInputActionValue& Value)
 
 void AKiteRiderPawn::ResetRider()
 {
+	RecentreMotionBar();
 	if (BoardMovement)
 	{
 		BoardMovement->ResetToTack(8.0f);

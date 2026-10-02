@@ -185,6 +185,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f)
 				[
 					SAssignNew(SlatePlayButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -205,6 +206,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f)
 				[
 					SAssignNew(SlateSettingsButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -225,6 +227,7 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 				.Padding(30.0f, 8.0f, 30.0f, 30.0f)
 				[
 					SAssignNew(SlateQuitButton, SButton)
+					.IsFocusable(false)
 					.HAlign(HAlign_Center)
 					.VAlign(VAlign_Center)
 					.OnClicked_Lambda([this]()
@@ -386,14 +389,32 @@ void UKiteSurfMainMenuWidget::OnQuitClicked()
 
 void UKiteSurfMainMenuWidget::FocusFirst()
 {
-	if (PlayButton)
+	// The menu itself holds keyboard focus and routes keys to its navigator; the controls are
+	// built not to take focus, so a mouse click does not leave the keys on one of them.
+	BuildNavigation();
+	Navigator.Select(Navigator.DefaultIndex);
+	if (const TSharedPtr<SWidget> Widget = GetCachedWidget())
 	{
-		PlayButton->SetKeyboardFocus();
+		FSlateApplication::Get().SetKeyboardFocus(Widget);
 	}
-	else if (SlatePlayButton.IsValid())
+}
+
+FKiteMenuNavigator& UKiteSurfMainMenuWidget::GetNavigator()
+{
+	if (Navigator.Num() == 0)
 	{
-		FSlateApplication::Get().SetKeyboardFocus(SlatePlayButton);
+		BuildNavigation();
+		Navigator.Select(Navigator.DefaultIndex);
 	}
+	return Navigator;
+}
+
+void UKiteSurfMainMenuWidget::BuildNavigation()
+{
+	Navigator.Reset();
+	Navigator.AddButton(SlatePlayButton, [this]() { OnPlayClicked(); });
+	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
+	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });
 }
 
 FReply UKiteSurfMainMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -405,6 +426,10 @@ FReply UKiteSurfMainMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, con
 	}
 
 	const FKey Key = InKeyEvent.GetKey();
+	if (GetNavigator().HandleKey(Key))
+	{
+		return FReply::Handled();
+	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_Special_Right)
 	{
 		OnQuitClicked();

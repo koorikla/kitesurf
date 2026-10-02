@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/KiteSurfMenuNavigator.h"
 #include "Styling/SlateBrush.h"
 #include "KiteSurfMainMenuWidget.generated.h"
 
@@ -77,6 +78,10 @@ protected:
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
+	/** Keyboard and gamepad navigation: the selection, and what each item does. Public so tests can drive it. */
+public:
+	FKiteMenuNavigator& GetNavigator();
+
 private:
 	class UKiteSurfMenuVideoSubsystem* GetVideos() const;
 
@@ -87,6 +92,9 @@ private:
 	double IntroStartTime = 0.0;
 	/** When the intro ended into the menu, for the white flash that fades off it; 0 for none. */
 	double FlashStartTime = 0.0;
+
+	void BuildNavigation();
+	FKiteMenuNavigator Navigator;
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UTexture2D> BackgroundTexture;

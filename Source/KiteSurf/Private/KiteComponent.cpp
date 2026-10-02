@@ -219,9 +219,9 @@ void UKiteComponent::SetupVisuals()
 			LeftCenterLine->RegisterComponent();
 			LeftCenterLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 			LeftCenterLine->CableWidth = 2.0f;
-			LeftCenterLine->NumSegments = 10;
+			LeftCenterLine->NumSegments = 1;
 			LeftCenterLine->SolverIterations = 1;
-			LeftCenterLine->bEnableStiffness = true;
+			LeftCenterLine->bEnableStiffness = false;
 			LeftCenterLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
 			if (LineMat)
@@ -239,9 +239,9 @@ void UKiteComponent::SetupVisuals()
 			RightCenterLine->RegisterComponent();
 			RightCenterLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 			RightCenterLine->CableWidth = 2.0f;
-			RightCenterLine->NumSegments = 10;
+			RightCenterLine->NumSegments = 1;
 			RightCenterLine->SolverIterations = 1;
-			RightCenterLine->bEnableStiffness = true;
+			RightCenterLine->bEnableStiffness = false;
 			RightCenterLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
 			if (LineMat)

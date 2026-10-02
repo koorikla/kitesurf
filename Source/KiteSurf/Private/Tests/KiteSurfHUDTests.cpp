@@ -88,7 +88,7 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestTrue(TEXT("IMC_Default maps IA_Jump"), bHasJumpMapping);
 		TestTrue(TEXT("IMC_Default maps IA_Pause"), bHasPauseMapping);
 
-		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis };
+		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis, EKeys::Gamepad_RightY };
 		TSet<FKey> FoundNegativeKeys;
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
@@ -108,9 +108,10 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 				TestTrue(FString::Printf(TEXT("Mapping for %s has InputModifierNegate"), *Mapping.Key.ToString()), bHasNegate);
 			}
 		}
-		TestEqual(TEXT("All 5 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+		TestEqual(TEXT("All 6 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
 
-		// Down pulls the bar in (power), so it is the positive direction of IA_Sheet.
+		// Down pulls the bar in (power), so it is the positive direction of IA_Sheet. The right
+		// stick is negated above for the same reason: pulled back (its negative axis) is power.
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
 			if (Mapping.Key == EKeys::Down)

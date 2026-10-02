@@ -768,6 +768,10 @@ FKiteMenuNavigator& UKiteSurfGearWidget::GetNavigator()
 void UKiteSurfGearWidget::BuildNavigation()
 {
 	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
 	Navigator.AddSlider(WindSlider, [this](int32 Direction) { SetWindKnots(CurrentWindKnots + Direction); });
 	Navigator.AddItem(MakeKiteSizeItem());
 	Navigator.AddButton(KiteModelButton, [this]() { CycleKiteModel(); }, true);
@@ -789,6 +793,7 @@ FReply UKiteSurfGearWidget::NativeOnKeyDown(const FGeometry& InGeometry, const F
 	}
 	if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right)
 	{
+		KiteSurfMenuStyle::PlayMenuSound(this, EKiteMenuSound::Back);
 		Cancel();
 		return FReply::Handled();
 	}

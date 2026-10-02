@@ -22,7 +22,24 @@ class UInputAction;
 class UAudioComponent;
 class USoundBase;
 
-/** Volume and pitch for the three sound loops: wind in the ears, water under the board, lines under load. */
+/** What the rider is doing, as far as it can be heard. */
+struct FRideAudioState
+{
+	/** Wind past the rider's ears: true wind less their own motion (knots). */
+	float ApparentWindKnots = 0.0f;
+	float BoardSpeedKnots = 0.0f;
+	bool bOnWater = true;
+	float LineTensionN = 0.0f;
+	/** Air over the kite (m/s): about the wind when it is parked, several times that through a loop. */
+	float KiteAirspeedMS = 0.0f;
+	/** The canopy has no load in it: slack lines, a stall, or the bar right out. 0..1. */
+	float KiteLuff = 0.0f;
+	/** How hard the edge is driven: carving or a loaded crouch. 0..1. */
+	float EdgeEffort = 0.0f;
+	bool bAirborne = false;
+};
+
+/** Volume and pitch for each sound loop, and how much of the music's second layer to play. */
 struct FRideAudioMix
 {
 	float WindVolume = 0.0f;
@@ -31,6 +48,24 @@ struct FRideAudioMix
 	float WaterPitch = 1.0f;
 	float LineVolume = 0.0f;
 	float LinePitch = 1.0f;
+	/** Spray off a hard edge. */
+	float SprayVolume = 0.0f;
+	/** The kite moving through the air. */
+	float KiteVolume = 0.0f;
+	float KitePitch = 1.0f;
+	/** A luffing canopy flapping. */
+	float FlutterVolume = 0.0f;
+	/** The music's in-the-air layer, 0..1 of the music volume. */
+	float AirMusic = 0.0f;
+};
+
+/** Something that happened to the rider that has its own sound. */
+enum class ERideSound : uint8
+{
+	KiteCrash,
+	Relaunch,
+	Aground,
+	Shark
 };
 
 UCLASS()
@@ -168,7 +203,47 @@ public:
 	FMotionBarMapping MotionBarMapping;
 
 	/** How loud and at what pitch each loop should play for what the rider is doing. Volumes 0..1, pitch 1 = as recorded. */
+	static FRideAudioMix ComputeAudioMix(const FRideAudioState& State);
+
+	/** The same for a rider with a parked kite and no edge: wind, water and lines only. */
 	static FRideAudioMix ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN);
+
+	/** Plays the sound for something that happened. Running aground and a shark replace the splash of the crash they cause. */
+	void PlayRideSound(ERideSound Sound);
+
+	/** How many ride sounds have been asked for, and the last one, for tests. */
+	int32 GetRideSoundCount() const { return RideSoundCount; }
+	ERideSound GetLastRideSound() const { return LastRideSound; }
+
+	/** Music volume, 0..1: the ride's music follows it at once. */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetMusicVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetMusicVolume() const { return MusicVolume; }
+
+	/** Ambient volume, 0..1: scales the wind, water, spray, line, kite and flutter loops. */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetAmbientVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetAmbientVolume() const { return AmbientVolume; }
+
+	/** Effects volume, 0..1: scales the one-shots (pop, landing, crashes, reset and the rest). */
+	UFUNCTION(BlueprintCallable, Category = "Audio")
+	void SetEffectsVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	float GetEffectsVolume() const { return EffectsVolume; }
+
+	/** The volume the last one-shot was played at, after the effects volume, for tests. */
+	float GetLastOneShotVolume() const { return LastOneShotVolume; }
+
+	UAudioComponent* GetMusicBase() const { return MusicBaseComponent.Get(); }
+	UAudioComponent* GetMusicAir() const { return MusicAirComponent.Get(); }
+	UAudioComponent* GetSprayLoop() const { return SprayLoopComponent.Get(); }
+	UAudioComponent* GetKiteLoop() const { return KiteLoopComponent.Get(); }
+	UAudioComponent* GetFlutterLoop() const { return FlutterLoopComponent.Get(); }
 
 	/** The mix the loops are playing at now. */
 	const FRideAudioMix& GetAudioMix() const { return AudioMix; }
@@ -338,6 +413,34 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> LineLoopComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> SprayLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> KiteLoopComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> FlutterLoopComponent;
+
+	/** The ride's music: two loops of the same length played in step. The second comes in while the rider is in the air. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> MusicBaseComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> MusicAirComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> KiteCrashSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> RelaunchSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> AgroundSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> SharkSound;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<USoundBase> PopSound;
 
@@ -404,6 +507,18 @@ private:
 
 	void UpdateAudioModulation(float DeltaTime);
 	FRideAudioMix AudioMix;
+	void PlayOneShot(USoundBase* Sound, float Volume, float Pitch = 1.0f);
+	float MusicVolume = 0.6f;
+	float AmbientVolume = 1.0f;
+	float EffectsVolume = 1.0f;
+	float LastOneShotVolume = 0.0f;
+	int32 RideSoundCount = 0;
+	ERideSound LastRideSound = ERideSound::KiteCrash;
+	/** Set by running aground or a shark: the crash that follows keeps quiet, as they have their own sound. */
+	bool bSkipNextCrashSplash = false;
+
+	UFUNCTION()
+	void HandleKiteRelaunched();
 
 	void UpdateMotionBar(float DeltaTime);
 	TSharedPtr<IKiteMotionSource> MotionSource;
@@ -414,7 +529,7 @@ private:
 	bool bMotionRecentrePending = false;
 
 	UFUNCTION()
-	void HandleKiteCrashedHaptic(FVector Location);
+	void HandleKiteCrashed(FVector Location);
 	bool bHapticsEnabled = true;
 	int32 HapticCount = 0;
 	float LastHapticIntensity = 0.0f;

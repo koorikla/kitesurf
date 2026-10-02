@@ -1,4 +1,5 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
@@ -366,6 +367,10 @@ FKiteMenuNavigator& UKiteSurfPauseMenuWidget::GetNavigator()
 void UKiteSurfPauseMenuWidget::BuildNavigation()
 {
 	Navigator.Reset();
+	Navigator.OnAction = [this](FKiteMenuNavigator::EAction Action)
+	{
+		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
+	};
 	Navigator.AddButton(SlateResumeButton, [this]() { OnResumeClicked(); });
 	Navigator.AddButton(SlateRestartButton, [this]() { OnRestartClicked(); });
 	Navigator.AddButton(SlateGearButton, [this]() { OnGearClicked(); });

@@ -105,6 +105,12 @@ working. Linux only for now.
 landing), on a crash, when the kite hits the water, and once when the lines yank hard, as in a
 loop. Settings has a VIBRATION switch (on by default).
 
+**Sound and music.** The ride has wind, water, spray, line, kite and canopy sounds that follow
+what the rider is doing, and music with a second layer that comes in while you are in the air.
+Settings has separate MASTER, MUSIC, AMBIENT (wind, water, lines, kite) and EFFECTS (pop,
+landings, crashes, menu sounds) volume sliders. Everything is synthesised by scripts in
+`scripts/editor/`; see the Sound section of `docs/movement.md`.
+
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
 second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board
 speed); right in it pulls about seven times as hard (1100 N, 22 kn). The ride starts with it 70%

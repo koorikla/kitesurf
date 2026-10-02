@@ -115,7 +115,24 @@ The board's size does not change how it looks yet.
 The sand is not yet part of the water surface the board rides on, and the sharks do not avoid the sand.
 
 ## Sound
-Three loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`): wind in the ears from the apparent wind, water under the board from board speed (silent in the air), and the lines singing from line tension (silent when slack). The pop, landing (louder and deeper the harder it is), crash and reset are one-shots. All of it is synthesised by `scripts/editor/make_sound_wavs.py` and imported by `make_sound_assets.py`; the loops are set to keep playing while silent so they come back after being faded out.
+Six loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`, from an `FRideAudioState`):
+
+| Loop | Follows | Silent when |
+| --- | --- | --- |
+| Wind in the ears | apparent wind | there is none |
+| Water under the board | board speed | the board is in the air |
+| Spray | edge or load crouch, times board speed | in the air, standing still, riding flat |
+| Lines singing | line tension | the lines are slack |
+| Kite through the air | the kite's airspeed above about 16 m/s, so a turn or a loop roars | the kite is parked or down |
+| Canopy flutter | a kite with no load in it: slack lines, a stall, or the bar right out | the kite is loaded, or there is no wind |
+
+One-shots, each played with a few per cent of random pitch so that no two are alike: the pop, the landing (louder and deeper the harder it is), the crash, the kite hitting the water, the relaunch, the board running aground, a shark, and the reset. Running aground and a shark replace the splash of the crash they cause. The menus tick on moving, chime on choosing and fall on going back (`KiteSurfMenuStyle::PlayMenuSound`, driven by `FKiteMenuNavigator::OnAction`).
+
+**Music.** The menus play `MU_Menu`. The ride plays two loops of exactly the same length, started on the same frame and never pitched, so they stay in step: `MU_RideBase` all the time, and `MU_RideAir` (the tune and a busier top end) faded in within half a second of leaving the water and out over about two seconds after landing. Music plays through a pause. 
+
+**Volume settings.** Settings has four sliders, all saved and all heard as they are moved: MASTER VOLUME over everything, MUSIC VOLUME (default 60 %), AMBIENT VOLUME for the six loops above, and EFFECTS VOLUME for the one-shots and the menus' sounds. `ComputeAudioMix` is what the ride calls for; the ambient volume scales what the loops then play.
+
+The effects are synthesised by `scripts/editor/make_sound_wavs.py` and the music is written out as notes and synthesised by `scripts/editor/make_music_wavs.py`; both are standard-library Python, and `make_sound_assets.py` imports the lot. The loops are set to keep playing while silent so they come back, in step, after being faded out.
 
 To hear what a scripted run sounds like without speakers, record it: `kitesurf.AudioRecordStart`, then `kitesurf.AudioRecordStop <name>` writes `Saved/BouncedWavFiles/<name>.wav`. An offscreen run is muted as an unfocused window unless it is started with `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`.
 

@@ -26,6 +26,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float MasterVolume;
 
+	/** Music volume (0.0 to 1.0, default 0.6), on top of the master volume */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float MusicVolume;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetMusicVolume(float InVolume);
+
+	/** Ambient volume (0.0 to 1.0, default 1.0): wind, water, spray, lines and the kite */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float AmbientVolume;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetAmbientVolume(float InVolume);
+
+	/** Effects volume (0.0 to 1.0, default 1.0): the pop, landings, crashes and the menus' sounds */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float EffectsVolume;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetEffectsVolume(float InVolume);
+
 	/** Whether onboarding prompts should be skipped */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSkipOnboarding;

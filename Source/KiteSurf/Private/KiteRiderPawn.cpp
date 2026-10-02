@@ -153,6 +153,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraLookPitchDeg = 0.0f;
 	RiderFacingYawDeg = 0.0f;
 	bViewInitialized = false;
+	LastPauseToggleFrame = MAX_uint64;
 	KiteAzimuthDeg = 0.0f;
 	BoardVelocity = FVector::ZeroVector;
 }
@@ -518,6 +519,14 @@ void AKiteRiderPawn::OnPauseTriggered(const FInputActionValue& Value)
 
 void AKiteRiderPawn::TogglePause()
 {
+	// Escape reaches this twice on one press (the Enhanced Input action and the fallback key
+	// binding), which opened the menu and closed it again in the same frame.
+	if (LastPauseToggleFrame == GFrameCounter)
+	{
+		return;
+	}
+	LastPauseToggleFrame = GFrameCounter;
+
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))

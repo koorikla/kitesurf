@@ -218,6 +218,7 @@ private:
 	float CameraLookPitchDeg;
 	float RiderFacingYawDeg;
 	bool bViewInitialized;
+	uint64 LastPauseToggleFrame;
 	float KiteAzimuthDeg;
 	FVector BoardVelocity;
 };

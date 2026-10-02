@@ -85,13 +85,13 @@ loop on the new side; let go as the kite gets there if you do not want one.
 **Jumping.** A pop on its own is a hop of about a metre: the height comes from the kite. Hold
 your weight back (S) to dig the edge in, steer the kite up hard, and as the pull builds pull the
 bar in and pop. Let go too early and the kite has not loaded up yet; hold on too long and it
-rips you off your edge, which is a much lower jump. Timed well, that is 5 m in 15 kn, 15 m in
-30 kn and 25 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
+rips you off your edge, which is a much lower jump. Timed well, that is about 7 m in 15 kn, 15 m
+in 30 kn and 20 m in 40 kn. Steering the kite up without holding an edge just plucks you off the
 water. A kite looped through the middle of the window pulls several times harder than a parked one.
 
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
-second. Right out, the kite flags and barely pulls (about 150 N on the 9 m in 20 kn, 8 kn of board
-speed); right in it pulls about seven times as hard (1100 N, 22 kn). The ride starts with it 70%
+second. Right out, the kite flags and barely pulls (about 170 N on the 9 m in 20 kn, 9 kn of board
+speed); right in it pulls six or seven times as hard (1100 N, 22 kn). The ride starts with it 70%
 in.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.

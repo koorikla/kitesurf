@@ -2,17 +2,33 @@
 
 ## Coordinate & Unit Conventions
 
-- **Distance / Position**: Centimeters (Unreal units, cm)
-- **Velocity**: Centimeters per second (cm/s)
-- **Wind Speed**: 1 knot = 51.44 cm/s. Default BaseWind = 15 knots ≈ 772 cm/s.
+Every unit constant and conversion is defined once, in `Source/KiteSurf/Public/KiteSurfUnits.h` (`namespace KiteUnits`): `CmPerM`, `CmPerKnot` (51.44), `UnrealForcePerN` (100), `GravityMS2` (9.81) and `GravityCmS2`, `AirDensityKgM3` (1.225), `WaterDensityKgM3` (1025), and `KnotsToCmS`, `CmSToKnots`, `KnotsToMS`, `MToCm`, `CmToM`, `NToUnrealForce`, `UnrealForceToN`. Code uses these instead of writing the numbers out.
+
+- **Distance / Position**: Centimeters (Unreal units, cm).
+- **Velocity**: Centimeters per second (cm/s) at the component APIs.
+- **Forces**: kg*cm/s^2 between components (`UKiteComponent::GetLineForce`, `UBoardMovementComponent::AddExternalForce`; 1 N = 100); tensions and debug forces are in N. The kite's aerodynamics and the rider's air drag are done in SI (m, m/s, N) inside the step and converted once at the boundary.
+- **Gravity**: `KiteUnits::GravityMS2` for the kite and the board alike, whatever the world settings say.
+- **Wind Speed**: knots at the UI, cm/s in the simulation. Default `BaseWind` = 15 kn ≈ 772 cm/s at 10 m.
 - **Water Plane**: World Z = 0.
 - **Angles**: Degrees (-90° to +90° azimuth relative to wind direction).
+- **Tunables** carry their unit in the name (`PlaningDragKgPerS`, `PopImpulseKgCmPerS`, `GravityTurnRadMPerS2`, `RiderDragAreaM2`, ...) or the tooltip.
 
 ## Core Contracts & Public APIs
 
 | Class | Method / Property | Description |
 |---|---|---|
-| `UWindComponent` | `FVector GetWindAtTime(const FVector& WorldLocation, float TimeSeconds) const` | The wind (cm/s) at a place and time: a pure function of position, time, the parameters and `Seed` (profile, travelling gusts, direction drift). The kite samples it at its own simulation time. |
+| `AKiteRiderPawn` | `void StepSimulation(float StepSeconds)` | One fixed step of the whole rig: `Kite->StepKite`, the line force to the board, `BoardMovement->StepBoard`. `Tick` runs as many as the frame holds. |
+| `AKiteRiderPawn` | `float GetSimTimeSeconds() const` / `int32 GetLastFrameSimSteps() const` | Time the simulation has advanced (s); how many fixed steps the last frame ran. |
+| `AKiteRiderPawn` | `float SimStepSeconds` / `float MaxFrameSeconds` / `int32 MaxSimStepsPerFrame` / `bool bInterpolateRendering` / `bool bStepSimulation` | The fixed step (1/240 s), the frame clamp (0.1 s), the step cap (32), drawing between the last two steps (on), and stepping at all (off for tests that pose the rider by hand). |
+| `UKiteComponent` | `void StepKite(float StepSeconds)` | One fixed step of the kite with the rider where they are now; the pawn calls it. |
+| `UKiteComponent` | `void UpdateKite(float DeltaTime)` | Advances the kite by any time in steps of at most `MaxStepSeconds`, for tests and a kite nobody else steps. |
+| `UKiteComponent` | `float GetSimTimeSeconds() const` | Time the kite's simulation has advanced (s); it samples the wind at this time. |
+| `UKiteComponent` | `float GetSteeringDeadTimeSeconds() const` | How long the rider's bar takes to reach the kite at the current sheet: `SteeringDeadTimeSeconds` (0.15 s) plus `DepoweredDeadTimeExtraSeconds` (0.3 s) times `1 - Sheet`. |
+| `UKiteComponent` | `float SteeringDragFactor` / `float GravityTurnRadMPerS2` / `float DepoweredTurnRateFactor` / `float ZeroLiftAngleDeg` | Steering drag (attached-flow drag times 1 + 0.6 times the steering), the gravity turn (c_2 over airspeed, 2.4 rad m/s^2 at 12 m^2), the turn rate with the bar out as a fraction of bar in (0.45), the zero-lift angle (0 deg). |
+| `UBoardMovementComponent` | `void StepBoard(float StepSeconds)` | One fixed step of the board with the external force added since the last one; the pawn calls it. |
+| `UBoardMovementComponent` | `void Simulate(float DeltaTime)` | Advances the board by any time in steps of at most `MaxStepSeconds`, holding a force added before the call for the whole of it; `TickComponent` calls it. |
+| `UBoardMovementComponent` | `float GetSimTimeSeconds() const` / `float RiderDragAreaM2` | Time the board's simulation has advanced (s), at which it samples the rider's wind in the air; the drag area of the rider and board in the air (0.7 m^2). |
+| `UWindComponent` | `FVector GetWindAtTime(const FVector& WorldLocation, float TimeSeconds) const` | The wind (cm/s) at a place and time: a pure function of position, time, the parameters and `Seed` (profile, travelling gusts, direction drift). The kite and the board sample it at their own simulation time. |
 | `UWindComponent` | `FVector GetWindAt(const FVector& WorldLocation) const` | The same at the current time (world time, or `TimeOverride` without a world). |
 | `UWindComponent` | `FVector BaseWind` | Mean wind at `ReferenceHeightCm` (default: `(772, 0, 0)` cm/s, 15 kn along +X); its direction is the mean direction. Set from the gear screen's wind by `AKiteSurfGameMode::InitializeRide` only. |
 | `UWindComponent` | `float ReferenceHeightCm` / `float ShearExponent` / `float MinSampleHeightCm` | Power-law profile: wind at z is `(max(z, MinSampleHeightCm) / ReferenceHeightCm) ^ ShearExponent` of `BaseWind` (defaults 1000 cm, 0.11, 100 cm: 0.78 at 1 m, 0.81 at 1.5 m, 1.11 at 25 m). |
@@ -34,13 +50,14 @@
 | `UBoardMovementComponent` | `void SetBoardSize(EBoardSize)` | Rides the 132, 138 or 145: pop, planing speed, drag, grip and turn rate follow it. |
 | `UKiteComponent` | `void SetBarEnds(const FVector&, const FVector&)` | The rider says where the bar is; the lines run from there. |
 | `AKiteRiderPawn` | `FVector GetHarnessHookWorldPosition() const` | Where the lines pull on the rider: the front of the waist. |
-| `UKiteComponent` | `float GetAppliedSteer() const` | Steering reaching the kite, -1..1: the bar while looping, the assist's command otherwise. |
+| `UKiteComponent` | `float GetAppliedSteer() const` | Steering reaching the kite, -1..1: the bar while looping, the assist's command otherwise; the rider's bar gets there `GetSteeringDeadTimeSeconds()` after it moves. |
 | `UBoardMovementComponent` | `bool IsFloating() const` / `float GetFloatDepthCm() const` | Whether the rider is in the water rather than up on the board, and how deep the board sits. |
 | `UKiteComponent` | `bool AreLinesTaut() const` | False while the lines are slack: the kite is not flying and the rider feels no pull. |
 | `UKiteComponent` | `float GetAngleOfAttackDeg() const` | Airflow angle to the canopy including bar trim; above `StallAngleDeg` the kite is stalled. |
 | `UKiteComponent` | `const FKiteStepDebug& GetLastStepDebug() const` | The last fixed step's true and apparent wind at the kite, lift, drag and side force (N), tension, angle of attack, Cl, Cd and taut or slack. |
-| `UBoardMovementComponent` | `const FBoardStepDebug& GetLastStepDebug() const` | The last fixed step's grip, drive and drag forces on the board (N) and its leeway (deg). Zero in the air. |
+| `UBoardMovementComponent` | `const FBoardStepDebug& GetLastStepDebug() const` | The last fixed step's grip, drive and drag forces on the board (N) and its leeway (deg), zero in the air; and the air's drag on the rider (N), only in the air. |
 | `AKiteRiderPawn` | `int32 GetPhysicsDebugLevel() const` | The level the pawn draws at: the `kite.Physics.Debug` console variable, at least 1 when the kite's `bDrawDebug` is set, 0 in Shipping. |
+| Console | `kite.Physics.Debug 0/1/2` | Off; draw the winds and forces at the kite and the rider; also log a `kitecsv` line per fixed step (below). |
 | `UWindComponent` | `float GetGustFactorAt(const FVector&) const` / `GetGustFactorAtTime(const FVector&, float)` | Wind over base wind at the reference height above that place, now or at a given time: above 1 in a gust, below 1 in a lull. |
 | `UKiteComponent` | `bool IsCrashed() const` | True while the kite lies on the water; `OnKiteCrashed` / `OnKiteRelaunched` fire on the way in and out. |
 | `AKiteRiderPawn` | `void SetRiderCharacter(ERiderCharacter)` | Shows Santa, the wetsuit rider or the robot; the choice is stored by `UKiteSurfGameInstance`. |
@@ -76,9 +93,15 @@ A console variable registered in `KiteRiderPawn.cpp`, compiled out of Shipping. 
 
 ## Tick Execution Order
 
-Physics simulation and component updates execute in the following sequential order:
-1. **Wind Simulation**: `UWindComponent` evaluates ambient wind vector and spatial gusts.
-2. **Kite Aerodynamics**: Kite azimuth, apparent wind, lift, and steering pull calculated.
-3. **Board Hydrodynamics**: Board hull planning forces, fin resistance, drag, and velocity updates. Z position clamped to water surface (Z=0).
-4. **Rider, camera & HUD**: rider stands square across the board and turns with it (feet in the straps), leaning against the kite's pull; the camera looks along the heading, turned towards the kite far enough to keep it in frame; HUD wind indicator, wind window and speedometer update.
-5. **Wake**: `UBoardWakeComponent` (post-physics) lays foam and throws spray from the board's new position.
+The pawn owns the simulation (`AKiteRiderPawn::Tick`, `KiteRiderPawn.cpp`). The kite and board components do not tick on their own under it (`bCanEverTick` is false); the wind has no tick and is sampled where it is needed.
+
+1. **Inputs**: the held sheet input moves the bar; the mouse bar is read.
+2. **Restore**: if the root is still where the last frame drew it, it goes back to the simulation's own transform; if something outside the step loop moved it (a reset, a test), that is the new truth.
+3. **Fixed steps**: the frame time, clamped to `MaxFrameSeconds`, is added to an accumulator, and `StepSimulation(SimStepSeconds)` runs while the accumulator holds a step, at most `MaxSimStepsPerFrame` times (a hitch drops the rest). Each step, in this order:
+   1. **Kite** (`UKiteComponent::StepKite`): wind at the kite at the kite's simulation time; the rider's bar as it was one dead time ago; the assist; lift, drag, side force and weight; the line constraint and tension; the line force on the rider.
+   2. **Line force** handed to the board (`AddExternalForce`).
+   3. **Board** (`UBoardMovementComponent::StepBoard`): water sample, buoyancy, lift-off, drag and grip as exact decays, edge drive, the rider's air drag in the air, orientation, move, landing.
+   4. With `kite.Physics.Debug 2`, a `kitecsv` line.
+4. **Draw between steps**: the root and the kite's mesh are placed between the last two simulation states by the accumulator's remainder (`bInterpolateRendering`).
+5. **Rider, camera, audio and debug**: the rider stands square across the board and turns with it (feet in the straps), leaning against the kite's pull, and tells the kite where the bar is; the camera looks along the heading, turned towards the kite far enough to keep it in frame; the sound loops follow the apparent wind, board speed and line tension; `kite.Physics.Debug 1` draws.
+6. **HUD and wake** read the drawn transforms: the HUD's wind indicator, wind window and speedometer, and `UBoardWakeComponent` (post-physics) lays foam and throws spray from the board's new position.

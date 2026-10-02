@@ -41,8 +41,13 @@ def make_kite_canopy(name='M_KiteCanopy', texture_name='T_KiteCanopy'):
     sample.set_editor_property('texture', texture)
     mel.connect_material_property(sample, 'RGB', unreal.MaterialProperty.MP_BASE_COLOR)
     roughness = mel.create_material_expression(material, unreal.MaterialExpressionConstant, -300, 250)
-    roughness.set_editor_property('r', 0.55)
+    roughness.set_editor_property('r', 0.25)
     mel.connect_material_property(roughness, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    
+    specular = mel.create_material_expression(material, unreal.MaterialExpressionConstant, -300, 350)
+    specular.set_editor_property('r', 0.8)
+    mel.connect_material_property(specular, '', unreal.MaterialProperty.MP_SPECULAR)
+    
     mel.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False)
     print(f'Created {name}')

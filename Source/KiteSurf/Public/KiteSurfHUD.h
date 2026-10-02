@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "BoardMovementComponent.h"
 #include "KiteSurfHUD.generated.h"
 
 class AKiteRiderPawn;
@@ -15,6 +16,15 @@ public:
 	AKiteSurfHUD();
 
 	virtual void DrawHUD() override;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Jump")
+	void ShowJumpRejection(EJumpRejectReason Reason);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetJumpRejectionText() const { return JumpRejectionRemainingTime > 0.0f ? JumpRejectionText : FString(); }
+
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	float GetJumpRejectionRemainingTime() const { return JumpRejectionRemainingTime; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UKiteSurfPauseMenuWidget> PauseMenuWidgetClass;
@@ -47,6 +57,12 @@ public:
 	static float KnotsToCmPerSec(float Knots);
 
 protected:
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
+	FString JumpRejectionText;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
+	float JumpRejectionRemainingTime = 0.0f;
+
 	void DrawTelemetry(AKiteRiderPawn* RiderPawn);
 	void DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius);
 	void DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius);

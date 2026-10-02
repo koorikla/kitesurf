@@ -292,28 +292,28 @@ bool FKiteSurfJumpOnlyFromPlaning::RunTest(const FString& Parameters)
 				BoardComp->Velocity = FVector(200.0f, 0.0f, 0.0f);
 				BoardComp->SetBoardState(EBoardState::Displacement);
 				BoardComp->SetEdgeInput(0.8f);
-				TestFalse(TEXT("Jump rejected when in Displacement state"), BoardComp->Jump());
+				TestEqual(TEXT("Jump rejected when in Displacement state"), BoardComp->Jump(), EJumpRejectReason::NotPlaning);
 				TestEqual(TEXT("State remains Displacement"), BoardComp->GetBoardState(), EBoardState::Displacement);
 
 				// Case 2: In Planing state, but edge input is below minimum (0.4)
 				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
 				BoardComp->SetBoardState(EBoardState::Planing);
 				BoardComp->SetEdgeInput(0.2f);
-				TestFalse(TEXT("Jump rejected when EdgeInput < 0.4"), BoardComp->Jump());
+				TestEqual(TEXT("Jump rejected when EdgeInput < 0.4"), BoardComp->Jump(), EJumpRejectReason::NotEdged);
 				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
 
 				// Case 3: In Planing state, but speed is below minimum (8 kn = 411.5 cm/s)
 				BoardComp->Velocity = FVector(350.0f, 0.0f, 0.0f);
 				BoardComp->SetBoardState(EBoardState::Planing);
 				BoardComp->SetEdgeInput(0.8f);
-				TestFalse(TEXT("Jump rejected when Speed < 8 knots"), BoardComp->Jump());
+				TestEqual(TEXT("Jump rejected when Speed < 8 knots"), BoardComp->Jump(), EJumpRejectReason::TooSlow);
 				TestEqual(TEXT("State remains Planing"), BoardComp->GetBoardState(), EBoardState::Planing);
 
 				// Case 4: Planing, speed >= 8 knots, edge input >= 0.4 -> Success
 				BoardComp->Velocity = FVector(772.0f, 0.0f, 0.0f); // 15 kn
 				BoardComp->SetBoardState(EBoardState::Planing);
 				BoardComp->SetEdgeInput(0.8f);
-				TestTrue(TEXT("Jump succeeds when planing, fast enough, and edging hard"), BoardComp->Jump());
+				TestEqual(TEXT("Jump succeeds when planing, fast enough, and edging hard"), BoardComp->Jump(), EJumpRejectReason::None);
 				TestEqual(TEXT("State transitions to Airborne"), BoardComp->GetBoardState(), EBoardState::Airborne);
 				TestTrue(TEXT("Vertical velocity positive on takeoff"), BoardComp->Velocity.Z > 200.0f);
 			}
@@ -360,7 +360,7 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				BoardComp->SetBoardState(EBoardState::Planing);
 				BoardComp->SetEdgeInput(0.8f);
 
-				TestTrue(TEXT("Jump pop succeeds"), BoardComp->Jump());
+				TestEqual(TEXT("Jump pop succeeds"), BoardComp->Jump(), EJumpRejectReason::None);
 				TestEqual(TEXT("Enters Airborne"), BoardComp->GetBoardState(), EBoardState::Airborne);
 
 				// Flight simulation with continuous kite lift

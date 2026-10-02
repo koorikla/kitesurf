@@ -91,6 +91,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleVSync();
 
+	/** Controller motion sensors as the bar, instead of the right stick. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bMotionBar = false;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleMotionBar();
+
+	/** What the motion bar row's note says: what it does, or which controller it found. */
+	UFUNCTION(BlueprintPure, Category = "Settings")
+	FString GetMotionBarNote() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetVSyncEnabled(bool bInVSync);
 
@@ -183,6 +194,10 @@ private:
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;
+
+	TSharedPtr<SButton> SlateMotionBarButton;
+	TSharedPtr<STextBlock> SlateMotionBarText;
+	TSharedPtr<STextBlock> SlateMotionBarNote;
 
 	TSharedPtr<SButton> SlateVSyncButton;
 	TSharedPtr<STextBlock> SlateVSyncText;

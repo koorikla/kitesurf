@@ -111,6 +111,16 @@ Three loops play all the time and are faded and pitched by what the rider would 
 
 To hear what a scripted run sounds like without speakers, record it: `kitesurf.AudioRecordStart`, then `kitesurf.AudioRecordStop <name>` writes `Saved/BouncedWavFiles/<name>.wav`. An offscreen run is muted as an unfocused window unless it is started with `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`.
 
+## Motion bar
+Behind the MOTION BAR setting (`UKiteSurfGameInstance::bMotionBar`, off by default), `AKiteRiderPawn` takes the bar from a controller's motion sensors instead of the right stick.
+
+- **Reading.** `IKiteMotionSource` gives accelerometer (g) and gyro (rad/s) readings in the controller's axes. On Linux `KiteMotionBar::CreatePlatformSource` reads them through the SDL instance the engine already runs (it opens the pads but does not pass motion on); the module includes SDL's headers and uses the symbols `ApplicationCore` exports, without linking a second copy. Other platforms return no source.
+- **Attitude.** `FMotionBarFilter` keeps an estimate of which way is up in the controller's axes: the gyro turns it at once, and the accelerometer pulls it back to true over `AccelTimeConstantSeconds` whenever it reads within `AccelTrustBandG` of 1 g. Roll is right side down; pitch is the top tipped towards the player, measured so that it does not change with roll.
+- **Bar.** `FMotionBarMapping`: roll beyond a 3 degree deadzone steers, full at 35 degrees; pitch moves the bar through its throw over 50 degrees. Switching on, a reset, or the controller reconnecting calibrates: the way it is held then is level, with the bar where it was.
+- **Hand-over.** While a reading is available the stick, triggers and keys do not move the bar's position and the right stick is taken out of the steering (the steering keys and the mouse still add). If the controller goes away the bar is handed back level.
+
+The right stick is left unused while the motion bar is active. `kitesurf.MotionBar <0|1>` switches it from the console and logs what is being read.
+
 ## Bar display
 The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite and match while looping.
 

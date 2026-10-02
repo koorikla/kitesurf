@@ -44,6 +44,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 BoardSizeIndex;
 
+	/** Use the controller's motion sensors as the bar (off by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bMotionBar;
+
 	/** What is in the water at the spot (all on by default) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSpotIslands;

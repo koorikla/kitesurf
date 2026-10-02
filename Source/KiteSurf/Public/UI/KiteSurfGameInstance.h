@@ -41,6 +41,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetRiderCharacter(ERiderCharacter InCharacter);
 
+	/** Use the controller's motion sensors as the bar instead of the right stick (off by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bMotionBar;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetMotionBar(bool bEnabled);
+
 	/** What is in the water at the spot */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSpotIslands;

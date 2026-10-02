@@ -121,6 +121,30 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.MotionBar"),
+			TEXT("Switches the motion bar on or off for the player's rider and logs what it reads. Usage: kitesurf.MotionBar <0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const bool bOn = !Args.IsValidIndex(0) || FCString::Atoi(*Args[0]) != 0;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						// Switching on re-centres, so an already running bar is reported as it was.
+						if (It->IsMotionBarEnabled() != bOn)
+						{
+							It->SetMotionBarEnabled(bOn);
+						}
+						const FKiteMotionSample& Sample = It->GetLastMotionSample();
+						UE_LOG(LogKiteSurf, Log, TEXT("Motion bar %s (active %d, device '%s', steer %.2f, sheet %.2f, roll %.1f deg, pitch %.1f deg, accel (%.2f, %.2f, %.2f) g, gyro (%.3f, %.3f, %.3f) rad/s)"),
+							bOn ? TEXT("on") : TEXT("off"), It->IsMotionBarActive(), *It->GetMotionDeviceName(), It->GetCurrentSteerInput(), It->GetCurrentSheetInput(),
+							It->GetMotionTiltDeg().X, It->GetMotionTiltDeg().Y, Sample.AccelG.X, Sample.AccelG.Y, Sample.AccelG.Z, Sample.GyroRadS.X, Sample.GyroRadS.Y, Sample.GyroRadS.Z);
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Jump"),
 			TEXT("Pops the player's rider off the water, as the jump key does."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -193,6 +217,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenGear"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MotionBar"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStart"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStop"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));

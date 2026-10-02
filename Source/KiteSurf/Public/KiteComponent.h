@@ -9,6 +9,25 @@ class UWindComponent;
 class UStaticMeshComponent;
 class UCableComponent;
 
+/** What the air did to the kite in its last fixed step, for debug drawing and telemetry. Winds in cm/s, forces in N, world frame. */
+struct FKiteStepDebug
+{
+	/** True wind at the kite. */
+	FVector TrueWindCmS = FVector::ZeroVector;
+	/** Air flowing past the kite: the true wind minus the kite's own velocity. */
+	FVector ApparentWindCmS = FVector::ZeroVector;
+	FVector LiftN = FVector::ZeroVector;
+	FVector DragN = FVector::ZeroVector;
+	/** The side force that resists the kite sliding sideways through the air. */
+	FVector SideN = FVector::ZeroVector;
+	/** Line tension the step needed, before MaxLineTensionN caps what the rider feels. */
+	float TensionN = 0.0f;
+	float AlphaDeg = 0.0f;
+	float LiftCoefficient = 0.0f;
+	float DragCoefficient = 0.0f;
+	bool bTaut = false;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnKiteCrashed, FVector, WaterLocation);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
 
@@ -170,6 +189,9 @@ public:
 	/** Angle of the airflow to the canopy, including bar trim (deg). Above StallAngleDeg the kite is stalled; below zero it is luffing. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetAngleOfAttackDeg() const { return AngleOfAttackDeg; }
+
+	/** The air's forces on the kite in the last fixed step: winds, lift, drag, side force, tension, angle of attack and coefficients. */
+	const FKiteStepDebug& GetLastStepDebug() const { return LastStepDebug; }
 
 	/** True while the lines are tight. With slack lines the kite is not flying and the rider feels nothing. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
@@ -368,6 +390,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float MaxLineTensionN;
 
+	/** Draw this kite's forces and its rider's as kite.Physics.Debug 1 does, whatever the console variable says. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Debug")
 	bool bDrawDebug;
 
@@ -459,4 +482,5 @@ protected:
 
 	float LineTensionN;
 	FVector LineForce;
+	FKiteStepDebug LastStepDebug;
 };

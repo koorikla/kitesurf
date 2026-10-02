@@ -55,6 +55,9 @@ public:
 	/** How many fixed steps the last frame ran. */
 	int32 GetLastFrameSimSteps() const { return LastFrameSimSteps; }
 
+	/** The physics debug level this pawn draws at: the kite.Physics.Debug console variable, or at least 1 when the kite's bDrawDebug is set. 0 in Shipping. */
+	int32 GetPhysicsDebugLevel() const;
+
 	/** The fixed step the kite, lines and board are simulated with (s). The same ride at any frame rate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Simulation", meta = (ClampMin = "0.0001"))
 	float SimStepSeconds;
@@ -343,6 +346,14 @@ private:
 	void HandleBoardLanding(float LandingG);
 
 	void UpdateAudioModulation(float DeltaTime);
+
+	/** kite.Physics.Debug 1: forces, winds and numbers at the kite and the rider, drawn for one frame. */
+	void DrawPhysicsDebug() const;
+
+	/** kite.Physics.Debug 2: one CSV line per fixed step to LogKiteSurf, so a ride can be plotted. */
+	void LogPhysicsTelemetry();
+	bool bLoggedTelemetryHeader = false;
+
 	FRideAudioMix AudioMix;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);

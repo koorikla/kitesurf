@@ -2,7 +2,6 @@
 #include "WindComponent.h"
 #include "KiteWindMath.h"
 #include "KiteSurf.h"
-#include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
 #include "CableComponent.h"
@@ -708,10 +707,19 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	// Lift acts at right angles to the flow in the plane of the nose and the lines; drag along the
 	// flow; the side force along the span, against the kite sliding sideways.
 	const FVector LiftDir = PlaneFlowSpeed > 0.05f ? (NormalFlow * Nose + ChordFlow * Dir) / PlaneFlowSpeed : Dir;
-	const FVector FlyingForce = HalfRhoArea * (
-		LiftCoefficient * FMath::Square(PlaneFlowSpeed) * LiftDir
-		+ DragCoefficient * FlowSpeed * Airflow
-		+ SideForceCoefficient * SpanFlow * FlowSpeed * Span);
+	const FVector LiftForce = HalfRhoArea * LiftCoefficient * FMath::Square(PlaneFlowSpeed) * LiftDir;
+	const FVector DragForce = HalfRhoArea * DragCoefficient * FlowSpeed * Airflow;
+	const FVector SideForce = HalfRhoArea * SideForceCoefficient * SpanFlow * FlowSpeed * Span;
+	const FVector FlyingForce = LiftForce + DragForce + SideForce;
+
+	LastStepDebug.TrueWindCmS = Wind;
+	LastStepDebug.ApparentWindCmS = Airflow * CmPerM;
+	LastStepDebug.LiftN = LiftForce;
+	LastStepDebug.DragN = DragForce;
+	LastStepDebug.SideN = SideForce;
+	LastStepDebug.AlphaDeg = AlphaDeg;
+	LastStepDebug.LiftCoefficient = LiftCoefficient;
+	LastStepDebug.DragCoefficient = DragCoefficient;
 
 	// The lines hold the kite on its arc only if that takes a pull: enough to balance what pushes
 	// it away from the rider and to bend its path round the rider.
@@ -739,6 +747,9 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		const float Collapse = FMath::Clamp((LineLengthCm - TautSlackCm - DistanceCm) / FMath::Max(SlackCollapseCm, 1.0f), 0.0f, 1.0f);
 		const FVector SheetForce = HalfRhoArea * SlackDragCoefficient * FlowSpeed * Airflow;
 		Force = FMath::Lerp(FlyingForce, SheetForce, Collapse) + Weight;
+		LastStepDebug.LiftN = LiftForce * (1.0f - Collapse);
+		LastStepDebug.SideN = SideForce * (1.0f - Collapse);
+		LastStepDebug.DragN = FMath::Lerp(DragForce, SheetForce, Collapse);
 		TurnRateRadS = 0.0f;
 		AirspeedCmS = PlaneFlowSpeed * CmPerM;
 		AngleOfAttackDeg = AlphaDeg;
@@ -755,6 +766,8 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		}
 	}
 	bLinesTaut = bTaut;
+	LastStepDebug.TensionN = Tension;
+	LastStepDebug.bTaut = bTaut;
 
 	if (StepSeconds <= 0.0f)
 	{
@@ -861,6 +874,7 @@ void UKiteComponent::StepKite(float StepSeconds)
 		LineTensionN = 0.0f;
 		LineForce = FVector::ZeroVector;
 		AppliedSteer = 0.0f;
+		LastStepDebug = FKiteStepDebug();
 		UpdateAngles();
 
 		const float MinSecondsBeforeSteeredRelaunch = 1.0f;
@@ -887,19 +901,8 @@ void UKiteComponent::StepKite(float StepSeconds)
 
 	UpdateAngles();
 
-	// The rider feels the pull along the lines.
+	// The rider feels the pull along the lines. (Debug drawing of all this is the pawn's, behind
+	// kite.Physics.Debug or bDrawDebug.)
 	LineTensionN = FMath::Min(Tension, MaxLineTensionN);
 	LineForce = KiteDir * KiteUnits::NToUnrealForce(LineTensionN);
-
-#if !UE_BUILD_SHIPPING
-	if (bDrawDebug && GetWorld())
-	{
-		DrawDebugLine(GetWorld(), RiderPos, KiteWorldPosition, bLinesTaut ? FColor::Yellow : FColor::Red, false, -1.0f, 0, 2.0f);
-		DrawDebugLine(GetWorld(), KiteWorldPosition, KiteWorldPosition + KiteHeading * 300.0f, FColor::Red, false, -1.0f, 0, 2.0f);
-
-		const FString DebugText = FString::Printf(TEXT("Tension: %.0f N%s\nAirspeed: %.1f m/s\nAngle of attack: %.1f\nAz: %.1f, El: %.1f\nSheet: %.2f"),
-			LineTensionN, bLinesTaut ? TEXT("") : TEXT(" (slack)"), AirspeedCmS / CmPerM, AngleOfAttackDeg, AzimuthDeg, ElevationDeg, Sheet);
-		DrawDebugString(GetWorld(), KiteWorldPosition + FVector(0.0f, 0.0f, 50.0f), DebugText, nullptr, FColor::White, 0.0f, true);
-	}
-#endif
 }

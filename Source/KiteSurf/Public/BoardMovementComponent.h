@@ -34,6 +34,19 @@ enum class EJumpRejectReason : uint8
 	NotEdged   UMETA(DisplayName = "Not Edged")
 };
 
+/** What the water did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
+struct FBoardStepDebug
+{
+	/** Sideways force the fins and rail put on the board (what the grip took out of the sideways speed). */
+	FVector GripForceN = FVector::ZeroVector;
+	/** Forward drive the heeled rail made out of that grip. */
+	FVector DriveForceN = FVector::ZeroVector;
+	/** Forward drag of the hull (planing or displacement). */
+	FVector DragForceN = FVector::ZeroVector;
+	/** Angle between the board's velocity over the water and its axis, either end first (deg); positive sliding to its right. */
+	float LeewayDeg = 0.0f;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
@@ -174,6 +187,9 @@ public:
 
 	/** Gets the active water surface interface */
 	TSharedPtr<IKiteWaterSurface> GetWaterSurface() const;
+
+	/** The water's forces on the board in the last fixed step: grip, drive, drag and leeway. Zero in the air. */
+	const FBoardStepDebug& GetLastStepDebug() const { return LastStepDebug; }
 
 public:
 	// Tunables (Spec)
@@ -386,6 +402,7 @@ private:
 	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);
 	float EffectiveMassForBuoyancy() const;
 	FVector AccumulatedExternalForce;
+	FBoardStepDebug LastStepDebug;
 
 	float CurrentJumpHeight;
 	float CurrentJumpAirtime;

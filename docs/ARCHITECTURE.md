@@ -38,6 +38,9 @@
 | `UBoardMovementComponent` | `bool IsFloating() const` / `float GetFloatDepthCm() const` | Whether the rider is in the water rather than up on the board, and how deep the board sits. |
 | `UKiteComponent` | `bool AreLinesTaut() const` | False while the lines are slack: the kite is not flying and the rider feels no pull. |
 | `UKiteComponent` | `float GetAngleOfAttackDeg() const` | Airflow angle to the canopy including bar trim; above `StallAngleDeg` the kite is stalled. |
+| `UKiteComponent` | `const FKiteStepDebug& GetLastStepDebug() const` | The last fixed step's true and apparent wind at the kite, lift, drag and side force (N), tension, angle of attack, Cl, Cd and taut or slack. |
+| `UBoardMovementComponent` | `const FBoardStepDebug& GetLastStepDebug() const` | The last fixed step's grip, drive and drag forces on the board (N) and its leeway (deg). Zero in the air. |
+| `AKiteRiderPawn` | `int32 GetPhysicsDebugLevel() const` | The level the pawn draws at: the `kite.Physics.Debug` console variable, at least 1 when the kite's `bDrawDebug` is set, 0 in Shipping. |
 | `UWindComponent` | `float GetGustFactorAt(const FVector&) const` / `GetGustFactorAtTime(const FVector&, float)` | Wind over base wind at the reference height above that place, now or at a given time: above 1 in a gust, below 1 in a lull. |
 | `UKiteComponent` | `bool IsCrashed() const` | True while the kite lies on the water; `OnKiteCrashed` / `OnKiteRelaunched` fire on the way in and out. |
 | `AKiteRiderPawn` | `void SetRiderCharacter(ERiderCharacter)` | Shows Santa, the wetsuit rider or the robot; the choice is stored by `UKiteSurfGameInstance`. |
@@ -49,6 +52,13 @@
 | `AKiteSurfGameMode` | `static void InitializeRide(AKiteRiderPawn*, float SpeedCmS)` | Starts the pawn on a beam reach with the kite powered up. |
 | `AKiteRiderPawn` | `FVector GetBoardVelocity() const` | Returns current board velocity vector. |
 | `AKiteRiderPawn` | `float GetKiteAzimuthDeg() const` | Returns kite azimuth angle in degrees (`[-90.0, 90.0]`). |
+
+## Physics debug view: `kite.Physics.Debug`
+
+A console variable registered in `KiteRiderPawn.cpp`, compiled out of Shipping. `UKiteComponent::bDrawDebug` forces level 1 for that kite's pawn.
+
+- `kite.Physics.Debug 1` draws every frame. At the kite: true wind (blue), apparent wind (cyan), lift (green), drag (red), side force (magenta), line tension along the line (yellow, red when slack), heading (white), and airspeed, angle of attack, Cl, Cd, tension, taut or slack, clock and depth, and the fixed steps the frame ran. At the rider: the true wind at `RiderWindHeightCm` (blue), apparent wind (cyan), the line force on the harness (yellow), the board's grip (orange), drive (green) and drag (red) from the last step, and speed, heading, leeway, edge (roll), board state and gust factor. Beside the rider a bar shows the gust factor from 0.5 to 1.5. Arrows are 20 cm per m/s and 0.4 cm per N, so 10 m/s and 500 N are both 2 m long.
+- `kite.Physics.Debug 2` also logs one line per fixed step to `LogKiteSurf`, starting with a header: `kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust` (cm, cm/s, N, deg; `board_state` is `EBoardState` as a number). `grep -o 'kitecsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` turns a ride into a CSV.
 
 ## Level Contract: `/Game/Maps/L_OpenWater`
 

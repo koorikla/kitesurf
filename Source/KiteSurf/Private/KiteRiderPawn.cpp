@@ -19,6 +19,59 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "KiteSurfUnits.h"
+#include "DrawDebugHelpers.h"
+#include "HAL/IConsoleManager.h"
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarKitePhysicsDebug(
+		TEXT("kite.Physics.Debug"),
+		0,
+		TEXT("Physics debug view of the rider's kite and board.\n")
+		TEXT(" 0: off\n")
+		TEXT(" 1: draw winds, forces and numbers at the kite and the rider, and a gust bar\n")
+		TEXT(" 2: as 1, and log one CSV line per fixed step to LogKiteSurf (kitecsv)"),
+		ECVF_Cheat);
+
+#if !UE_BUILD_SHIPPING
+	// Debug arrows: 10 m/s of wind and 500 N of force are each drawn about 2 m long.
+	constexpr float DebugCmPerMS = 20.0f;
+	constexpr float DebugCmPerN = 0.4f;
+	constexpr float DebugHeadingLengthCm = 300.0f;
+	constexpr float DebugArrowHeadCm = 30.0f;
+	constexpr float DebugLineThickness = 3.0f;
+	// The gust bar beside the rider: gust factor 0.5 at its foot, 1.5 at its top.
+	constexpr float DebugGustBarMin = 0.5f;
+	constexpr float DebugGustBarMax = 1.5f;
+	constexpr float DebugGustBarLengthCm = 200.0f;
+	constexpr float DebugGustBarBaseHeightCm = 250.0f;
+	constexpr float DebugGustBarSideOffsetCm = 150.0f;
+	constexpr float DebugKiteTextHeightCm = 150.0f;
+	constexpr float DebugRiderTextHeightCm = 300.0f;
+	constexpr float DebugBoardForceHeightCm = 20.0f;
+
+	const TCHAR* BoardStateName(EBoardState State)
+	{
+		switch (State)
+		{
+		case EBoardState::Displacement: return TEXT("displacement");
+		case EBoardState::Planing: return TEXT("planing");
+		case EBoardState::Airborne: return TEXT("airborne");
+		case EBoardState::Landing: return TEXT("landing");
+		default: return TEXT("?");
+		}
+	}
+
+	void DrawDebugVector(const UWorld* World, const FVector& Start, const FVector& Vector, float CmPerUnit, const FColor& Color)
+	{
+		const FVector Scaled = Vector * CmPerUnit;
+		if (Scaled.SizeSquared() > 1.0f)
+		{
+			DrawDebugDirectionalArrow(World, Start, Start + Scaled, DebugArrowHeadCm, Color, false, -1.0f, 0, DebugLineThickness);
+		}
+	}
+#endif
+}
 
 AKiteRiderPawn::AKiteRiderPawn()
 {
@@ -471,6 +524,109 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 		SimRotation = RootComponent->GetComponentQuat();
 	}
 	bHasSimState = true;
+
+	if (GetPhysicsDebugLevel() >= 2)
+	{
+		LogPhysicsTelemetry();
+	}
+}
+
+int32 AKiteRiderPawn::GetPhysicsDebugLevel() const
+{
+#if UE_BUILD_SHIPPING
+	return 0;
+#else
+	const int32 Level = CVarKitePhysicsDebug.GetValueOnGameThread();
+	return (Kite && Kite->bDrawDebug) ? FMath::Max(Level, 1) : Level;
+#endif
+}
+
+void AKiteRiderPawn::LogPhysicsTelemetry()
+{
+#if !UE_BUILD_SHIPPING
+	if (!Kite || !BoardMovement)
+	{
+		return;
+	}
+	if (!bLoggedTelemetryHeader)
+	{
+		UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust"));
+		bLoggedTelemetryHeader = true;
+	}
+	// Positions in cm and velocities in cm/s, as the engine has them.
+	const FVector RiderPos = SimLocation;
+	const FVector RiderVel = BoardMovement->Velocity;
+	const FVector KitePos = Kite->GetKiteWorldPosition();
+	const FVector KiteVel = Kite->GetKiteVelocity();
+	const FKiteStepDebug& KiteStep = Kite->GetLastStepDebug();
+	const float Gust = Wind ? Wind->GetGustFactorAtTime(RiderPos, Kite->GetSimTimeSeconds()) : 1.0f;
+	UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,%.4f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%.3f,%d,%.3f"),
+		SimTimeSeconds, RiderPos.X, RiderPos.Y, RiderPos.Z, RiderVel.X, RiderVel.Y, RiderVel.Z,
+		KitePos.X, KitePos.Y, KitePos.Z, KiteVel.X, KiteVel.Y, KiteVel.Z,
+		Kite->GetLineTensionN(), KiteStep.AlphaDeg, KiteStep.LiftCoefficient, static_cast<int32>(BoardMovement->GetBoardState()), Gust);
+#endif
+}
+
+void AKiteRiderPawn::DrawPhysicsDebug() const
+{
+#if !UE_BUILD_SHIPPING
+	const UWorld* World = GetWorld();
+	if (!World || !Kite || !BoardMovement)
+	{
+		return;
+	}
+	const float SimTime = Kite->GetSimTimeSeconds();
+
+	// At the kite: the air it flies in and what that air does to it, drawn where the canopy is drawn.
+	const FKiteStepDebug& KiteStep = Kite->GetLastStepDebug();
+	const FVector KiteAt = Kite->GetKiteMesh() ? Kite->GetKiteMesh()->GetComponentLocation() : Kite->GetKiteWorldPosition();
+	const FVector LineStart = HarnessHookPosition.IsZero() ? GetActorLocation() : HarnessHookPosition;
+	const bool bTaut = Kite->AreLinesTaut();
+	DrawDebugLine(World, LineStart, KiteAt, bTaut ? FColor::Yellow : FColor::Red, false, -1.0f, 0, 1.0f);
+	DrawDebugVector(World, KiteAt, KiteStep.TrueWindCmS / KiteUnits::CmPerM, DebugCmPerMS, FColor::Blue);
+	DrawDebugVector(World, KiteAt, KiteStep.ApparentWindCmS / KiteUnits::CmPerM, DebugCmPerMS, FColor::Cyan);
+	DrawDebugVector(World, KiteAt, KiteStep.LiftN, DebugCmPerN, FColor::Green);
+	DrawDebugVector(World, KiteAt, KiteStep.DragN, DebugCmPerN, FColor::Red);
+	DrawDebugVector(World, KiteAt, KiteStep.SideN, DebugCmPerN, FColor::Magenta);
+	DrawDebugVector(World, KiteAt, (LineStart - KiteAt).GetSafeNormal() * Kite->GetLineTensionN(), DebugCmPerN, bTaut ? FColor::Yellow : FColor::Red);
+	DrawDebugVector(World, KiteAt, Kite->GetKiteHeading(), DebugHeadingLengthCm, FColor::White);
+	const FString KiteText = FString::Printf(TEXT("airspeed %.1f m/s  alpha %.1f deg\nCl %.2f  Cd %.2f\ntension %.0f N %s\nclock %.0f  depth %.0f deg\nsteps last frame %d"),
+		Kite->GetAirspeedCmS() / KiteUnits::CmPerM, KiteStep.AlphaDeg, KiteStep.LiftCoefficient, KiteStep.DragCoefficient,
+		Kite->GetLineTensionN(), bTaut ? TEXT("taut") : TEXT("SLACK"), Kite->GetClockDeg(), Kite->GetWindowDepthDeg(), LastFrameSimSteps);
+	DrawDebugString(World, KiteAt + FVector(0.0f, 0.0f, DebugKiteTextHeightCm), KiteText, nullptr, FColor::White, 0.0f, true);
+
+	// At the rider: the wind they feel at chest height, the pull of the lines on the harness, and
+	// what the water did to the board in the last step.
+	const FVector RiderAt = GetActorLocation();
+	const FVector Chest = RiderAt + FVector(0.0f, 0.0f, Kite->RiderWindHeightCm);
+	const FVector BoardVelocityNow = BoardMovement->Velocity;
+	const FVector RiderWind = Wind ? Wind->GetWindAtTime(Chest, SimTime) : FVector::ZeroVector;
+	DrawDebugVector(World, Chest, RiderWind / KiteUnits::CmPerM, DebugCmPerMS, FColor::Blue);
+	DrawDebugVector(World, Chest, (RiderWind - BoardVelocityNow) / KiteUnits::CmPerM, DebugCmPerMS, FColor::Cyan);
+	DrawDebugVector(World, LineStart, Kite->GetLineForce() / KiteUnits::UnrealForcePerN, DebugCmPerN, FColor::Yellow);
+	const FBoardStepDebug& BoardStep = BoardMovement->GetLastStepDebug();
+	const FVector BoardAt = RiderAt + FVector(0.0f, 0.0f, DebugBoardForceHeightCm);
+	DrawDebugVector(World, BoardAt, BoardStep.GripForceN, DebugCmPerN, FColor::Orange);
+	DrawDebugVector(World, BoardAt, BoardStep.DriveForceN, DebugCmPerN, FColor::Green);
+	DrawDebugVector(World, BoardAt, BoardStep.DragForceN, DebugCmPerN, FColor::Red);
+
+	float HeadingDeg = FRotator::NormalizeAxis(GetActorRotation().Yaw);
+	HeadingDeg = HeadingDeg < 0.0f ? HeadingDeg + 360.0f : HeadingDeg;
+	const float Gust = Wind ? Wind->GetGustFactorAtTime(RiderAt, SimTime) : 1.0f;
+	const FString RiderText = FString::Printf(TEXT("%.1f kn  heading %.0f\nleeway %.1f deg  edge %.1f deg\n%s%s\ngust %.2f"),
+		KiteUnits::CmSToKnots(BoardVelocityNow.Size2D()), HeadingDeg, BoardStep.LeewayDeg, GetActorRotation().Roll,
+		BoardStateName(BoardMovement->GetBoardState()), BoardMovement->IsFloating() ? TEXT(", floating") : TEXT(""), Gust);
+	DrawDebugString(World, RiderAt + FVector(0.0f, 0.0f, DebugRiderTextHeightCm), RiderText, nullptr, FColor::White, 0.0f, true);
+
+	// The gust bar: grey from 0.5 to 1.5, a white tick at 1, filled to the gust factor here now.
+	const FVector Side = FVector::CrossProduct(FVector::UpVector, GetActorForwardVector()).GetSafeNormal();
+	const FVector BarFoot = RiderAt + FVector(0.0f, 0.0f, DebugGustBarBaseHeightCm) + Side * DebugGustBarSideOffsetCm;
+	const float CmPerGust = DebugGustBarLengthCm / (DebugGustBarMax - DebugGustBarMin);
+	auto BarPoint = [&](float Factor) { return BarFoot + FVector(0.0f, 0.0f, (FMath::Clamp(Factor, DebugGustBarMin, DebugGustBarMax) - DebugGustBarMin) * CmPerGust); };
+	DrawDebugLine(World, BarPoint(DebugGustBarMin), BarPoint(DebugGustBarMax), FColor(128, 128, 128), false, -1.0f, 0, 2.0f);
+	DrawDebugLine(World, BarPoint(1.0f) - Side * 20.0f, BarPoint(1.0f) + Side * 20.0f, FColor::White, false, -1.0f, 0, 2.0f);
+	DrawDebugLine(World, BarPoint(DebugGustBarMin), BarPoint(Gust), Gust >= 1.0f ? FColor::Orange : FColor(120, 160, 255), false, -1.0f, 0, 3.0f * DebugLineThickness);
+#endif
 }
 
 void AKiteRiderPawn::Tick(float DeltaTime)
@@ -555,6 +711,16 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 
 	UpdateAudioModulation(DeltaTime);
+
+	const int32 DebugLevel = GetPhysicsDebugLevel();
+	if (DebugLevel >= 1)
+	{
+		DrawPhysicsDebug();
+	}
+	if (DebugLevel < 2)
+	{
+		bLoggedTelemetryHeader = false; // the CSV header comes again when logging is next switched on
+	}
 }
 
 void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)

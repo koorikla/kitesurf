@@ -19,6 +19,7 @@
 #include "KiteSurf.h"
 #include "KiteSurfGameMode.h"
 #include "WindComponent.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -1606,6 +1607,53 @@ bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("Half way is in between (%.0f N)"), TensionN[1]), TensionN[1] > 1.5f * TensionN[0] && TensionN[2] > 1.5f * TensionN[1]);
 	TestTrue(FString::Printf(TEXT("Bar right out slows the rider to a crawl (%.1f kn)"), SpeedKn[0]), SpeedKn[0] < 10.0f);
 	TestTrue(FString::Printf(TEXT("Bar right in is at least twice as fast (%.1f kn)"), SpeedKn[2]), SpeedKn[2] > 2.0f * SpeedKn[0] && SpeedKn[2] > 18.0f);
+	return true;
+}
+
+// kite.Physics.Debug: the step breakdown the debug view draws is filled in by the kite and board
+// steps and makes physical sense, and drawing and logging it runs without a renderer.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsDebugStepBreakdown, "KiteSurf.Physics.DebugStepBreakdown", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsDebugStepBreakdown::RunTest(const FString& Parameters)
+{
+	IConsoleVariable* DebugLevel = IConsoleManager::Get().FindConsoleVariable(TEXT("kite.Physics.Debug"));
+	TestNotNull(TEXT("kite.Physics.Debug is registered"), DebugLevel);
+	FRideFixture Ride;
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!DebugLevel || !Ride.IsValid())
+	{
+		return false;
+	}
+
+	DebugLevel->Set(2, ECVF_SetByCode);
+	TestEqual(TEXT("The pawn draws and logs at level 2"), Ride.Pawn->GetPhysicsDebugLevel(), 2);
+	Ride.Simulate(3.0f);
+	DebugLevel->Set(0, ECVF_SetByCode);
+	TestEqual(TEXT("and stops at 0"), Ride.Pawn->GetPhysicsDebugLevel(), 0);
+	Ride.Kite->bDrawDebug = true;
+	TestEqual(TEXT("bDrawDebug on the kite forces level 1"), Ride.Pawn->GetPhysicsDebugLevel(), 1);
+	Ride.Simulate(RideDeltaTime);
+	Ride.Kite->bDrawDebug = false;
+
+	const FKiteStepDebug& KiteStep = Ride.Kite->GetLastStepDebug();
+	const FVector ToRider = (Ride.Pawn->GetActorLocation() - Ride.Kite->GetKiteWorldPosition()).GetSafeNormal();
+	UE_LOG(LogKiteSurf, Log, TEXT("DebugStepBreakdown: kite lift %.0f N, drag %.0f N, side %.0f N, tension %.0f N, alpha %.1f deg, Cl %.2f, Cd %.2f, apparent wind %.1f m/s"),
+		KiteStep.LiftN.Size(), KiteStep.DragN.Size(), KiteStep.SideN.Size(), KiteStep.TensionN, KiteStep.AlphaDeg, KiteStep.LiftCoefficient, KiteStep.DragCoefficient, KiteStep.ApparentWindCmS.Size() / 100.0f);
+	TestTrue(TEXT("The kite step is taut while riding"), KiteStep.bTaut);
+	TestNearlyEqual(TEXT("Its tension is the line tension (under the cap)"), KiteStep.TensionN, Ride.Kite->GetLineTensionN(), 1.0f);
+	TestTrue(TEXT("Lift pulls the kite away from the rider"), FVector::DotProduct(KiteStep.LiftN, -ToRider) > 0.0f);
+	TestTrue(TEXT("Drag acts along the apparent wind"), FVector::DotProduct(KiteStep.DragN, KiteStep.ApparentWindCmS) > 0.0f);
+	TestNearlyEqual(TEXT("Lift is Cl over Cd of drag, give or take the steering drag"), static_cast<float>(KiteStep.LiftN.Size() / FMath::Max(KiteStep.DragN.Size(), 1.0)),
+		KiteStep.LiftCoefficient / KiteStep.DragCoefficient, 0.05f * KiteStep.LiftCoefficient / KiteStep.DragCoefficient);
+	TestNearlyEqual(TEXT("The angle of attack is the kite's"), KiteStep.AlphaDeg, Ride.Kite->GetAngleOfAttackDeg(), 0.01f);
+
+	const FBoardStepDebug& BoardStep = Ride.Board->GetLastStepDebug();
+	const FVector BoardVelocity = Ride.Board->Velocity;
+	UE_LOG(LogKiteSurf, Log, TEXT("DebugStepBreakdown: board drag %.0f N, grip %.0f N, drive %.0f N, leeway %.1f deg at %.1f kn"),
+		BoardStep.DragForceN.Size(), BoardStep.GripForceN.Size(), BoardStep.DriveForceN.Size(), BoardStep.LeewayDeg, Ride.SpeedKnots());
+	TestTrue(TEXT("Board drag opposes its motion"), FVector::DotProduct(BoardStep.DragForceN, BoardVelocity) < 0.0f);
+	TestTrue(FString::Printf(TEXT("The board grips: %.0f N sideways"), BoardStep.GripForceN.Size()), BoardStep.GripForceN.Size() > 10.0f);
+	TestTrue(FString::Printf(TEXT("Riding, the board slips only a few degrees (%.1f)"), BoardStep.LeewayDeg), FMath::Abs(BoardStep.LeewayDeg) < 15.0f);
 	return true;
 }
 

@@ -306,6 +306,7 @@ void UBoardMovementComponent::Simulate(float DeltaTime)
 void UBoardMovementComponent::StepBoard(float StepSeconds)
 {
 	const float DeltaTime = StepSeconds;
+	LastStepDebug = FBoardStepDebug();
 	if (!ShouldSkipUpdate(DeltaTime) && UpdatedComponent)
 	{
 		const FVector Location = UpdatedComponent->GetComponentLocation();
@@ -502,7 +503,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			{
 				const float LateralSpeedRemoved = FMath::Abs(LateralSpeed) * (1.0f - FMath::Exp(-GripRatePerS * DeltaTime));
 				const float GripForce = EffectiveMass * LateralSpeedRemoved / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER);
-				TotalForce += Forward * (GripForce * EdgeFactor * EdgeDriveEfficiency);
+				const FVector DriveForce = Forward * (GripForce * EdgeFactor * EdgeDriveEfficiency);
+				TotalForce += DriveForce;
+				LastStepDebug.DriveForceN = DriveForce / KiteUnits::UnrealForcePerN;
 			}
 		}
 
@@ -517,6 +520,14 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			const float ForwardAfter = FMath::Sign(ForwardNow) * DecayWithLinearAndQuadraticDrag(FMath::Abs(ForwardNow), ForwardDragRatePerS, ForwardDragRatePerCm, DeltaTime);
 			const float LateralAfter = LateralNow * FMath::Exp(-GripRatePerS * DeltaTime);
 			Velocity = Rest + Forward * ForwardAfter + Right * LateralAfter;
+
+			// The force each exact decay amounts to over the step: the momentum it took out.
+			if (DeltaTime > 0.0f)
+			{
+				LastStepDebug.DragForceN = Forward * (EffectiveMass * (ForwardAfter - ForwardNow) / DeltaTime / KiteUnits::UnrealForcePerN);
+				LastStepDebug.GripForceN = Right * (EffectiveMass * (LateralAfter - LateralNow) / DeltaTime / KiteUnits::UnrealForcePerN);
+			}
+			LastStepDebug.LeewayDeg = FMath::RadiansToDegrees(FMath::Atan2(LateralSpeed, FMath::Abs(ForwardSpeed)));
 		}
 
 		// Velocity clamping at MaxBoardSpeed

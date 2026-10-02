@@ -66,6 +66,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	CurrentEdgeInput = 0.0f;
 	CurrentWeightShift = 0.0f;
 	SmoothedCarveInput = 0.0f;
+	bLiftedByKite = false;
 	AccumulatedExternalForce = FVector::ZeroVector;
 
 	CurrentJumpHeight = 0.0f;
@@ -213,6 +214,7 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 
 void UBoardMovementComponent::BeginAirborne()
 {
+	bLiftedByKite = false;
 	CurrentBoardState = EBoardState::Airborne;
 	CurrentJumpAirtime = 0.0f;
 	CurrentJumpHeight = 0.0f;
@@ -349,6 +351,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffWeightFactor - 1.0f))
 		{
 			BeginAirborne();
+			bLiftedByKite = true;
 			bIsAirborne = true;
 			Velocity.Z = FMath::Max(Velocity.Z, 0.0f);
 			UE_LOG(LogKiteSurf, Log, TEXT("Board lifted off by the kite: upward force %.0f N against %.0f N of weight"), (TotalForce.Z - GravityForceZ) / 100.0f, -GravityForceZ / 100.0f);
@@ -576,9 +579,9 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				}
 
 				// A skip off the surface is not a jump: carry on riding with nothing lost or scored.
-				const float MinJumpApexCm = 30.0f;
-				const float MinJumpAirtime = 0.25f;
-				if (CurrentJumpApexHeight < MinJumpApexCm && CurrentJumpAirtime < MinJumpAirtime)
+				// (Only for the kite plucking the rider off: a pop is the rider's choice and always counts.)
+				const float MinJumpApexCm = 50.0f;
+				if (CurrentJumpApexHeight < MinJumpApexCm && bLiftedByKite)
 				{
 					Velocity.Z = 0.0f;
 					const bool bStillPlaning = Velocity.Size2D() >= PlaningThresholdCmS;
@@ -734,15 +737,14 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 		CurrentDragRegime = EBoardDragRegime::Displacement;
 	}
 
-	// 6. Park kite at 45 deg on the side the board is riding towards (10:30 or 1:30)
+	// 6. Park the kite at 45 deg (10:30 or 1:30) on the side the board is riding towards, in the window the rider now feels
 	if (AActor* OwnerActor = GetOwner())
 	{
 		if (UKiteComponent* Kite = OwnerActor->FindComponentByClass<UKiteComponent>())
 		{
 			const FVector CrosswindRight = FVector::CrossProduct(FVector::UpVector, Kite->GetDownwindDir());
 			const float TackSide = FVector::DotProduct(Forward2D, CrosswindRight) >= 0.0f ? 1.0f : -1.0f;
-			Kite->SetElevationDeg(45.0f);
-			Kite->SetAzimuthDeg(45.0f * TackSide);
+			Kite->SetWindowPosition(45.0f * TackSide, 12.0f);
 		}
 	}
 

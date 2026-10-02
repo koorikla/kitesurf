@@ -8,6 +8,9 @@ UWindComponent::UWindComponent()
 	// Default base wind: 15 knots ≈ 772 cm/s in +X direction (1 knot = 51.44 cm/s)
 	BaseWind = FVector(772.0f, 0.0f, 0.0f);
 	GustStrength = 0.3f;
+	GustPuffRate = 3.5f;
+	GustPuffShare = 0.4f;
+	GustNoiseGain = 1.4f;
 	GustPeriodSeconds = 8.0f;
 	DirectionDriftDeg = 10.0f;
 	ShearHeightCm = 1000.0f;
@@ -55,8 +58,11 @@ FVector UWindComponent::GetWindAt(const FVector& WorldLocation) const
 	constexpr float SpatialScale = 0.0001f;
 	const FVector SpatialPos = WorldLocation * SpatialScale;
 
-	// Gust noise in range [-1.0, 1.0]
-	const float GustNoise = FMath::PerlinNoise3D(FVector(TimeCoord, SpatialPos.X, SpatialPos.Y));
+	// Gust noise in range [-1.0, 1.0]: a slow swell of wind over the gust period with quicker
+	// puffs and holes on top of it, which is what gives the rider something to react to.
+	const float SlowGust = FMath::PerlinNoise3D(FVector(TimeCoord, SpatialPos.X, SpatialPos.Y));
+	const float QuickGust = FMath::PerlinNoise3D(FVector(TimeCoord * GustPuffRate + 71.3f, SpatialPos.X * 3.0f + 5.7f, SpatialPos.Y * 3.0f + 11.9f));
+	const float GustNoise = FMath::Clamp(SlowGust * (1.0f - GustPuffShare) + QuickGust * GustPuffShare, -1.0f, 1.0f) * GustNoiseGain;
 
 	// Direction drift noise in range [-1.0, 1.0]
 	const float DriftNoise = FMath::PerlinNoise3D(FVector(TimeCoord + 31.7f, SpatialPos.X + 17.3f, SpatialPos.Y + 53.1f));
@@ -78,4 +84,16 @@ FVector UWindComponent::GetWindAt(const FVector& WorldLocation) const
 	const float CurrentSpeed = BaseSpeed * GustMultiplier * ShearFactor;
 
 	return DriftedDir * CurrentSpeed;
+}
+
+float UWindComponent::GetGustFactorAt(const FVector& WorldLocation) const
+{
+	const float BaseSpeed = BaseWind.Size();
+	if (FMath::IsNearlyZero(BaseSpeed))
+	{
+		return 1.0f;
+	}
+	// Compared at the reference height, so shear does not read as a lull.
+	const FVector Reference(WorldLocation.X, WorldLocation.Y, ShearHeightCm);
+	return GetWindAt(Reference).Size() / BaseSpeed;
 }

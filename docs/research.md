@@ -554,11 +554,11 @@ Orientation is set directly: pitch and roll follow the water normal plus up to 4
 
 ### Gaps for big air, in priority order
 
-1. **Kite flight dynamics** (first version done). The kite now has a heading and an airspeed on the line sphere, a turn rate from bar input, and can loop (`KiteSurf.Kite.LoopsWhenSteerHeld`). The kite can stall and fall, be looped into the water, and relaunch. Still missing: kite mass and inertia in turns, backstall, and a relaunch that has to be flown.
+1. **Kite flight dynamics** (done). The kite is a point mass with lift, drag, side force and gravity on a line that only pulls: it stalls, luffs, falls when the lines go slack, can be looped into the water, and relaunches (`KiteSurf.Kite.*`). Still missing: a relaunch that has to be flown, line stretch, and a rider who swings under the kite in the air.
 2. **Apparent wind from kite motion** (done). Line tension follows the kite's airspeed squared, so a kite diving through the middle of the window pulls several times harder than a parked one.
 3. **Airborne state machine.** No riding, loaded, airborne, landing or crashed states. Water forces are not gated on contact.
 4. **Pop and edge loading.** One edge axis drives roll, grip and yaw together, so an edge cannot be held against the kite without turning.
-5. **Line tension and slack.** Tension is a projection of a static force; it needs a real constraint, slack lines and a HUD readout.
+5. **Line tension and slack** (done). Tension is the constraint force that holds the kite at line length; the lines go slack when it reaches zero, and the HUD says so.
 6. **Sheeting and depower.** Sheet saturates halfway and resets on key release. Needs a persistent bar position and a lift curve with stall.
 7. **Landing and crash detection.** None; buoyancy is capped at 1,500 N.
 8. **Jump telemetry.** Height, airtime, peak and landing g, distance.

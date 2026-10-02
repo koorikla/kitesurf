@@ -1,6 +1,7 @@
 #include "KiteComponent.h"
 #include "WindComponent.h"
 #include "KiteWindMath.h"
+#include "KiteSurf.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
@@ -10,10 +11,17 @@
 namespace
 {
 	const float AirDensityKgM3 = 1.225f;
-	// Bar travel below this counts as centred: the kite parks itself.
+	const float GravityMS2 = 9.81f;
+	const float CmPerM = 100.0f;
+	// The flight dynamics are stepped at least this often, whatever the frame rate.
+	const float MaxFlightStepSeconds = 1.0f / 240.0f;
+	const int32 MaxFlightStepsPerUpdate = 24;
+	// Bar travel below this counts as centred.
 	const float CentredBarThreshold = 0.05f;
-	// The turn counter restarts once the bar has been centred this long.
+	// The loop counter restarts once the bar has been centred this long.
 	const float TurnResetSeconds = 0.75f;
+	// Lines count as at full length within this (cm).
+	const float TautSlackCm = 5.0f;
 
 	/** Unit tangent at Dir that points most nearly along Preferred; falls back to a stable choice at the poles. */
 	FVector TangentTowards(const FVector& Dir, const FVector& Preferred)
@@ -30,6 +38,12 @@ namespace
 		}
 		return Tangent;
 	}
+
+	/** Signed angle in radians from From to To about Axis, positive when To is to the right of From as seen looking along Axis from the rider. */
+	float SignedAngleRightRad(const FVector& From, const FVector& To, const FVector& Axis)
+	{
+		return FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(From, Axis), To), FVector::DotProduct(From, To));
+	}
 }
 
 UKiteComponent::UKiteComponent()
@@ -44,35 +58,54 @@ UKiteComponent::UKiteComponent()
 	MassKg = 3.0f;
 	Sheet = 0.0f;
 	Steer = 0.0f;
-	GlideRatioSheetedOut = 7.0f;
-	GlideRatioSheetedIn = 5.5f;
-	MinTurnRadiusCm = 400.0f;
-	MaxAirspeedCmS = 1800.0f;
-	AirspeedResponse = 2.0f;
+
+	AddedMassKg = 3.0f;
+	MaxLiftCoefficient = 1.2f;
+	StallAngleDeg = 18.0f;
+	StalledForwardTiltDeg = 10.0f;
+	ParasiteDragCoefficient = 0.09f;
+	InducedDragFactor = 0.085f;
+	SteeringDragCoefficient = 0.06f;
+	SideForceCoefficient = 1.2f;
+	SlackDragCoefficient = 0.7f;
+	TrimSheetedOutDeg = -13.0f;
+	TrimSheetedInDeg = -1.0f;
+
+	MinTurnRadiusCm = 600.0f;
+	TurnResponse = 6.0f;
+	WeathercockGain = 0.2f;
+	GravityTurnGain = 0.15f;
 	TravelHeadingDeg = 100.0f;
-	SteerAssistGain = 6.0f;
-	SteerAssistMaxRateDegPerSec = 200.0f;
+	SteerAssistGain = 2.5f;
+	ParkHoldGain = 2.0f;
+	ParkHoldMaxDeg = 45.0f;
 	MinElevationDeg = 10.0f;
-	CrashElevationDeg = 1.5f;
+	CrashHeightCm = 60.0f;
 	RelaunchDelaySeconds = 3.0f;
-	StallFlowSpeedCmS = 350.0f;
-	StallSinkSpeedCmS = 600.0f;
+	MinRelaunchWindCmS = 350.0f;
 	MaxLineTensionN = 3000.0f;
 	bDrawDebug = false;
 
 	KiteDir = FVector(FMath::Cos(FMath::DegreesToRadians(45.0f)), 0.0f, FMath::Sin(FMath::DegreesToRadians(45.0f)));
 	KiteHeading = FVector::UpVector;
+	KiteVelocity = FVector::ZeroVector;
+	KiteWorldPosition = FVector::ZeroVector;
+	KiteWorldRotation = FRotator::ZeroRotator;
+
 	AirspeedCmS = 0.0f;
+	AngleOfAttackDeg = 0.0f;
 	TurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
+	ParkClockDeg = 0.0f;
+	TurnRateRadS = 0.0f;
+	bHasParkClock = false;
 	bPlacementPending = true;
 	bLoopHeld = false;
 	bCrashed = false;
+	bLinesTaut = true;
+	bHasLastRiderPosition = false;
+	LastRiderPosition = FVector::ZeroVector;
 	CrashedSeconds = 0.0f;
-
-	KiteWorldPosition = FVector::ZeroVector;
-	KiteWorldRotation = FRotator::ZeroRotator;
-	KiteVelocity = FVector::ZeroVector;
 
 	LineTensionN = 0.0f;
 	LineForce = FVector::ZeroVector;
@@ -270,7 +303,7 @@ FRotator UKiteComponent::GetKiteRotation() const
 
 void UKiteComponent::SetAzimuthDeg(float InAzimuthDeg)
 {
-	AzimuthDeg = FMath::Clamp(InAzimuthDeg, -90.0f, 90.0f);
+	AzimuthDeg = FMath::Clamp(InAzimuthDeg, -180.0f, 180.0f);
 	bPlacementPending = true;
 }
 
@@ -287,25 +320,35 @@ void UKiteComponent::SetWindComponent(UWindComponent* InWindComponent)
 
 void UKiteComponent::SetWindowPosition(float ClockDeg, float DepthDeg)
 {
+	// The window is the one the rider feels: its axis is the apparent wind, so the same clock and
+	// depth put the kite in flyable air whether the rider is standing or riding.
 	const float Clock = FMath::DegreesToRadians(FMath::Clamp(ClockDeg, -90.0f, 90.0f));
 	const float Depth = FMath::DegreesToRadians(FMath::Clamp(DepthDeg, 0.0f, 90.0f));
-	const float Downwind = FMath::Sin(Depth);
-	const float Right = FMath::Cos(Depth) * FMath::Sin(Clock);
-	const float Up = FMath::Cos(Depth) * FMath::Cos(Clock);
-	SetAzimuthDeg(FMath::RadiansToDegrees(FMath::Atan2(Right, Downwind)));
-	SetElevationDeg(FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(Up, -1.0f, 1.0f))));
+	const FVector Axis = GetWindowAxis();
+	const FVector AxisRight = FVector::CrossProduct(FVector::UpVector, Axis);
+	const FVector Dir = Axis * FMath::Sin(Depth) + (AxisRight * FMath::Sin(Clock) + FVector::UpVector * FMath::Cos(Clock)) * FMath::Cos(Depth);
+
+	// Stored as azimuth and elevation from the true wind, which is what PlaceParked rebuilds from.
+	const FVector Downwind = GetDownwindDir();
+	const FVector Crosswind = FVector::CrossProduct(FVector::UpVector, Downwind);
+	AzimuthDeg = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dir, Crosswind), FVector::DotProduct(Dir, Downwind)));
+	ElevationDeg = FMath::Clamp(FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(Dir.Z, -1.0f, 1.0f))), 0.0f, 90.0f);
+	bPlacementPending = true;
 }
 
 float UKiteComponent::GetClockDeg() const
 {
+	// A kite that has been placed but not yet flown is where it was placed.
+	const FVector Dir = bPlacementPending ? DirectionFromAngles(AzimuthDeg, ElevationDeg) : KiteDir;
 	const FVector Axis = GetWindowAxis();
 	const FVector AxisRight = FVector::CrossProduct(FVector::UpVector, Axis);
-	return FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(KiteDir, AxisRight), KiteDir.Z));
+	return FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dir, AxisRight), Dir.Z));
 }
 
 float UKiteComponent::GetWindowDepthDeg() const
 {
-	return FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(KiteDir, GetWindowAxis()), -1.0f, 1.0f)));
+	const FVector Dir = bPlacementPending ? DirectionFromAngles(AzimuthDeg, ElevationDeg) : KiteDir;
+	return FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(Dir, GetWindowAxis()), -1.0f, 1.0f)));
 }
 
 FVector UKiteComponent::GetDownwindDir() const
@@ -362,55 +405,314 @@ FVector UKiteComponent::GetRiderVelocity() const
 
 FVector UKiteComponent::DirectionFromAngles(float InAzimuthDeg, float InElevationDeg) const
 {
-	return (UKiteWindMath::KitePositionInWindow(FVector::ZeroVector, GetDownwindDir(), InAzimuthDeg, InElevationDeg, 1.0f)).GetSafeNormal();
+	// Not KiteWindMath::KitePositionInWindow: that clamps azimuth to the downwind half, and a kite
+	// flown by a fast rider can sit further round than that.
+	const FVector Downwind = GetDownwindDir();
+	const FVector Horizontal = Downwind.RotateAngleAxis(InAzimuthDeg, FVector::UpVector);
+	const float ElevationRad = FMath::DegreesToRadians(FMath::Clamp(InElevationDeg, 0.0f, 90.0f));
+	return Horizontal * FMath::Cos(ElevationRad) + FVector::UpVector * FMath::Sin(ElevationRad);
 }
 
 void UKiteComponent::PlaceParked()
 {
-	KiteDir = DirectionFromAngles(AzimuthDeg, ElevationDeg);
+	const FVector RiderPos = GetRiderPosition();
+	const FVector RiderVelocity = GetRiderVelocity();
 
-	// Parked means the kite's own airspeed exactly cancels the wind blowing across the lines,
-	// which needs the nose pointing straight out of the window.
-	const FVector ApparentWind = GetWindAt(GetRiderPosition() + KiteDir * LineLengthCm) - GetRiderVelocity();
-	const FVector CrossLineWind = ApparentWind - FVector::DotProduct(ApparentWind, KiteDir) * KiteDir;
+	KiteDir = DirectionFromAngles(AzimuthDeg, ElevationDeg);
+	KiteWorldPosition = RiderPos + KiteDir * LineLengthCm;
+	KiteVelocity = RiderVelocity;
+	LastRiderPosition = RiderPos;
+	bHasLastRiderPosition = true;
+
+	// A parked kite points its nose out of the window, into the wind blowing across the lines.
+	const FVector WindFelt = GetWindAt(KiteWorldPosition) - RiderVelocity;
+	const FVector CrossLineWind = WindFelt - FVector::DotProduct(WindFelt, KiteDir) * KiteDir;
 	KiteHeading = TangentTowards(KiteDir, -CrossLineWind);
-	AirspeedCmS = FMath::Min(CrossLineWind.Size(), MaxAirspeedCmS);
+
+	AirspeedCmS = WindFelt.Size();
+	TurnRateRadS = 0.0f;
 	TurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
+	bHasParkClock = false;
 	bPlacementPending = false;
 	bCrashed = false;
+	bLinesTaut = true;
 	CrashedSeconds = 0.0f;
 }
 
 void UKiteComponent::Crash()
 {
 	bCrashed = true;
+	bLinesTaut = false;
 	CrashedSeconds = 0.0f;
 	AirspeedCmS = 0.0f;
 	TurnDeg = 0.0f;
 	LineTensionN = 0.0f;
 	LineForce = FVector::ZeroVector;
 	KiteVelocity = FVector::ZeroVector;
-	KiteWorldPosition = GetRiderPosition() + KiteDir * LineLengthCm;
+	KiteWorldPosition.Z = FMath::Min(KiteWorldPosition.Z, CrashHeightCm);
 	UpdateAngles();
+	KiteHeading = TangentTowards(KiteDir, FVector::UpVector);
+	UE_LOG(LogKiteSurf, Log, TEXT("Kite down in the water at azimuth %.0f deg"), AzimuthDeg);
 	OnKiteCrashed.Broadcast(KiteWorldPosition);
 }
 
 void UKiteComponent::Relaunch()
 {
-	// Back into the air where it lies, just above the water, parked nose-out.
+	// Back into the air from where it lies, just above the water, nose-out.
 	UpdateAngles();
 	ElevationDeg = MinElevationDeg;
 	PlaceParked();
+	UE_LOG(LogKiteSurf, Log, TEXT("Kite relaunched"));
 	OnKiteRelaunched.Broadcast();
 }
 
 void UKiteComponent::UpdateAngles()
 {
+	const FVector Offset = KiteWorldPosition - GetRiderPosition();
+	if (!Offset.IsNearlyZero())
+	{
+		KiteDir = Offset.GetSafeNormal();
+	}
 	const FVector Downwind = GetDownwindDir();
 	const FVector Crosswind = FVector::CrossProduct(FVector::UpVector, Downwind);
 	ElevationDeg = FMath::Clamp(FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(KiteDir.Z, -1.0f, 1.0f))), 0.0f, 90.0f);
-	AzimuthDeg = FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(KiteDir, Crosswind), FVector::DotProduct(KiteDir, Downwind))), -90.0f, 90.0f);
+	AzimuthDeg = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(KiteDir, Crosswind), FVector::DotProduct(KiteDir, Downwind)));
+}
+
+void UKiteComponent::GetAeroCoefficients(float AlphaDeg, float& OutLift, float& OutDrag) const
+{
+	const float Alpha = FMath::UnwindDegrees(AlphaDeg);
+	const float AlphaRad = FMath::DegreesToRadians(Alpha);
+
+	// Attached flow: lift rises with angle of attack, rounding off to its maximum at the stall,
+	// and drags a little more for it.
+	const float AttachedLift = MaxLiftCoefficient * FMath::Sin(FMath::Clamp(Alpha / FMath::Max(StallAngleDeg, 1.0f), -1.0f, 1.0f) * UE_HALF_PI);
+	const float AttachedDrag = ParasiteDragCoefficient + InducedDragFactor * FMath::Square(AttachedLift);
+
+	// Separated flow: the canopy is just a plate held across the air, pushed square-on to its
+	// surface. Resolved along and across the flow that is less lift and much more drag.
+	// A cambered canopy with a fat leading edge still pulls forward a little when stalled, so the
+	// push is tilted towards the nose: that is what flies a stalled kite back out to the window edge.
+	const float PlateNormalForce = 1.8f * FMath::Sin(AlphaRad);
+	const float TiltedRad = AlphaRad - FMath::DegreesToRadians(StalledForwardTiltDeg);
+	const float PlateLift = PlateNormalForce * FMath::Cos(TiltedRad);
+	const float PlateDrag = ParasiteDragCoefficient + PlateNormalForce * FMath::Sin(TiltedRad);
+
+	// The stall takes hold over a few degrees.
+	const float StallBlendDeg = 5.0f;
+	const float Separated = FMath::SmoothStep(StallAngleDeg, StallAngleDeg + StallBlendDeg, FMath::Abs(Alpha));
+	OutLift = FMath::Lerp(AttachedLift, PlateLift, Separated);
+	OutDrag = FMath::Lerp(AttachedDrag, PlateDrag, Separated);
+}
+
+float UKiteComponent::ComputeSteering(float DeltaTime, const FVector& RiderVelocity, const FVector& Wind)
+{
+	const bool bSteering = FMath::Abs(Steer) >= CentredBarThreshold;
+
+	// Loop input held: the rider's bar goes straight to the kite.
+	if (bLoopHeld && bSteering)
+	{
+		CentredBarSeconds = 0.0f;
+		bHasParkClock = false;
+		return Steer;
+	}
+
+	CentredBarSeconds += DeltaTime;
+	if (CentredBarSeconds >= TurnResetSeconds)
+	{
+		TurnDeg = 0.0f;
+	}
+
+	// Otherwise an assist flies the kite towards a heading. "Out" is into the wind blowing across the lines.
+	const FVector WindFelt = Wind - RiderVelocity;
+	const FVector CrossLineWind = WindFelt - FVector::DotProduct(WindFelt, KiteDir) * KiteDir;
+	const float MinCrossWindCmS = 50.0f; // too little cross wind to say which way is out
+	if (CrossLineWind.SizeSquared() < FMath::Square(MinCrossWindCmS))
+	{
+		return 0.0f;
+	}
+	const FVector Outward = TangentTowards(KiteDir, -CrossLineWind);
+
+	float OffsetDeg = 0.0f;
+	if (bSteering)
+	{
+		// Bar over: travel round the window that way.
+		OffsetDeg = Steer * TravelHeadingDeg;
+		bHasParkClock = false;
+	}
+	else
+	{
+		// Bar centred: stay at this clock position. Gravity and gusts push the kite along the
+		// window edge, so the assist leans the nose against the drift, as a rider's hands would.
+		if (!bHasParkClock)
+		{
+			ParkClockDeg = GetClockDeg();
+			bHasParkClock = true;
+		}
+		const float DriftDeg = FMath::FindDeltaAngleDegrees(GetClockDeg(), ParkClockDeg);
+		OffsetDeg = FMath::Clamp(ParkHoldGain * DriftDeg, -ParkHoldMaxDeg, ParkHoldMaxDeg);
+	}
+
+	const float OffsetRad = FMath::DegreesToRadians(OffsetDeg);
+	FVector TargetHeading = Outward * FMath::Cos(OffsetRad) + FVector::CrossProduct(Outward, KiteDir) * FMath::Sin(OffsetRad);
+
+	// The assist keeps the kite off the water. It looks a moment ahead, because a kite coming
+	// down the window at speed needs room to pull out: below the minimum elevation, or about to
+	// be, it turns the nose up.
+	const float FloorHeightCm = GetRiderPosition().Z + LineLengthCm * FMath::Sin(FMath::DegreesToRadians(MinElevationDeg));
+	const float LookAheadSeconds = 1.5f;
+	const float HeightSoonCm = KiteWorldPosition.Z + FMath::Min(KiteVelocity.Z - RiderVelocity.Z, 0.0f) * LookAheadSeconds;
+	if (KiteWorldPosition.Z < FloorHeightCm)
+	{
+		TargetHeading = TangentTowards(KiteDir, FVector::UpVector);
+	}
+	else if (HeightSoonCm < FloorHeightCm)
+	{
+		TargetHeading = TangentTowards(KiteDir, FVector::UpVector);
+	}
+
+	const float ErrorRad = SignedAngleRightRad(KiteHeading, TargetHeading, KiteDir);
+	return FMath::Clamp(SteerAssistGain * ErrorRad, -1.0f, 1.0f);
+}
+
+float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVector& RiderPos, const FVector& RiderPosAfterStep, const FVector& RiderVelocity, const FVector& Wind)
+{
+	// Everything in here is SI: metres, m/s, newtons. Engine units are converted at the edges.
+	const float LineLengthM = LineLengthCm / CmPerM;
+	const float InertiaKg = FMath::Max(MassKg + AddedMassKg, 0.1f);
+
+	FVector Offset = KiteWorldPosition - RiderPos;
+	const float DistanceCm = Offset.Size();
+	const FVector Dir = DistanceCm > KINDA_SMALL_NUMBER ? Offset / DistanceCm : FVector::UpVector;
+
+	const FVector Airflow = (Wind - KiteVelocity) / CmPerM; // air moving past the kite
+	const float FlowSpeed = Airflow.Size();
+	const float HalfRhoArea = 0.5f * AirDensityKgM3 * AreaM2;
+	const FVector Weight(0.0f, 0.0f, -GravityMS2 * MassKg);
+
+	// Held by tight lines, the canopy faces the rider: its normal is along the lines, its nose
+	// along KiteHeading, its span across both.
+	const FVector Nose = TangentTowards(Dir, KiteHeading);
+	const FVector Span = FVector::CrossProduct(Dir, Nose);
+	const float ChordFlow = -FVector::DotProduct(Airflow, Nose);   // from nose to tail
+	const float NormalFlow = FVector::DotProduct(Airflow, Dir);    // into the underside
+	const float SpanFlow = FVector::DotProduct(Airflow, Span);     // sideways
+	const float PlaneFlowSpeed = FMath::Sqrt(FMath::Square(ChordFlow) + FMath::Square(NormalFlow));
+
+	const float TrimDeg = FMath::Lerp(TrimSheetedOutDeg, TrimSheetedInDeg, FMath::Clamp(Sheet, 0.0f, 1.0f));
+	const float AlphaDeg = PlaneFlowSpeed > 0.05f ? FMath::RadiansToDegrees(FMath::Atan2(NormalFlow, ChordFlow)) + TrimDeg : 0.0f;
+
+	float LiftCoefficient = 0.0f;
+	float DragCoefficient = 0.0f;
+	GetAeroCoefficients(AlphaDeg, LiftCoefficient, DragCoefficient);
+	DragCoefficient += SteeringDragCoefficient * FMath::Square(SteerInput);
+
+	// Lift acts at right angles to the flow in the plane of the nose and the lines; drag along the
+	// flow; the side force along the span, against the kite sliding sideways.
+	const FVector LiftDir = PlaneFlowSpeed > 0.05f ? (NormalFlow * Nose + ChordFlow * Dir) / PlaneFlowSpeed : Dir;
+	const FVector FlyingForce = HalfRhoArea * (
+		LiftCoefficient * FMath::Square(PlaneFlowSpeed) * LiftDir
+		+ DragCoefficient * FlowSpeed * Airflow
+		+ SideForceCoefficient * SpanFlow * FlowSpeed * Span);
+
+	// The lines hold the kite on its arc only if that takes a pull: enough to balance what pushes
+	// it away from the rider and to bend its path round the rider.
+	const FVector RelativeVelocity = (KiteVelocity - RiderVelocity) / CmPerM;
+	const float RadialSpeed = FVector::DotProduct(RelativeVelocity, Dir);
+	const float TangentialSpeedSquared = FMath::Max(RelativeVelocity.SizeSquared() - FMath::Square(RadialSpeed), 0.0f);
+	const float TensionNeeded = FVector::DotProduct(FlyingForce + Weight, Dir) + InertiaKg * TangentialSpeedSquared / LineLengthM;
+	const bool bAtLineLength = DistanceCm >= LineLengthCm - TautSlackCm;
+	const bool bTaut = bAtLineLength && TensionNeeded > 0.0f;
+
+	FVector Force;
+	float Tension = 0.0f;
+	if (bTaut)
+	{
+		Tension = TensionNeeded;
+		Force = FlyingForce + Weight - Tension * Dir;
+		AirspeedCmS = PlaneFlowSpeed * CmPerM;
+		AngleOfAttackDeg = AlphaDeg;
+	}
+	else
+	{
+		// Slack lines: nothing holds the canopy to the wind. It is a sheet in the air: drag and weight.
+		Force = HalfRhoArea * SlackDragCoefficient * FlowSpeed * Airflow + Weight;
+		TurnRateRadS = 0.0f;
+
+		// A loose canopy is still hanging from its bridle: the rider keeps its nose towards the
+		// edge of the window, so when the lines come tight it flies out of the window rather than
+		// diving into the water.
+		if (StepSeconds > 0.0f)
+		{
+			const FVector WindFelt = (Wind - RiderVelocity) / CmPerM;
+			const FVector CrossLineWind = WindFelt - FVector::DotProduct(WindFelt, Dir) * Dir;
+			const FVector OutOfWindow = CrossLineWind.SizeSquared() > 0.25f ? TangentTowards(Dir, -CrossLineWind) : TangentTowards(Dir, FVector::UpVector);
+			KiteHeading = TangentTowards(Dir, FMath::Lerp(Nose, OutOfWindow, FMath::Clamp(4.0f * StepSeconds, 0.0f, 1.0f)));
+		}
+	}
+	bLinesTaut = bTaut;
+
+	if (StepSeconds <= 0.0f)
+	{
+		return Tension;
+	}
+
+	// Heading: the bar turns the nose in proportion to the air flowing over the kite; the nose
+	// also swings to face the flow, and drops towards the water when the kite is slow.
+	if (bTaut)
+	{
+		const FVector Right = FVector::CrossProduct(Nose, Dir);
+		const float SteerRate = SteerInput * FMath::Max(ChordFlow, 0.0f) * CmPerM / FMath::Max(MinTurnRadiusCm, 1.0f);
+		const float WeathercockRate = WeathercockGain * SpanFlow;
+		const FVector DownTangent = -FVector::UpVector + FVector::DotProduct(FVector::UpVector, Dir) * Dir;
+		const float MinSpeedForGravityTurn = 3.0f;
+		const float GravityRate = GravityTurnGain * GravityMS2 * FVector::DotProduct(DownTangent, Right) / FMath::Max(PlaneFlowSpeed, MinSpeedForGravityTurn);
+
+		// The kite has some inertia in yaw: it winds into a turn rather than snapping round.
+		TurnRateRadS = FMath::FInterpTo(TurnRateRadS, SteerRate + WeathercockRate + GravityRate, StepSeconds, TurnResponse);
+		const float TurnRad = TurnRateRadS * StepSeconds;
+		KiteHeading = Nose * FMath::Cos(TurnRad) + Right * FMath::Sin(TurnRad);
+		if (bLoopHeld && FMath::Abs(Steer) >= CentredBarThreshold)
+		{
+			TurnDeg += FMath::RadiansToDegrees(TurnRad);
+		}
+	}
+
+	// Integrate, then let the lines catch the kite at their full length.
+	KiteVelocity += Force / InertiaKg * StepSeconds * CmPerM;
+	KiteWorldPosition += KiteVelocity * StepSeconds;
+
+	Offset = KiteWorldPosition - RiderPosAfterStep;
+	const float NewDistanceCm = Offset.Size();
+	if (bTaut && NewDistanceCm > KINDA_SMALL_NUMBER)
+	{
+		// Tight lines are a rod: the kite stays at line length and moves round the rider, not
+		// towards or away from them.
+		const FVector NewDir = Offset / NewDistanceCm;
+		KiteWorldPosition = RiderPosAfterStep + NewDir * LineLengthCm;
+		KiteVelocity -= FVector::DotProduct(KiteVelocity - RiderVelocity, NewDir) * NewDir;
+		KiteDir = NewDir;
+	}
+	else if (NewDistanceCm > LineLengthCm)
+	{
+		// Slack lines snatch tight when the kite reaches their full length.
+		const FVector NewDir = Offset / NewDistanceCm;
+		KiteWorldPosition = RiderPosAfterStep + NewDir * LineLengthCm;
+		const float OutwardSpeed = FVector::DotProduct(KiteVelocity - RiderVelocity, NewDir);
+		if (OutwardSpeed > 0.0f)
+		{
+			KiteVelocity -= OutwardSpeed * NewDir;
+		}
+		KiteDir = NewDir;
+	}
+	else if (NewDistanceCm > KINDA_SMALL_NUMBER)
+	{
+		KiteDir = Offset / NewDistanceCm;
+	}
+	KiteHeading = TangentTowards(KiteDir, KiteHeading);
+
+	return Tension;
 }
 
 void UKiteComponent::UpdateKite(float DeltaTime)
@@ -425,17 +727,25 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 	if (bCrashed)
 	{
-		// On the water: slack lines, dragged along with the rider, until it relaunches.
+		// On the water: slack lines, towed along if the rider rides away from it, until it relaunches.
 		CrashedSeconds += DeltaTime;
-		KiteWorldPosition = RiderPos + KiteDir * LineLengthCm;
-		KiteVelocity = RiderVelocity;
+		FVector Offset = KiteWorldPosition - RiderPos;
+		if (Offset.Size() > LineLengthCm)
+		{
+			KiteWorldPosition = RiderPos + Offset.GetSafeNormal() * LineLengthCm;
+		}
+		KiteWorldPosition.Z = FMath::Min(KiteWorldPosition.Z, CrashHeightCm);
+		KiteVelocity = FVector::ZeroVector;
 		LineTensionN = 0.0f;
 		LineForce = FVector::ZeroVector;
+		UpdateAngles();
+		LastRiderPosition = RiderPos;
+		bHasLastRiderPosition = true;
 
 		const float MinSecondsBeforeSteeredRelaunch = 1.0f;
 		const bool bSteeredUp = CrashedSeconds >= MinSecondsBeforeSteeredRelaunch && FMath::Abs(Steer) >= CentredBarThreshold;
 		// It will not come off the water without enough wind to fly in.
-		const bool bEnoughWind = (GetWindAt(KiteWorldPosition) - RiderVelocity).SizeSquared() >= FMath::Square(StallFlowSpeedCmS);
+		const bool bEnoughWind = (GetWindAt(KiteWorldPosition) - RiderVelocity).SizeSquared() >= FMath::Square(MinRelaunchWindCmS);
 		if (bEnoughWind && (CrashedSeconds >= RelaunchDelaySeconds || bSteeredUp))
 		{
 			Relaunch();
@@ -443,154 +753,55 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 		return;
 	}
 
-	const float ClampedSheet = FMath::Clamp(Sheet, 0.0f, 1.0f);
-	const float GlideRatio = FMath::Lerp(GlideRatioSheetedOut, GlideRatioSheetedIn, ClampedSheet);
+	const FVector Wind = GetWindAt(KiteWorldPosition);
+	const float SteerInput = ComputeSteering(DeltaTime, RiderVelocity, Wind);
 
-	// Wind the kite feels before its own flight: true wind at the kite minus the rider's motion,
-	// split into the part along the lines (which powers the kite) and the part across them.
-	FVector ApparentWind = GetWindAt(RiderPos + KiteDir * LineLengthCm) - RiderVelocity;
-	float AlongLineWind = FVector::DotProduct(ApparentWind, KiteDir);
-	FVector CrossLineWind = ApparentWind - AlongLineWind * KiteDir;
-
-	FVector KiteMotion = FVector::ZeroVector; // velocity of the kite around the rider
+	// Fixed small steps: the kite's response is fast compared with a frame.
+	float TensionSum = 0.0f;
+	int32 NumSteps = 1;
 	if (DeltaTime > 0.0f)
 	{
-		// 1. Airspeed: the kite accelerates until its drag angle matches the wind along the lines.
-		const float TargetAirspeed = FMath::Clamp(GlideRatio * FMath::Max(AlongLineWind, 0.0f), 0.0f, MaxAirspeedCmS);
-		AirspeedCmS = FMath::FInterpTo(AirspeedCmS, TargetAirspeed, DeltaTime, AirspeedResponse);
+		NumSteps = FMath::Clamp(FMath::CeilToInt(DeltaTime / MaxFlightStepSeconds), 1, MaxFlightStepsPerUpdate);
+		const float StepSeconds = DeltaTime / NumSteps;
 
-		// 2. Heading. Steering normally asks for a direction of travel: bar centred means nose out
-		// of the window (parked), bar over means along the window edge that way, so the kite
-		// travels round the window and stops when the bar is centred. With the loop input held the
-		// bar turns the kite directly, at a rate set by its airspeed, and holding it flies a loop.
-		float TurnRad = 0.0f;
-		const bool bSteering = FMath::Abs(Steer) >= CentredBarThreshold;
-		if (bLoopHeld && bSteering)
+		// The rider has moved since the last update. The lines are judged tight or slack against
+		// where the rider is during each step, not against where they ended up, or a rider moving
+		// towards the kite would slacken the lines at the start of every frame.
+		const FVector RiderPosBefore = bHasLastRiderPosition ? LastRiderPosition : RiderPos;
+		for (int32 Step = 0; Step < NumSteps; ++Step)
 		{
-			TurnRad = Steer * (AirspeedCmS / FMath::Max(MinTurnRadiusCm, 1.0f)) * DeltaTime;
-			TurnDeg += FMath::RadiansToDegrees(TurnRad);
-			CentredBarSeconds = 0.0f;
-		}
-		else
-		{
-			CentredBarSeconds += DeltaTime;
-			if (CentredBarSeconds >= TurnResetSeconds)
+			const FVector StepStart = FMath::Lerp(RiderPosBefore, RiderPos, static_cast<float>(Step) / NumSteps);
+			const FVector StepEnd = FMath::Lerp(RiderPosBefore, RiderPos, static_cast<float>(Step + 1) / NumSteps);
+			TensionSum += StepFlight(StepSeconds, SteerInput, StepStart, StepEnd, RiderVelocity, Wind);
+
+			if (KiteWorldPosition.Z <= CrashHeightCm)
 			{
-				TurnDeg = 0.0f;
-			}
-
-			const float MinCrossWindCmS = 50.0f; // too little cross wind to say which way is out
-			if (CrossLineWind.SizeSquared() > FMath::Square(MinCrossWindCmS))
-			{
-				const FVector Outward = TangentTowards(KiteDir, -CrossLineWind);
-				const float TravelRad = FMath::DegreesToRadians(Steer * TravelHeadingDeg);
-				FVector TargetHeading = Outward * FMath::Cos(TravelRad) + FVector::CrossProduct(Outward, KiteDir) * FMath::Sin(TravelRad);
-
-				// At the bottom of the window there is nowhere further to travel: park instead of
-				// skimming along the water into the middle of the window.
-				const float FloorUp = FMath::Sin(FMath::DegreesToRadians(MinElevationDeg + 1.0f));
-				if (KiteDir.Z <= FloorUp && TargetHeading.Z < 0.0f)
-				{
-					TargetHeading = Outward;
-				}
-
-				// Signed angle from the heading to the target, positive to the right.
-				const float ErrorRad = FMath::Atan2(
-					FVector::DotProduct(FVector::CrossProduct(KiteHeading, KiteDir), TargetHeading),
-					FVector::DotProduct(KiteHeading, TargetHeading));
-				const float MaxStepRad = FMath::DegreesToRadians(SteerAssistMaxRateDegPerSec) * DeltaTime;
-				TurnRad = FMath::Clamp(ErrorRad * FMath::Clamp(SteerAssistGain * DeltaTime, 0.0f, 1.0f), -MaxStepRad, MaxStepRad);
+				Crash();
+				return;
 			}
 		}
-		// A positive turn swings the nose to the rider's right as they look up the lines at the kite.
-		KiteHeading = KiteHeading * FMath::Cos(TurnRad) + FVector::CrossProduct(KiteHeading, KiteDir) * FMath::Sin(TurnRad);
-
-		// 3. Position: fly along the heading, drift with the wind across the lines.
-		KiteMotion = AirspeedCmS * KiteHeading + CrossLineWind;
-
-		// Without enough air flowing over it the kite stops flying and falls.
-		const float FlowSpeedCmS = FMath::Sqrt(FMath::Square(AirspeedCmS) + FMath::Square(FMath::Max(AlongLineWind, 0.0f)));
-		const bool bStalled = FlowSpeedCmS < StallFlowSpeedCmS;
-		if (bStalled)
-		{
-			const FVector DownTangent = TangentTowards(KiteDir, -FVector::UpVector);
-			KiteMotion += DownTangent * StallSinkSpeedCmS * (1.0f - FlowSpeedCmS / FMath::Max(StallFlowSpeedCmS, 1.0f));
-		}
-
-		FVector NewDir = (KiteDir + KiteMotion * (DeltaTime / LineLengthCm)).GetSafeNormal();
-
-		// A loop or a stall can take the kite into the water.
-		const float CrashUp = FMath::Sin(FMath::DegreesToRadians(CrashElevationDeg));
-		const bool bCanHitWater = bStalled || (bLoopHeld && bSteering);
-		if (bCanHitWater && NewDir.Z <= CrashUp)
-		{
-			FVector Horizontal = NewDir.GetSafeNormal2D();
-			if (Horizontal.IsNearlyZero())
-			{
-				Horizontal = GetDownwindDir();
-			}
-			KiteDir = Horizontal * FMath::Sqrt(1.0f - CrashUp * CrashUp) + FVector::UpVector * CrashUp;
-			KiteHeading = TangentTowards(KiteDir, FVector::UpVector);
-			Crash();
-			return;
-		}
-
-		// Plain steering keeps the kite off the water: it will not fly lower than the minimum
-		// elevation (or lower than it already is, if a loop left it below that), and its nose is levelled.
-		const float MinUp = FMath::Min(FMath::Sin(FMath::DegreesToRadians(MinElevationDeg)), FMath::Max(KiteDir.Z, CrashUp));
-		if (!bCanHitWater && NewDir.Z < MinUp)
-		{
-			FVector Horizontal = NewDir.GetSafeNormal2D();
-			if (Horizontal.IsNearlyZero())
-			{
-				Horizontal = GetDownwindDir();
-			}
-			NewDir = Horizontal * FMath::Sqrt(1.0f - MinUp * MinUp) + FVector::UpVector * MinUp;
-			KiteHeading.Z = FMath::Max(KiteHeading.Z, 0.0f);
-		}
-
-		KiteMotion = (NewDir - KiteDir) * (LineLengthCm / DeltaTime);
-		KiteDir = NewDir;
-		KiteHeading = TangentTowards(KiteDir, KiteHeading);
-
-		// Refresh the wind for the force at the new position.
-		ApparentWind = GetWindAt(RiderPos + KiteDir * LineLengthCm) - RiderVelocity;
-		AlongLineWind = FVector::DotProduct(ApparentWind, KiteDir);
-		CrossLineWind = ApparentWind - AlongLineWind * KiteDir;
 	}
+	else
+	{
+		TensionSum = StepFlight(0.0f, SteerInput, RiderPos, RiderPos, RiderVelocity, Wind);
+	}
+	LastRiderPosition = RiderPos;
+	bHasLastRiderPosition = true;
 
-	KiteWorldPosition = RiderPos + KiteDir * LineLengthCm;
-	KiteVelocity = RiderVelocity + KiteMotion;
 	UpdateAngles();
 
-	// 4. Line tension from the air flowing over the kite: its own airspeed plus the wind along the lines.
-	const float FlowSpeedSquaredM2S2 = (FMath::Square(AirspeedCmS) + FMath::Square(FMath::Max(AlongLineWind, 0.0f))) / 10000.0f;
-	if (ApparentWind.IsNearlyZero(0.1f))
-	{
-		LineTensionN = 0.0f;
-		LineForce = FVector::ZeroVector;
-		return;
-	}
-
-	// Angle of attack from sheet. The lift coefficient reaches its 1.2 clamp at 11 deg, so power
-	// rises over the first 80% of bar travel; 1.5 deg leaves a depowered kite just flying.
-	const float AlphaRad = FMath::DegreesToRadians(FMath::Lerp(1.5f, 13.0f, ClampedSheet));
-	const float LiftCoefficient = FMath::Clamp(2.0f * UE_PI * FMath::Sin(AlphaRad), 0.0f, 1.2f);
-	const float DynamicPressurePa = 0.5f * AirDensityKgM3 * FlowSpeedSquaredM2S2;
-
-	LineTensionN = FMath::Min(DynamicPressurePa * AreaM2 * LiftCoefficient, MaxLineTensionN);
-
-	// Force on rider (1 N = 100 kg*cm/s^2)
-	LineForce = KiteDir * (LineTensionN * 100.0f);
+	// The rider feels the average pull over the frame, along the lines.
+	LineTensionN = FMath::Min(TensionSum / NumSteps, MaxLineTensionN);
+	LineForce = KiteDir * (LineTensionN * 100.0f); // 1 N = 100 kg*cm/s^2
 
 #if !UE_BUILD_SHIPPING
 	if (bDrawDebug && GetWorld())
 	{
-		DrawDebugLine(GetWorld(), RiderPos, KiteWorldPosition, FColor::Yellow, false, -1.0f, 0, 2.0f);
+		DrawDebugLine(GetWorld(), RiderPos, KiteWorldPosition, bLinesTaut ? FColor::Yellow : FColor::Red, false, -1.0f, 0, 2.0f);
 		DrawDebugLine(GetWorld(), KiteWorldPosition, KiteWorldPosition + KiteHeading * 300.0f, FColor::Red, false, -1.0f, 0, 2.0f);
 
-		const FString DebugText = FString::Printf(TEXT("Tension: %.1f N\nAirspeed: %.1f m/s\nAz: %.1f, El: %.1f\nSheet: %.2f"),
-			LineTensionN, AirspeedCmS / 100.0f, AzimuthDeg, ElevationDeg, Sheet);
+		const FString DebugText = FString::Printf(TEXT("Tension: %.0f N%s\nAirspeed: %.1f m/s\nAngle of attack: %.1f\nAz: %.1f, El: %.1f\nSheet: %.2f"),
+			LineTensionN, bLinesTaut ? TEXT("") : TEXT(" (slack)"), AirspeedCmS / 100.0f, AngleOfAttackDeg, AzimuthDeg, ElevationDeg, Sheet);
 		DrawDebugString(GetWorld(), KiteWorldPosition + FVector(0.0f, 0.0f, 50.0f), DebugText, nullptr, FColor::White, 0.0f, true);
 	}
 #endif

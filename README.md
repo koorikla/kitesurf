@@ -72,6 +72,10 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 
 Sending the kite up over your head with the bar in lifts you off the water without a pop, and a
 kite looped through the middle of the window pulls several times harder than a parked one.
+The wind gusts and drops (the HUD calls out GUST and LULL). The kite only pulls while its lines
+are tight: in a hole in the wind, or if you outrun the wind, the lines go slack and the kite
+falls until they come tight again. Pull the bar in too far at low speed and it stalls; let it out.
+
 Loop it too low and it goes into the water, where it lies with slack lines until it relaunches
 (about three seconds, or sooner if you steer). Weight on the tail (S) digs the rail in and loads
 the pop; weight on the nose (W) flattens the board so it runs faster and slides more.

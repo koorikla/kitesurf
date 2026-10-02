@@ -12,3 +12,4 @@ Makefile
 CMakeLists.txt
 .ubt/
 .engine-path
+__pycache__/

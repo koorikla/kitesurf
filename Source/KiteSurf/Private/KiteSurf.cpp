@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "KiteRiderPawn.h"
 #include "WindComponent.h"
+#include "AudioMixerBlueprintLibrary.h"
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
@@ -85,6 +86,41 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.AudioRecordStart"),
+			TEXT("Starts recording everything the game plays. Finish with kitesurf.AudioRecordStop."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						UAudioMixerBlueprintLibrary::StartRecordingOutput(*It, 0.0f);
+						UE_LOG(LogKiteSurf, Log, TEXT("Audio recording started"));
+						break;
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.AudioRecordStop"),
+			TEXT("Writes the recording to Saved/BouncedWavFiles/<name>.wav. Usage: kitesurf.AudioRecordStop <name>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const FString Name = Args.IsValidIndex(0) ? Args[0] : TEXT("kitesurf");
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						UAudioMixerBlueprintLibrary::StopRecordingOutput(*It, EAudioRecordingExportType::WavFile, Name, FString());
+						UE_LOG(LogKiteSurf, Log, TEXT("Audio recording written as %s.wav"), *Name);
+						break;
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Jump"),
 			TEXT("Pops the player's rider off the water, as the jump key does."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -132,6 +168,8 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStart"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStop"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();

@@ -36,6 +36,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	float KiteSizeM2;
 
+	/** Chosen kite model, as an EKiteModel index (default 0, the loop kite) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	int32 KiteModelIndex;
+
+	/** Chosen board, as an EBoardSize index (default 1, the 138) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	int32 BoardSizeIndex;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

@@ -1,5 +1,12 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "UI/KiteSurfGearWidget.h"
+#include "UI/KiteSurfMenuStyle.h"
+#include "KiteComponent.h"
+#include "KiteGear.h"
+#include "Blueprint/UserWidget.h"
+#include "Misc/Paths.h"
+#include "Engine/Texture2D.h"
 #include "UI/KiteSurfSaveGame.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfSettingsWidget.h"
@@ -394,3 +401,109 @@ bool FKiteSurfMainMenuHidesBehindSettingsTest::RunTest(const FString& Parameters
     World->DestroyWorld(false);
     return true;
 }
+
+// The gear screen: choices cycle, the recommended kite follows the wind, and it opens from both menus.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfGearScreenTest, "KiteSurf.UI.GearScreen", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+    TestNotNull(TEXT("World created"), World);
+    if (!World)
+    {
+        return false;
+    }
+
+    UKiteSurfGearWidget* Gear = CreateWidget<UKiteSurfGearWidget>(World, UKiteSurfGearWidget::StaticClass());
+    TestNotNull(TEXT("Gear widget created"), Gear);
+    if (Gear)
+    {
+        // Wind drives the recommended kite.
+        Gear->SetWindKnots(15.0f);
+        TestEqual(TEXT("No size chosen: the kite is the recommended one"), Gear->GetEffectiveKiteSizeM2(), UKiteComponent::RecommendKiteSizeM2(15.0f));
+        TestTrue(TEXT("and the row says so"), Gear->GetKiteSizeText().StartsWith(TEXT("AUTO")));
+        Gear->SetWindKnots(30.0f);
+        TestEqual(TEXT("More wind recommends a smaller kite"), Gear->GetEffectiveKiteSizeM2(), 6.0f);
+        Gear->SetWindKnots(99.0f);
+        TestEqual(TEXT("Wind is limited to 40 kn"), Gear->CurrentWindKnots, 40.0f);
+        Gear->SetWindKnots(30.0f);
+
+        // The size button steps through every kite and back to the recommendation.
+        TArray<float> SizesSeen;
+        for (int32 Click = 0; Click < UKiteComponent::GetKiteSizesM2().Num(); ++Click)
+        {
+            Gear->CycleKiteSize();
+            SizesSeen.Add(Gear->CurrentKiteSizeM2);
+        }
+        TestTrue(TEXT("Clicking the size steps through every kite, smallest first"), SizesSeen == TArray<float>(UKiteComponent::GetKiteSizesM2()));
+        TestTrue(TEXT("A 17 m in 30 kn is called out as big"), Gear->GetPowerText().Contains(TEXT("Big")));
+        Gear->CycleKiteSize();
+        TestEqual(TEXT("and then back to the recommended size"), Gear->CurrentKiteSizeM2, 0.0f);
+
+        // The other rows cycle through their options and come back round.
+        const EKiteModel FirstModel = Gear->CurrentKiteModel;
+        Gear->CycleKiteModel();
+        TestNotEqual(TEXT("The kite button changes the model"), Gear->CurrentKiteModel, FirstModel);
+        Gear->CycleKiteModel();
+        TestEqual(TEXT("and comes back round"), Gear->CurrentKiteModel, FirstModel);
+        const EBoardSize FirstBoard = Gear->CurrentBoardSize;
+        for (int32 Click = 0; Click < static_cast<int32>(EBoardSize::Count); ++Click)
+        {
+            Gear->CycleBoardSize();
+        }
+        TestEqual(TEXT("The board button goes round all three boards"), Gear->CurrentBoardSize, FirstBoard);
+        const ERiderCharacter FirstRider = Gear->CurrentRider;
+        Gear->CycleRider();
+        TestNotEqual(TEXT("The rider button changes the rider"), Gear->CurrentRider, FirstRider);
+    }
+
+    // PLAY on the main menu goes through the gear screen; backing out returns to the menu.
+    UKiteSurfMainMenuWidget* MainMenu = CreateWidget<UKiteSurfMainMenuWidget>(World, UKiteSurfMainMenuWidget::StaticClass());
+    TestNotNull(TEXT("Main menu created"), MainMenu);
+    if (MainMenu)
+    {
+        MainMenu->OnPlayClicked();
+        TestNotNull(TEXT("PLAY opens the gear screen"), MainMenu->ActiveGearWidget.Get());
+        TestEqual(TEXT("The main menu is hidden behind it"), MainMenu->GetVisibility(), ESlateVisibility::Collapsed);
+        if (MainMenu->ActiveGearWidget)
+        {
+            TestFalse(TEXT("From the main menu it is the full-screen version"), MainMenu->ActiveGearWidget->bDuringRide);
+            MainMenu->ActiveGearWidget->Cancel();
+        }
+        TestNull(TEXT("BACK closes the gear screen"), MainMenu->ActiveGearWidget.Get());
+        TestEqual(TEXT("and shows the main menu again"), MainMenu->GetVisibility(), ESlateVisibility::Visible);
+    }
+
+    // GEAR on the pause menu opens it over the ride.
+    UKiteSurfPauseMenuWidget* PauseMenu = CreateWidget<UKiteSurfPauseMenuWidget>(World, UKiteSurfPauseMenuWidget::StaticClass());
+    TestNotNull(TEXT("Pause menu created"), PauseMenu);
+    if (PauseMenu)
+    {
+        PauseMenu->OnGearClicked();
+        TestNotNull(TEXT("GEAR opens the gear screen"), PauseMenu->ActiveGearWidget.Get());
+        if (PauseMenu->ActiveGearWidget)
+        {
+            TestTrue(TEXT("From the pause menu it is the over-the-ride version"), PauseMenu->ActiveGearWidget->bDuringRide);
+            PauseMenu->ActiveGearWidget->Cancel();
+        }
+        TestNull(TEXT("Closing it returns to the pause menu"), PauseMenu->ActiveGearWidget.Get());
+        TestEqual(TEXT("which is visible again"), PauseMenu->GetVisibility(), ESlateVisibility::Visible);
+    }
+
+    // The choices reach the game instance and survive a bad stored index.
+    UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
+    GI->SetKiteModel(EKiteModel::Boost);
+    GI->SetBoardSize(EBoardSize::Small);
+    TestEqual(TEXT("Game instance keeps the kite model"), GI->KiteModel, EKiteModel::Boost);
+    TestEqual(TEXT("Game instance keeps the board"), GI->BoardSize, EBoardSize::Small);
+    TestEqual(TEXT("A bad stored kite model falls back to the loop kite"), KiteGear::KiteModelFromIndex(99), EKiteModel::Loop);
+    TestEqual(TEXT("A bad stored board falls back to the 138"), KiteGear::BoardSizeFromIndex(-1), EBoardSize::Medium);
+
+    // The menu art exists.
+    TestNotNull(TEXT("The menu background texture is imported"), KiteSurfMenuStyle::LoadBackgroundTexture());
+    TestTrue(TEXT("The startup splash is in Content/Splash"), FPaths::FileExists(FPaths::ProjectContentDir() / TEXT("Splash/EdSplash.png")) && FPaths::FileExists(FPaths::ProjectContentDir() / TEXT("Splash/Splash.png")));
+
+    World->DestroyWorld(false);
+    return true;
+}
+

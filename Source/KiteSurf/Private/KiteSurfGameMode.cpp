@@ -33,7 +33,12 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 			// Rig the chosen kite, or the one a rider would pick for this wind.
 			if (UKiteComponent* KiteComp = RiderPawn->GetKite())
 			{
+				KiteComp->SetKiteModel(GI->KiteModel);
 				KiteComp->SetKiteSize(GI->GetEffectiveKiteSizeM2());
+			}
+			if (UBoardMovementComponent* BoardComp = RiderPawn->GetBoardMovement())
+			{
+				BoardComp->SetBoardSize(GI->BoardSize);
 			}
 		}
 	}

@@ -136,6 +136,30 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.OpenGear"),
+			TEXT("Opens the gear screen from whichever menu is on screen (PLAY on the main menu, GEAR on the pause menu)."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				for (TObjectIterator<UKiteSurfPauseMenuWidget> It; It; ++It)
+				{
+					if (It->IsInViewport())
+					{
+						It->OnGearClicked();
+						return;
+					}
+				}
+				for (TObjectIterator<UKiteSurfMainMenuWidget> It; It; ++It)
+				{
+					if (It->IsInViewport())
+					{
+						It->OnPlayClicked();
+						return;
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.OpenSettings"),
 			TEXT("Opens the settings screen from whichever menu is on screen."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -166,6 +190,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.After"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.TogglePause"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenGear"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStart"));

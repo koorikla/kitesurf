@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
 #include "RiderCharacter.h"
+#include "KiteGear.h"
 #include "KiteSurfGameInstance.generated.h"
 
 class UKiteSurfSaveGame;
@@ -39,6 +40,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetRiderCharacter(ERiderCharacter InCharacter);
+
+	/** The kind of kite to rig */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	EKiteModel KiteModel;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetKiteModel(EKiteModel InModel);
+
+	/** The board to ride */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	EBoardSize BoardSize;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetBoardSize(EBoardSize InSize);
 
 	/** Chosen kite size in m^2; 0 means the size recommended for the wind. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")

@@ -11,6 +11,8 @@ UKiteSurfSaveGame::UKiteSurfSaveGame()
 	, bOnboardingCompleted(false)
 	, RiderCharacterIndex(0)
 	, KiteSizeM2(0.0f)
+	, KiteModelIndex(0)
+	, BoardSizeIndex(1)
 {
 }
 

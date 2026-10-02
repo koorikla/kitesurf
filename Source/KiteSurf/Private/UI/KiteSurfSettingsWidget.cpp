@@ -238,48 +238,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 24))
 					.ColorAndOpacity(FLinearColor(1.0f, 0.85f, 0.2f))
 				]
-				// Wind row
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(20.0f, 6.0f)
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SBox).WidthOverride(170.0f)
-						[
-							SNew(STextBlock)
-							.Text(FText::FromString(TEXT("WIND STRENGTH:")))
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					.Padding(10.0f, 0.0f)
-					.VAlign(VAlign_Center)
-					[
-						SAssignNew(SlateWindSlider, SSlider)
-						.Value((CurrentWindKnots - 8.0f) / 32.0f)
-						.OnValueChanged_Lambda([this](float NewNormValue)
-						{
-							OnWindSliderChanged(8.0f + NewNormValue * 32.0f);
-						})
-					]
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SBox).WidthOverride(70.0f).HAlign(HAlign_Right)
-						[
-							SAssignNew(SlateWindText, STextBlock)
-							.Text(FText::FromString(FString::Printf(TEXT("%.0f kn"), CurrentWindKnots)))
-							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-							.ColorAndOpacity(FLinearColor(0.3f, 0.8f, 1.0f))
-						]
-					]
-				]
+				// Wind, kite, board and rider are chosen on the gear screen.
 				// Volume row
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -403,78 +362,6 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						[
 							SAssignNew(SlateResolutionText, STextBlock)
 							.Text(FText::FromString(FString::Printf(TEXT("%d x %d"), CurrentResolution.X, CurrentResolution.Y)))
-							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-						]
-					]
-				]
-				// Kite row
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(20.0f, 6.0f)
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SBox).WidthOverride(170.0f)
-						[
-							SNew(STextBlock)
-							.Text(FText::FromString(TEXT("KITE:")))
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					.Padding(10.0f, 0.0f)
-					.VAlign(VAlign_Center)
-					[
-						SAssignNew(SlateKiteButton, SButton)
-						.HAlign(HAlign_Center)
-						.OnClicked_Lambda([this]()
-						{
-							CycleKiteSize();
-							return FReply::Handled();
-						})
-						[
-							SAssignNew(SlateKiteText, STextBlock)
-							.Text(FText::FromString(GetKiteSizeText()))
-							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-						]
-					]
-				]
-				// Rider row
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(20.0f, 6.0f)
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.VAlign(VAlign_Center)
-					[
-						SNew(SBox).WidthOverride(170.0f)
-						[
-							SNew(STextBlock)
-							.Text(FText::FromString(TEXT("RIDER:")))
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					.Padding(10.0f, 0.0f)
-					.VAlign(VAlign_Center)
-					[
-						SAssignNew(SlateRiderButton, SButton)
-						.HAlign(HAlign_Center)
-						.OnClicked_Lambda([this]()
-						{
-							CycleRiderCharacter();
-							return FReply::Handled();
-						})
-						[
-							SAssignNew(SlateRiderText, STextBlock)
-							.Text(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)))
 							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
 						]
 					]

@@ -9,6 +9,8 @@ UKiteSurfGameInstance::UKiteSurfGameInstance()
 	, bSkipOnboarding(false)
 	, bOnboardingCompleted(false)
 	, RiderCharacter(ERiderCharacter::Santa)
+	, KiteModel(EKiteModel::Loop)
+	, BoardSize(EBoardSize::Medium)
 	, KiteSizeM2(0.0f)
 {
 }
@@ -30,6 +32,8 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 		bOnboardingCompleted = SaveGame->bOnboardingCompleted;
 		RiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
 		SetKiteSizeM2(SaveGame->KiteSizeM2);
+		KiteModel = KiteGear::KiteModelFromIndex(SaveGame->KiteModelIndex);
+		BoardSize = KiteGear::BoardSizeFromIndex(SaveGame->BoardSizeIndex);
 		FApp::SetVolumeMultiplier(MasterVolume);
 	}
 }
@@ -45,6 +49,8 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 		SaveGame->bOnboardingCompleted = bOnboardingCompleted;
 		SaveGame->RiderCharacterIndex = static_cast<int32>(RiderCharacter);
 		SaveGame->KiteSizeM2 = KiteSizeM2;
+		SaveGame->KiteModelIndex = static_cast<int32>(KiteModel);
+		SaveGame->BoardSizeIndex = static_cast<int32>(BoardSize);
 		SaveGame->SaveSettings();
 	}
 }
@@ -84,4 +90,14 @@ void UKiteSurfGameInstance::SetKiteSizeM2(float InSizeM2)
 float UKiteSurfGameInstance::GetEffectiveKiteSizeM2() const
 {
 	return KiteSizeM2 > 0.0f ? KiteSizeM2 : UKiteComponent::RecommendKiteSizeM2(PendingWindKnots);
+}
+
+void UKiteSurfGameInstance::SetKiteModel(EKiteModel InModel)
+{
+	KiteModel = KiteGear::KiteModelFromIndex(static_cast<int32>(InModel));
+}
+
+void UKiteSurfGameInstance::SetBoardSize(EBoardSize InSize)
+{
+	BoardSize = KiteGear::BoardSizeFromIndex(static_cast<int32>(InSize));
 }

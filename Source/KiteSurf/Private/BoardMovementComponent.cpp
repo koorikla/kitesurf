@@ -227,6 +227,21 @@ void UBoardMovementComponent::BeginAirborne()
 	LandingStateTimer = 0.0f;
 }
 
+void UBoardMovementComponent::SetBoardSize(EBoardSize InSize)
+{
+	BoardSize = KiteGear::BoardSizeFromIndex(static_cast<int32>(InSize));
+	const FBoardSizeTraits Traits = KiteGear::GetTraits(BoardSize);
+	// Reference 138 cm board: the constructor's values.
+	BaseJumpImpulse = 21000.0f * Traits.PopScale;
+	PlaningThresholdCmS = 400.0f * Traits.PlaningSpeedScale;
+	LowSpeedPivotMaxSpeedCmS = PlaningThresholdCmS;
+	PlaningDragCoef = 8.0f * Traits.PlaningDragScale;
+	PlaningQuadraticDragCoef = 0.03f * Traits.PlaningDragScale;
+	BaseLateralDragCoef = 500.0f * Traits.GripScale;
+	EdgeGripCoef = 2000.0f * Traits.GripScale;
+	CarveTurnRate = 60.0f * Traits.TurnRateScale;
+}
+
 float UBoardMovementComponent::GetFloatDepthForSpeed(float SpeedCmS) const
 {
 	// Fully sunk below FloatUntilSpeedFraction of planing speed, on the surface at planing speed.

@@ -1015,7 +1015,7 @@ namespace
 	 * steered hard up; with bHoldEdge the rider's weight is on the tail until ReleaseSeconds after
 	 * that, when they pull the bar in and pop. ReleaseSeconds < 0 means never pop.
 	 */
-	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds)
+	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop)
 	{
 		FJumpResult Result;
 		FRideFixture Ride(30.0f);
@@ -1023,6 +1023,7 @@ namespace
 		{
 			return Result;
 		}
+		Ride.Kite->SetKiteModel(Model);
 		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(30.0f));
 		Ride.Simulate(8.0f);
 
@@ -1199,6 +1200,101 @@ bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
 	TestEqual(TEXT("A chosen size is used"), GI->GetEffectiveKiteSizeM2(), 9.0f);
 	GI->SetKiteSizeM2(8.5f);
 	TestEqual(TEXT("A size that is not on offer falls back to the recommended one"), GI->GetEffectiveKiteSizeM2(), 6.0f);
+	return true;
+}
+
+// Gear changes how the kite and the board behave, in the direction the gear screen says.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfGearChangesBehaviour, "KiteSurf.Gear.ChangesBehaviour", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
+{
+	// Kite models: the same size parked in the same wind, then looped.
+	float ParkedTensionN[2] = { 0.0f, 0.0f };
+	float LoopTurnDeg[2] = { 0.0f, 0.0f };
+	const EKiteModel Models[2] = { EKiteModel::Loop, EKiteModel::Boost };
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FStandingFixture Standing;
+		if (!Standing.Kite)
+		{
+			return false;
+		}
+		Standing.Kite->SetKiteModel(Models[Index]);
+		TestEqual(TEXT("The kite is the model that was rigged"), Standing.Kite->GetKiteModel(), Models[Index]);
+		TestEqual(TEXT("Changing the model keeps the size"), Standing.Kite->AreaM2, 12.0f);
+		Standing.Kite->SetWindowPosition(45.0f, 10.0f);
+		FKiteFlight Parked;
+		Parked.Fly(Standing.Kite, 0.0f, 6.0f);
+		ParkedTensionN[Index] = Standing.Kite->GetLineTensionN();
+
+		Standing.Kite->SetWindowPosition(0.0f, 10.0f);
+		Parked.Fly(Standing.Kite, 0.0f, 4.0f);
+		Standing.Kite->SetLoopHeld(true);
+		FKiteFlight Loop;
+		Loop.Fly(Standing.Kite, 1.0f, 3.0f);
+		LoopTurnDeg[Index] = FMath::Abs(Standing.Kite->GetTurnDeg());
+		Standing.Kite->SetLoopHeld(false);
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: parked pull loop %.0f N, boost %.0f N; turned in 3 s loop %.0f deg, boost %.0f deg"), ParkedTensionN[0], ParkedTensionN[1], LoopTurnDeg[0], LoopTurnDeg[1]);
+	TestTrue(FString::Printf(TEXT("The boost kite pulls at least as hard parked (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] >= ParkedTensionN[0]);
+
+	// Where the boost kite earns its name: each kite released at its own best moment (the boost
+	// kite turns slower, so its send takes a little longer to load up), it goes higher and
+	// stays up longer.
+	const FJumpResult LoopJump = RunJump(true, true, 0.7f, EKiteModel::Loop);
+	const FJumpResult BoostJump = RunJump(true, true, 0.8f, EKiteModel::Boost);
+	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: best timed jump, loop kite %.1f m / %.1f s, boost kite %.1f m / %.1f s (pulled off %d %d)"), LoopJump.PeakCm / 100.0f, LoopJump.AirSeconds, BoostJump.PeakCm / 100.0f, BoostJump.AirSeconds, LoopJump.bPulledOffEdge, BoostJump.bPulledOffEdge);
+	TestFalse(TEXT("Neither rider was pulled off their edge"), LoopJump.bPulledOffEdge || BoostJump.bPulledOffEdge);
+	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > 1.1f * LoopJump.PeakCm);
+	TestTrue(FString::Printf(TEXT("and hangs longer (%.1f s against %.1f s)"), BoostJump.AirSeconds, LoopJump.AirSeconds), BoostJump.AirSeconds > LoopJump.AirSeconds);
+	TestTrue(FString::Printf(TEXT("The loop kite turns further in the same time (%.0f deg against %.0f deg)"), LoopTurnDeg[0], LoopTurnDeg[1]), LoopTurnDeg[0] > 1.15f * LoopTurnDeg[1]);
+
+	// Boards: the reference board is the component's own defaults.
+	FRideFixture Ride;
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	UBoardMovementComponent* Board = Ride.Board;
+	const float ReferencePop = Board->BaseJumpImpulse;
+	const float ReferencePlaning = Board->PlaningThresholdCmS;
+	const float ReferenceGrip = Board->EdgeGripCoef;
+	const float ReferenceTurn = Board->CarveTurnRate;
+	Board->SetBoardSize(EBoardSize::Medium);
+	TestTrue(TEXT("The 138 is the board the simulation is tuned for"), Board->BaseJumpImpulse == ReferencePop && Board->PlaningThresholdCmS == ReferencePlaning && Board->EdgeGripCoef == ReferenceGrip && Board->CarveTurnRate == ReferenceTurn);
+
+	Board->SetBoardSize(EBoardSize::Small);
+	TestTrue(TEXT("The small board pops harder"), Board->BaseJumpImpulse > ReferencePop);
+	TestTrue(TEXT("needs more speed to plane"), Board->PlaningThresholdCmS > ReferencePlaning);
+	TestTrue(TEXT("so it is still sunk at a speed the 138 planes at"), Board->GetFloatDepthForSpeed(ReferencePlaning) > 0.0f);
+	TestTrue(TEXT("and turns quicker with less grip"), Board->CarveTurnRate > ReferenceTurn && Board->EdgeGripCoef < ReferenceGrip);
+
+	Board->SetBoardSize(EBoardSize::Large);
+	TestTrue(TEXT("The big board pops less"), Board->BaseJumpImpulse < ReferencePop);
+	TestTrue(TEXT("planes earlier"), Board->PlaningThresholdCmS < ReferencePlaning);
+	TestNearlyEqual(TEXT("so it is on the surface at a speed the 138 is still coming up at"), Board->GetFloatDepthForSpeed(0.9f * ReferencePlaning), 0.0f, 0.01f);
+	TestTrue(TEXT("and grips harder but turns slower"), Board->EdgeGripCoef > ReferenceGrip && Board->CarveTurnRate < ReferenceTurn);
+
+	// Light wind, starting slow: the big board gets up and planes where the small one stays sunk.
+	float SpeedKn[2] = { 0.0f, 0.0f };
+	float DepthCm[2] = { 0.0f, 0.0f };
+	bool bPlaning[2] = { false, false };
+	const EBoardSize Boards[2] = { EBoardSize::Small, EBoardSize::Large };
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FRideFixture LightWind(12.0f);
+		LightWind.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(12.0f));
+		LightWind.Board->SetBoardSize(Boards[Index]);
+		LightWind.Board->ResetToTack(4.0f);
+		LightWind.Simulate(30.0f);
+		SpeedKn[Index] = LightWind.SpeedKnots();
+		DepthCm[Index] = LightWind.Board->GetFloatDepthCm();
+		bPlaning[Index] = LightWind.Board->IsPlaning();
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: 30 s after a slow start in 12 kn the small board does %.1f kn (planing %d, %.0f cm deep) and the big board %.1f kn (planing %d, %.0f cm deep)"),
+		SpeedKn[0], bPlaning[0], DepthCm[0], SpeedKn[1], bPlaning[1], DepthCm[1]);
+	TestTrue(FString::Printf(TEXT("In 12 kn the big board gets up and planes (%.1f kn)"), SpeedKn[1]), bPlaning[1] && DepthCm[1] < 5.0f);
+	TestTrue(FString::Printf(TEXT("while the small board stays sunk and slow (%.1f kn, %.0f cm deep)"), SpeedKn[0], DepthCm[0]), !bPlaning[0] && DepthCm[0] > 20.0f && SpeedKn[0] < SpeedKn[1]);
 	return true;
 }
 

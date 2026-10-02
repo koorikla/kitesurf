@@ -87,6 +87,14 @@ The lines pull on the harness hook at the front of the rider's waist (`HarnessHo
 
 The lean is away from the kite's pull. On the water that is leaning out against it; in the air the rider hangs from the harness, so the lower the kite, the further back the shoulders go (up to `RiderAirHangLeanDeg`). Board-off tricks, where the feet leave the straps, are not modelled yet.
 
+## Gear
+The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause menu) sets the wind, the kite size and model, the board and the rider. The choices live in `UKiteSurfGameInstance`, are saved with the settings, and are applied when a ride starts (`AKiteSurfGameMode::InitializeRide`) or when the screen is confirmed during one.
+
+- **Kite model** (`UKiteComponent::SetKiteModel`, traits in `KiteGear.cpp`): the loop kite (3 strut) is the kite the simulation is tuned for. The boost kite (5 strut) has 12% more lift, 15% less induced drag, 20% more mass and a 30% wider turn. With the best timing for each in 30 kn, the loop kite jumps about 15 m with 4.3 s in the air and the boost kite about 17.5 m with 4.9 s; the loop kite turns about 500 degrees in the time the boost kite turns 380.
+- **Board size** (`UBoardMovementComponent::SetBoardSize`): the 138 is the reference. The 132 has 20% more pop and turn rate, planes at 20% more speed, and has 10% less drag and 12% less grip. The 145 planes at 18% less speed with 15% more grip, and has 15% less pop and turn rate and 12% more drag. From a slow start in 12 kn the 145 gets up and planes while the 132 stays sunk.
+
+The board's size does not change how it looks yet.
+
 ## Sound
 Three loops play all the time and are faded and pitched by what the rider would hear (`AKiteRiderPawn::ComputeAudioMix`): wind in the ears from the apparent wind, water under the board from board speed (silent in the air), and the lines singing from line tension (silent when slack). The pop, landing (louder and deeper the harder it is), crash and reset are one-shots. All of it is synthesised by `scripts/editor/make_sound_wavs.py` and imported by `make_sound_assets.py`; the loops are set to keep playing while silent so they come back after being faded out.
 

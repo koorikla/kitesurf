@@ -41,6 +41,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetRiderCharacter(ERiderCharacter InCharacter);
 
+	/** What is in the water at the spot */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotIslands;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSandbars;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSharks;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetSpotFeatures(bool bIslands, bool bSandbars, bool bSharks);
+
 	/** The kind of kite to rig */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	EKiteModel KiteModel;

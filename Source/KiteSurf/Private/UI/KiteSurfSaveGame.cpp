@@ -13,6 +13,9 @@ UKiteSurfSaveGame::UKiteSurfSaveGame()
 	, KiteSizeM2(0.0f)
 	, KiteModelIndex(0)
 	, BoardSizeIndex(1)
+	, bSpotIslands(true)
+	, bSpotSandbars(true)
+	, bSpotSharks(true)
 {
 }
 

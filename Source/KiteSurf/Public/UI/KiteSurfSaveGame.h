@@ -44,6 +44,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	int32 BoardSizeIndex;
 
+	/** What is in the water at the spot (all on by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotIslands;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSandbars;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bSpotSharks;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

@@ -16,7 +16,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGearConfirmed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGearCancelled);
 
 /**
- * The gear screen: who rides, which kite and how big, which board, and how hard it blows.
+ * The gear screen: who rides, which kite and how big, which board, how hard it blows, and what
+ * is in the water at the spot.
  * Opened from the main menu before a ride (RIDE / BACK) and from the pause menu during one
  * (APPLY). Confirming stores the choices, saves them, and re-rigs a ride that is under way.
  */
@@ -55,6 +56,25 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
 	float CurrentWindKnots = 15.0f;
+
+	/** What is in the water at the spot. */
+	UPROPERTY(BlueprintReadOnly, Category = "Gear")
+	bool bIslands = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Gear")
+	bool bSandbars = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Gear")
+	bool bSharks = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void ToggleIslands();
+
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void ToggleSandbars();
+
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void ToggleSharks();
 
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void CycleRider();
@@ -125,5 +145,14 @@ private:
 	TSharedPtr<SButton> BoardButton;
 	TSharedPtr<STextBlock> BoardText;
 	TSharedPtr<STextBlock> BoardDescription;
+	TSharedPtr<SButton> IslandsButton;
+	TSharedPtr<STextBlock> IslandsText;
+	TSharedPtr<STextBlock> IslandsDescription;
+	TSharedPtr<SButton> SandbarsButton;
+	TSharedPtr<STextBlock> SandbarsText;
+	TSharedPtr<STextBlock> SandbarsDescription;
+	TSharedPtr<SButton> SharksButton;
+	TSharedPtr<STextBlock> SharksText;
+	TSharedPtr<STextBlock> SharksDescription;
 	TSharedPtr<SButton> ConfirmButton;
 };

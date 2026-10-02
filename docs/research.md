@@ -663,6 +663,8 @@ There are 55 candidate tasks in seven epics, merged from the five agents' propos
 
 ### F. Tricks, scoring and modes
 
+Superseded for F1 to F6 by the trick plan in `docs/tricks.md`, which breaks them into milestones T0 to T3 with tests.
+
 | ID | Task | Acceptance criterion | Size | Depends on | Milestone |
 | --- | --- | --- | --- | --- | --- |
 | F1 | Rider rotation in the air | Back roll and front roll are controllable from the left stick; landing orientation affects landing quality | L | C1 | Slice |

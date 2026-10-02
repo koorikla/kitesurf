@@ -66,7 +66,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 
 	// Jump tunables (Spec defaults)
 	PopImpulseKgCmPerS = 21000.0f; // kg*cm/s: about 2.5 m/s from the legs alone; height comes from the kite
-	EdgeReleaseSeconds = 0.22f;     // s: the release of the edge; after that the lines keep pulling as a force
+	EdgeReleaseSeconds = 0.0f;      // s: 0 = physics only; the lines' pull lifts the rider as a force once the edge lets go
 	JumpMinSpeedKnots = 8.0f;   // 8 kn
 	JumpMinEdgeInput = 0.4f;    // 0.4
 	MaxJumpHeight = 4000.0f;    // 4000 cm = 40 m

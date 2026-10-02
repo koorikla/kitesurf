@@ -391,8 +391,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float PopImpulseKgCmPerS;
 
-	/** How long the kite's upward pull counts as an impulse when the edge is let go (s). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	/**
+	 * How long the kite's upward pull counts as an extra impulse when the edge is let go (s). 0 =
+	 * physics only: the pop is the legs alone, and the height comes from the lines' pull acting on
+	 * the rider as a force once they are off the water (docs/physics/plan-2.md item 2, A3). Phase 1
+	 * used 0.22, a pseudo-impulse that gave the timed jump at 30 kn 5.7 of its 10 m/s of take-off
+	 * speed; set it back to have that feel.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
 	float EdgeReleaseSeconds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")

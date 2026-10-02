@@ -685,7 +685,9 @@ bool FKiteSurfPhysicsStepRateIndependent::RunTest(const FString& Parameters)
 		UE_LOG(LogKiteSurf, Log, TEXT("StepRateIndependent: %.0f fps: popped %d, apex %.1f cm, travelled (%.1f, %.1f) cm, %.2f kn at %.4f s"),
 			FrameRates[Index], Run.bPopped, Run.ApexCm, Run.Travelled.X, Run.Travelled.Y, Run.SpeedKnots, Run.EndSimSeconds);
 		TestTrue(FString::Printf(TEXT("%.0f fps: the pop was taken"), FrameRates[Index]), Run.bPopped);
-		TestTrue(FString::Printf(TEXT("%.0f fps: it is a real jump (%.1f m)"), FrameRates[Index], Run.ApexCm / 100.0f), Run.ApexCm > 200.0f);
+		// More than a pop with the kite parked (0.9 m): 1.8 m since the edge-release impulse went
+		// (plan-2 A3), 2.4 m with it.
+		TestTrue(FString::Printf(TEXT("%.0f fps: it is a real jump (%.1f m)"), FrameRates[Index], Run.ApexCm / 100.0f), Run.ApexCm > 150.0f);
 		Run.Invariants.Assert(*this, FString::Printf(TEXT("%.0f fps"), FrameRates[Index]));
 	}
 	for (int32 A = 0; A < 3; ++A)

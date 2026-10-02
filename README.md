@@ -92,9 +92,10 @@ back and load the edge: the board grips harder against the lines, the pull build
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
-7 m in 15 kn, 15 m in 30 kn and 20 m in 40 kn. Steering the kite up without an edge just
-plucks you off the water. (Weight back on S still holds you down too.) A kite looped through the
-middle of the window pulls several times harder than a parked one.
+5 m in 15 kn, 11 m in 30 kn and 15 m in 40 kn, and with the bar centred the kite flown overhead
+carries you down: nearly 5 s in the air at 30 kn. Steering the kite up without an edge just
+plucks you off the water. (Weight back on S still holds you down too, and adds to the pop.) A kite
+looped through the middle of the window pulls several times harder than a parked one.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
 motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full

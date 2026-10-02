@@ -1288,12 +1288,14 @@ namespace
 	};
 
 	/**
-	 * When the timed jump lets go of the edge, after the send reaches the kite (s): about 0.15 s before
-	 * the send would pull the rider off the water on its own. That happens 1.2 s after the send since
-	 * phase 2 (the kite gathers speed more slowly on its projected area), against 1.08 s before, when
-	 * this was 0.7 s.
+	 * When the timed jump lets go of the jump button and pops, after the send reaches the kite (s).
+	 * Loaded, the rider is pulled off the water 1.13 s after the send starts (0.24 s of it the bar's
+	 * dead time); this pops 0.07 s before that, as late as it can without racing the pull. Without the
+	 * edge-release impulse (plan-2 A3) the height is earned in the last tenth of a second: 0.74 s
+	 * gives 9.5 m, 0.82 s 10.8 m, 0.86 s 10.0 m (the pop and the pull together), 0.9 s is pulled off.
+	 * It was 0.7 s at phase 1 and 0.8 s with plan-2 item 1, weight back only.
 	 */
-	constexpr float TimedReleaseSeconds = 0.8f;
+	constexpr float TimedReleaseSeconds = 0.82f;
 
 	struct FJumpResult
 	{
@@ -1321,12 +1323,13 @@ namespace
 
 	/**
 	 * Rides for a few seconds at 30 kn on the recommended kite, then jumps. With bSend the kite is
-	 * steered hard up; with bHoldEdge the rider's weight is on the tail until ReleaseSeconds after
-	 * the kite starts to answer that (the bar reaches it after its steering dead time), when they
-	 * pull the bar in and pop. ReleaseSeconds < 0 means never pop. The bar is centred once the rider
-	 * is in the air (or the kite is past 12), so the assist flies the kite overhead. With
-	 * LoopAtApexSteer the rider loops the kite that way from the apex, the bar straight to the kite,
-	 * until it has turned a full circle.
+	 * steered hard up; with bHoldEdge the rider holds the jump button (crouched and loading the edge)
+	 * with their weight on the tail until ReleaseSeconds after the kite starts to answer that (the bar
+	 * reaches it after its steering dead time), when they pull the bar in and let go to pop; without
+	 * it they pop with a tap at ReleaseSeconds. ReleaseSeconds < 0 means never pop. The bar is
+	 * centred once the rider is in the air (or the kite is past 12), so the assist flies the kite
+	 * overhead. With LoopAtApexSteer the rider loops the kite that way from the apex, the bar straight
+	 * to the kite, until it has turned a full circle.
 	 */
 	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop, float TraceHz = 0.0f, float LoopAtApexSteer = 0.0f)
 	{
@@ -1351,6 +1354,7 @@ namespace
 		if (bHoldEdge)
 		{
 			Ride.Board->SetWeightShift(-1.0f);
+			Ride.Pawn->SetLoadHeld(true);
 		}
 		bool bLeftWater = false;
 		for (float Elapsed = 0.0f; Elapsed < 20.0f; Elapsed += RideDeltaTime)
@@ -1363,13 +1367,21 @@ namespace
 				bLeftWater = true;
 				Result.bPulledOffEdge = true;
 				Ride.Board->SetWeightShift(0.0f);
+				Ride.Pawn->SetLoadHeld(false);
 				Ride.Pawn->SheetKite(1.0f);
 			}
 			if (!bLeftWater && ReleaseSeconds >= 0.0f && Elapsed >= ReleaseSeconds + SendDeadTimeSeconds)
 			{
 				Ride.Board->SetWeightShift(-1.0f);
 				Ride.Pawn->SheetKite(1.0f);
-				Ride.Board->Jump();
+				if (bHoldEdge)
+				{
+					Ride.Pawn->ReleaseLoadAndPop();
+				}
+				else
+				{
+					Ride.Board->Jump();
+				}
 				Ride.Board->SetWeightShift(0.0f);
 				bLeftWater = true;
 			}
@@ -1454,8 +1466,8 @@ namespace
 }
 
 // Height has to be earned: a pop alone is a hop, sending the kite without an edge plucks the rider
-// off early, and the big jump comes from holding the edge against the rising kite and letting go
-// at the right moment.
+// off early, and the big jump comes from holding the jump button (crouched, loading the edge, the
+// weight back) against the rising kite and letting go at the right moment.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpTimedReleaseBeatsPop, "KiteSurf.Jump.TimedReleaseBeatsPop", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
@@ -1492,10 +1504,16 @@ bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
 //
 // The 20 Hz trace it logs shows how. Since plan-2 item 2 the assist judges the window by the
 // horizontal wind (A1) and, with the bar centred in the air, flies the kite to 12 over the rider and
-// holds it there (A2): on the way down the kite is about 65 deg up, flying unstalled, and its lines
+// holds it there (A2): on the way down the kite is about 70 deg up, flying unstalled, and its lines
 // hold up about two thirds of the rider. Before, the assist steered by the wind the rider feels,
 // which in the air is dominated by their own climb and fall; the kite stayed low and to the side,
 // stalled all the way down, and 8h/t^2 was 7.4 to 7.8 m/s^2.
+//
+// The climb is physics only (A3): the loaded pop gives 6 m/s, and the lines, at 4 kN as the board
+// lets go, add 2 m/s more in the first 0.2 s before the kite, at 45 deg up and still deep in the
+// window, slows as it nears the edge and the rider rises towards it. With the weight back but
+// without the jump button's loaded pop the same send gives 7.4 to 8 m; that way it gave 13.3 m with
+// the old edge-release impulse (EdgeReleaseSeconds 0.22).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHangTime, "KiteSurf.Physics.HangTime", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
@@ -1563,11 +1581,11 @@ bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
 // 3.5 m/s^2, the kite carrying 65 to 85% of the rider over the flight).
 //
 // The plan asks for the kite above 60 deg within 2 s of take-off. It holds for jumps up to about
-// 8 m; on the bigger timed jump the rider climbs at 7 to 10 m/s for the first second and a half and
-// the kite, flying at about 14 m/s of air, cannot rise faster than them until the climb slows. It
-// reaches 12 about 1.5 s after take-off, still deep in the window, and 60 deg after 2.1 to 2.4 s
-// (flying it straight up instead of to 12 makes no difference and stalls it on the way down), so
-// this test allows 2.5 s.
+// 8 m; on the 11 m timed jump the rider climbs at 9 to 5 m/s for the first second and the kite,
+// flying at about 14 m/s of air, cannot rise faster than them until the climb slows. It reaches 12
+// about 1.5 s after take-off, still deep in the window, and 60 deg after 2.1 s (2.4 s on a 13 m
+// jump; flying it straight up instead of to 12 makes no difference and stalls it on the way down),
+// so this test allows 2.5 s.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsKiteOverheadInTheAir, "KiteSurf.Physics.KiteOverheadInTheAir", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsKiteOverheadInTheAir::RunTest(const FString& Parameters)
@@ -1789,11 +1807,11 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("The boost kite pulls at least as hard parked (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] >= ParkedTensionN[0]);
 
 	// Where the boost kite earns its name: each kite released a little before its send would pull
-	// the rider off the edge (a release at 0.77 s is too late for the loop kite; the boost kite
-	// turns slower, so its send loads up later and 0.80 s is too late for it), it goes higher and
+	// the rider off the edge (loaded, a release at 0.88 s is too late for the loop kite; the boost
+	// kite turns slower, so its send loads up later and 0.95 s is too late for it), it goes higher and
 	// stays up longer.
-	const FJumpResult LoopJump = RunJump(true, true, 0.64f, EKiteModel::Loop);
-	const FJumpResult BoostJump = RunJump(true, true, 0.74f, EKiteModel::Boost);
+	const FJumpResult LoopJump = RunJump(true, true, 0.74f, EKiteModel::Loop);
+	const FJumpResult BoostJump = RunJump(true, true, 0.86f, EKiteModel::Boost);
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: best timed jump, loop kite %.1f m / %.1f s, boost kite %.1f m / %.1f s (pulled off %d %d)"), LoopJump.PeakCm / 100.0f, LoopJump.AirSeconds, BoostJump.PeakCm / 100.0f, BoostJump.AirSeconds, LoopJump.bPulledOffEdge, BoostJump.bPulledOffEdge);
 	TestFalse(TEXT("Neither rider was pulled off their edge"), LoopJump.bPulledOffEdge || BoostJump.bPulledOffEdge);
 	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > 1.1f * LoopJump.PeakCm);

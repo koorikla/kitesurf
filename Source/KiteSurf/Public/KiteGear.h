@@ -53,6 +53,8 @@ namespace KiteGear
 	/** A stored index back to a valid model; anything out of range is the loop kite. */
 	KITESURF_API EKiteModel KiteModelFromIndex(int32 Index);
 	KITESURF_API FKiteModelTraits GetTraits(EKiteModel Model);
+	/** The kite's mesh, drawn on the water and in the gear preview; each model has its own struts and colours. */
+	KITESURF_API const TCHAR* GetMeshPath(EKiteModel Model);
 
 	KITESURF_API const TCHAR* GetDisplayName(EBoardSize Size);
 	KITESURF_API const TCHAR* GetDescription(EBoardSize Size);
@@ -60,4 +62,6 @@ namespace KiteGear
 	/** A stored index back to a valid size; anything out of range is the 138. */
 	KITESURF_API EBoardSize BoardSizeFromIndex(int32 Index);
 	KITESURF_API FBoardSizeTraits GetTraits(EBoardSize Size);
+	/** Length of the board relative to the 138 that SM_KiteBoard is modelled at. */
+	KITESURF_API float GetLengthScale(EBoardSize Size);
 }

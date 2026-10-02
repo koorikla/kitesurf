@@ -158,6 +158,8 @@ KITE_CENTRE_CHORD = 235.0
 KITE_TIP_CHORD = 95.0
 KITE_TIP_SWEEP = 70.0          # how far the leading edge sweeps back at the tips
 KITE_STRUT_POSITIONS = (-0.52, 0.0, 0.52)
+# The boost kite: the same outline (so the lines meet it at the same wingtips) with five struts.
+KITE_BOOST_STRUT_POSITIONS = (-0.68, -0.34, 0.0, 0.34, 0.68)
 
 
 def kite_section(s):
@@ -188,7 +190,7 @@ def kite_wingtip(left):
     return kite_surface_point(s, 0.85)
 
 
-def build_kite():
+def build_kite(strut_positions=KITE_STRUT_POSITIONS, canopy_material='KiteCanopy'):
     mesh = Mesh()
     white = (0.93, 0.93, 0.93)
 
@@ -209,7 +211,7 @@ def build_kite():
             d = a + 1
             triangles.append((a, b, c))
             triangles.append((a, c, d))
-    mesh.add_part('KiteCanopy', (0.2, 0.75, 0.45), positions, uvs, triangles, double_sided=True)
+    mesh.add_part(canopy_material, (0.2, 0.75, 0.45), positions, uvs, triangles, double_sided=True)
 
     # Leading edge tube, fat in the middle and tapering to the tips.
     path, radii = [], []
@@ -221,7 +223,7 @@ def build_kite():
     add_tube(mesh, 'KiteTube', white, path, radii, segments=10)
 
     # Struts run from the leading edge to the trailing edge just under the canopy.
-    for s in KITE_STRUT_POSITIONS:
+    for s in strut_positions:
         strut_path, strut_radii = [], []
         for j in range(9):
             v = j / 8.0
@@ -573,17 +575,37 @@ def generate_spot(output_dir):
     return paths
 
 
+def build_preview_backdrop():
+    """A 1 m square card facing +X: the sky behind the gear preview, scaled in C++. The importer flips V,
+    so v = 1 here is the top of the card, v = 0 in the material."""
+    mesh = Mesh()
+    positions = [(0.0, -50.0, 50.0), (0.0, 50.0, 50.0), (0.0, 50.0, -50.0), (0.0, -50.0, -50.0)]
+    uvs = [(0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)]
+    mesh.add_part('PreviewBackdrop', (0.5, 0.75, 0.9), positions, uvs, [(0, 2, 1), (0, 3, 2)], double_sided=True)
+    return mesh
+
+
+def generate_preview(output_dir):
+    """Writes the gear preview's OBJs and returns {asset name: path}."""
+    os.makedirs(output_dir, exist_ok=True)
+    paths = {'SM_PreviewBackdrop': os.path.join(output_dir, 'preview_backdrop.obj')}
+    build_preview_backdrop().write(paths['SM_PreviewBackdrop'])
+    return paths
+
+
 def generate_all(output_dir):
     """Writes every OBJ and returns {asset name: path}."""
     os.makedirs(output_dir, exist_ok=True)
     paths = {
         'SM_Kite': os.path.join(output_dir, 'kite.obj'),
+        'SM_KiteBoost': os.path.join(output_dir, 'kite_boost.obj'),
         'SM_KiteBoard': os.path.join(output_dir, 'board.obj'),
         'SM_ControlBar': os.path.join(output_dir, 'control_bar.obj'),
         'SM_RiderSanta': os.path.join(output_dir, 'rider_santa.obj'),
         'SM_RiderWetsuit': os.path.join(output_dir, 'rider_wetsuit.obj'),
     }
     build_kite().write(paths['SM_Kite'])
+    build_kite(KITE_BOOST_STRUT_POSITIONS, 'KiteCanopyBoost').write(paths['SM_KiteBoost'])
     generate_board_obj(paths['SM_KiteBoard'])
     generate_bar_obj(paths['SM_ControlBar'])
     build_rider('santa').write(paths['SM_RiderSanta'])
@@ -594,5 +616,5 @@ def generate_all(output_dir):
 if __name__ == '__main__':
     import sys
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'Saved', 'Geometry')
-    for name, path in {**generate_all(out), **generate_spot(out)}.items():
+    for name, path in {**generate_all(out), **generate_spot(out), **generate_preview(out)}.items():
         print(f'{name}: {path}')

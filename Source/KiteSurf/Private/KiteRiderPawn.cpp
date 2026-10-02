@@ -41,13 +41,13 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 	RiderMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f)); // Face across the board in kitesurf stance
 
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(RiderCharacter::MannequinMeshPath);
 	if (RiderMeshFinder.Succeeded())
 	{
 		RiderMesh->SetSkeletalMesh(RiderMeshFinder.Object);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(TEXT("/Game/Characters/Mannequins/Anims/MM_Idle"));
+	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(RiderCharacter::MannequinIdlePath);
 	if (RiderAnimFinder.Succeeded())
 	{
 		RiderMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
@@ -601,16 +601,16 @@ void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
 {
 	RiderCharacter = RiderCharacter::FromIndex(static_cast<int32>(InCharacter));
 
-	const bool bRobot = RiderCharacter == ERiderCharacter::Robot;
+	// Riders without a posed static mesh are the animated mannequin.
+	const bool bRobot = RiderCharacter::GetStaticMeshPath(RiderCharacter) == nullptr;
 	if (RiderMesh)
 	{
 		RiderMesh->SetVisibility(bRobot);
 	}
 	if (RiderStaticMesh)
 	{
-		if (!bRobot)
+		if (const TCHAR* MeshPath = RiderCharacter::GetStaticMeshPath(RiderCharacter))
 		{
-			const TCHAR* MeshPath = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("/Game/Meshes/SM_RiderWetsuit") : TEXT("/Game/Meshes/SM_RiderSanta");
 			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath))
 			{
 				RiderStaticMesh->SetStaticMesh(Mesh);

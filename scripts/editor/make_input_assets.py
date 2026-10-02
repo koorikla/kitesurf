@@ -40,6 +40,20 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_Edge', False)
         print(f'IA_Edge configured and saved: {ia_edge}')
 
+        # 4. IA_Jump (Digital bool)
+        ia_jump = get_or_create_asset('IA_Jump', '/Game/Input', unreal.InputAction, None)
+        ia_jump.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_jump)
+        editor_asset_lib.save_asset('/Game/Input/IA_Jump', False)
+        print(f'IA_Jump configured and saved: {ia_jump}')
+
+        # 5. IA_Pause (Digital bool)
+        ia_pause = get_or_create_asset('IA_Pause', '/Game/Input', unreal.InputAction, None)
+        ia_pause.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_pause)
+        editor_asset_lib.save_asset('/Game/Input/IA_Pause', False)
+        print(f'IA_Pause configured and saved: {ia_pause}')
+
         print('=== Creating Input Mapping Context ===')
         imc = get_or_create_asset('IMC_Default', '/Game/Input', unreal.InputMappingContext, None)
         imc.unmap_all()
@@ -76,6 +90,28 @@ def build_assets():
         add_imc_mapping(ia_edge, 'Q', negate=True)
         add_imc_mapping(ia_edge, 'Gamepad_LeftY', negate=False)
 
+        # Map Jump
+        # Key SpaceBar
+        key_space = unreal.Key()
+        key_space.import_text('SpaceBar')
+        imc.map_key(ia_jump, key_space)
+
+        # Gamepad Face Button Bottom
+        key_gp_jump = unreal.Key()
+        key_gp_jump.import_text('Gamepad_FaceButton_Bottom')
+        imc.map_key(ia_jump, key_gp_jump)
+
+        # Map Pause
+        # Key Escape
+        key_esc = unreal.Key()
+        key_esc.import_text('Escape')
+        imc.map_key(ia_pause, key_esc)
+
+        # Gamepad Special Right
+        key_gp_pause = unreal.Key()
+        key_gp_pause.import_text('Gamepad_Special_Right')
+        imc.map_key(ia_pause, key_gp_pause)
+
         editor_asset_lib.save_loaded_asset(imc)
         editor_asset_lib.save_asset('/Game/Input/IMC_Default', False)
         print(f'IMC_Default configured and saved: {imc}')
@@ -90,6 +126,8 @@ def build_assets():
         cdo_rider.set_editor_property('steer_action', ia_steer)
         cdo_rider.set_editor_property('sheet_action', ia_sheet)
         cdo_rider.set_editor_property('edge_action', ia_edge)
+        cdo_rider.set_editor_property('jump_action', ia_jump)
+        cdo_rider.set_editor_property('pause_action', ia_pause)
 
         boom = cdo_rider.get_editor_property('camera_boom')
         if boom:

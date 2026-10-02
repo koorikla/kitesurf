@@ -12,13 +12,22 @@ def create_main_menu_level():
     package_path = "/Game/Maps"
     map_name = "L_MainMenu"
 
-    # Create empty world
-    world = subsystem.new_level(f"{package_path}/{map_name}")
-    if not world:
-        print(f"ERROR: Failed to create level at {package_path}/{map_name}")
-        return False
+    map_path = f"{package_path}/{map_name}"
 
     editor_actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+
+    # Create or load existing world
+    if unreal.EditorAssetLibrary.does_asset_exist(map_path):
+        print(f"Level exists, loading {map_path}...")
+        subsystem.load_level(map_path)
+        for actor in editor_actor_subsystem.get_all_level_actors():
+            if actor.get_class().get_name() not in ['WorldSettings']:
+                editor_actor_subsystem.destroy_actor(actor)
+    else:
+        world = subsystem.new_level(map_path)
+        if not world:
+            print(f"ERROR: Failed to create level at {map_path}")
+            return False
 
     # Directional Light
     sun_actor = editor_actor_subsystem.spawn_actor_from_class(
@@ -47,7 +56,9 @@ def create_main_menu_level():
         pp_settings.set_editor_property("reflection_method", unreal.ReflectionMethod.LUMEN)
 
     # Set WorldSettings DefaultGameMode override to KiteSurfMainMenuGameMode
-    world_settings = subsystem.get_current_level().get_world_settings()
+    ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+    world = ues.get_editor_world()
+    world_settings = world.get_world_settings()
     gm_class = unreal.load_class(None, "/Script/KiteSurf.KiteSurfMainMenuGameMode")
     if gm_class:
         world_settings.set_editor_property("default_game_mode", gm_class)
@@ -56,6 +67,7 @@ def create_main_menu_level():
         print("WARNING: Could not load /Script/KiteSurf.KiteSurfMainMenuGameMode")
 
     saved = subsystem.save_current_level()
+    unreal.EditorAssetLibrary.save_loaded_asset(unreal.EditorAssetLibrary.load_asset(f"{package_path}/{map_name}"), only_if_is_dirty=False)
     print(f"Level saved: {saved}")
     return saved
 

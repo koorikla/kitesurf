@@ -102,6 +102,19 @@ FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)
 	return FString::Printf(TEXT("%.1f"), Knots);
 }
 
+void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
+{
+	JumpRejectionText = UBoardMovementComponent::JumpRejectReasonToString(Reason);
+	if (!JumpRejectionText.IsEmpty())
+	{
+		JumpRejectionRemainingTime = 1.5f;
+	}
+	else
+	{
+		JumpRejectionRemainingTime = 0.0f;
+	}
+}
+
 void AKiteSurfHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -121,6 +134,26 @@ void AKiteSurfHUD::DrawHUD()
 	{
 		DrawTelemetry(RiderPawn);
 		DrawWindWindowArc(RiderPawn, ScreenW * 0.5f, ScreenH - 50.0f, 110.0f);
+	}
+
+	if (JumpRejectionRemainingTime > 0.0f)
+	{
+		const float DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
+		JumpRejectionRemainingTime = FMath::Max(0.0f, JumpRejectionRemainingTime - DeltaTime);
+
+		if (!JumpRejectionText.IsEmpty())
+		{
+			float TextW = 0.0f;
+			float TextH = 0.0f;
+			GetTextSize(JumpRejectionText, TextW, TextH, nullptr, 1.2f);
+
+			const float CenterX = ScreenW * 0.5f;
+			const float TextX = CenterX - (TextW * 0.5f);
+			const float TextY = (ScreenH - 50.0f) - 175.0f;
+
+			DrawRect(FLinearColor(0.05f, 0.02f, 0.02f, 0.75f), TextX - 12.0f, TextY - 4.0f, TextW + 24.0f, TextH + 8.0f);
+			DrawText(JumpRejectionText, FLinearColor(1.0f, 0.35f, 0.35f), TextX, TextY, nullptr, 1.2f);
+		}
 	}
 }
 

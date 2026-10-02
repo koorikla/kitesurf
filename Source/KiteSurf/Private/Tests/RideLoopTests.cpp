@@ -1527,4 +1527,83 @@ bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Holding the jump button: the rider crouches with their weight back and loads the edge against
+// the lines; letting go pops.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpLoadAndRelease, "KiteSurf.Jump.LoadAndRelease", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
+{
+	// The default kite in the default wind, riding steadily.
+	auto Settled = [](FRideFixture& Ride)
+	{
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.Simulate(10.0f);
+	};
+
+	// The crouch builds over a moment while held and lets go when released.
+	FRideFixture Ride(20.0f);
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	Settled(Ride);
+	UBoardMovementComponent* Board = Ride.Board;
+	TestEqual(TEXT("Not loading to start with"), Board->GetLoadAmount(), 0.0f);
+	const float TensionBefore = Ride.Kite->GetLineTensionN();
+	const float LateralBefore = FMath::Abs(Board->GetLateralSpeed());
+
+	Ride.Pawn->SetLoadHeld(true);
+	Ride.Simulate(0.2f);
+	TestTrue(FString::Printf(TEXT("After 0.2 s the crouch is part way (%.2f)"), Board->GetLoadAmount()), Board->GetLoadAmount() > 0.3f && Board->GetLoadAmount() < 0.8f);
+	Ride.Simulate(0.4f);
+	TestNearlyEqual(TEXT("and full after 0.6 s"), Board->GetLoadAmount(), 1.0f, 0.001f);
+
+	// Loaded, the edge bites: the board slips downwind less and the lines pull harder.
+	float PeakTension = 0.0f;
+	for (float Elapsed = 0.0f; Elapsed < 2.0f; Elapsed += RideDeltaTime)
+	{
+		Ride.Simulate(RideDeltaTime);
+		PeakTension = FMath::Max(PeakTension, Ride.Kite->GetLineTensionN());
+	}
+	const float LateralLoaded = FMath::Abs(Board->GetLateralSpeed());
+	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: tension %.0f N riding, up to %.0f N loaded; sideways slip %.0f cm/s riding, %.0f cm/s loaded"), TensionBefore, PeakTension, LateralBefore, LateralLoaded);
+	TestTrue(FString::Printf(TEXT("Loading cuts the sideways slip (%.0f cm/s to %.0f cm/s)"), LateralBefore, LateralLoaded), LateralLoaded < 0.7f * LateralBefore);
+	TestTrue(FString::Printf(TEXT("and raises the line tension (%.0f N to %.0f N)"), TensionBefore, PeakTension), PeakTension > 1.1f * TensionBefore);
+	TestTrue(TEXT("The rider is still on the water, held down by the edge"), Board->GetBoardState() != EBoardState::Airborne);
+
+	// Letting go pops, harder than a pop with no load.
+	const bool bPopped = Ride.Pawn->ReleaseLoadAndPop();
+	TestTrue(TEXT("Letting go pops"), bPopped && Board->GetBoardState() == EBoardState::Airborne);
+	const float LoadedVz = Board->Velocity.Z;
+	TestFalse(TEXT("The load is no longer held"), Board->IsLoadHeld());
+	Ride.Simulate(0.3f);
+	TestNearlyEqual(TEXT("and the crouch is gone"), Board->GetLoadAmount(), 0.0f, 0.001f);
+
+	FRideFixture Plain(20.0f);
+	Settled(Plain);
+	Plain.Simulate(2.6f);
+	Plain.Pawn->SetLoadHeld(true);
+	const bool bTapPopped = Plain.Pawn->ReleaseLoadAndPop(); // a tap: pressed and let go at once
+	TestTrue(TEXT("A tap of the button is a plain pop"), bTapPopped && Plain.Board->GetBoardState() == EBoardState::Airborne);
+	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: take-off %.0f cm/s loaded against %.0f cm/s from a tap"), LoadedVz, Plain.Board->Velocity.Z);
+	TestTrue(FString::Printf(TEXT("A loaded pop leaves the water faster (%.0f cm/s against %.0f cm/s)"), LoadedVz, Plain.Board->Velocity.Z), LoadedVz > 1.25f * Plain.Board->Velocity.Z);
+
+	// Letting go when the kite has already pulled the rider off the water does nothing more.
+	Plain.Pawn->SetLoadHeld(true);
+	TestFalse(TEXT("Letting go in the air is not a second pop"), Plain.Pawn->ReleaseLoadAndPop());
+
+	// The loaded edge holds the rider down like a full edge does.
+	FRideFixture Held;
+	if (!Held.IsValid())
+	{
+		return false;
+	}
+	Held.Board->SetLoadHeld(true);
+	Held.Simulate(0.6f);
+	Held.Board->AddExternalForce(FVector(0.0f, 0.0f, 2.5f * Held.Board->MassKg * 980.0f));
+	Held.Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Loaded, two and a half times the rider's weight upwards does not lift them"), Held.Board->GetBoardState() != EBoardState::Airborne);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

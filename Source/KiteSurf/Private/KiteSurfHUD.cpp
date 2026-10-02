@@ -163,7 +163,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 2:
 		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:
-		return TEXT("Big air: hold your weight back [S], steer the kite up, then pull the bar in and pop to jump as it loads up [SPACE or Bottom Face Button]");
+		return TEXT("Big air: hold [SPACE or Bottom Face Button] to crouch and load the edge, steer the kite up, pull the bar in, then let go to pop and jump");
 	default:
 		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
 	}
@@ -283,7 +283,9 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		FString StateStr = BoardMove->IsFloating() ? TEXT("STATE: Floating - get the kite pulling") : TEXT("STATE: Getting up");
 		if (BoardState == EBoardState::Planing)
 		{
-			StateStr = TEXT("STATE: Planing");
+			StateStr = BoardMove->GetLoadAmount() > 0.05f
+				? FString::Printf(TEXT("STATE: Planing  -  LOADING %.0f%%"), BoardMove->GetLoadAmount() * 100.0f)
+				: FString(TEXT("STATE: Planing"));
 		}
 		else if (BoardState == EBoardState::Airborne)
 		{

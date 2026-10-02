@@ -184,6 +184,29 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Load"),
+			TEXT("Holds (1) or lets go of (0) the jump button on the player's rider: held is the loaded crouch, letting go pops. Usage: kitesurf.Load <0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const bool bHold = !Args.IsValidIndex(0) || FCString::Atoi(*Args[0]) != 0;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						if (bHold)
+						{
+							It->SetLoadHeld(true);
+						}
+						else
+						{
+							It->ReleaseLoadAndPop();
+						}
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Jump"),
 			TEXT("Pops the player's rider off the water, as the jump key does."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -277,6 +300,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MenuKey"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Shot"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.CaptureFrames"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HideUI"));

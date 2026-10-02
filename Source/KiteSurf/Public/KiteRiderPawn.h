@@ -97,6 +97,14 @@ public:
 	/** Which rail (+1 right, -1 left) a rider on a board at BoardYawDeg faces to look closest to PreferredFacingYawDeg. */
 	static float ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg);
 
+	/** Holds or lets go of the loaded crouch (the jump button held down). */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void SetLoadHeld(bool bHeld);
+
+	/** The jump button let go: pops with whatever load has built up, then stands the rider up. True if they left the water. */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	bool ReleaseLoadAndPop();
+
 	/** Brief controller vibration on the pop, landings, crashes, the kite hitting the water and a hard yank on the lines. */
 	UFUNCTION(BlueprintCallable, Category = "Input|Haptics")
 	void SetHapticsEnabled(bool bEnabled) { bHapticsEnabled = bEnabled; }
@@ -245,6 +253,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderFloatLeanDeg;
 
+	/** Extra lean away from the kite in a full loaded crouch (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderLoadLeanDeg;
+
+	/** How much shorter the rider is drawn in a full loaded crouch, as a fraction of their height. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderLoadCrouch;
+
 	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderAirHangLeanDeg;
@@ -363,7 +379,8 @@ private:
 	void OnEdgeTriggered(const FInputActionValue& Value);
 	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void UpdateMouseBar();
-	void OnJumpTriggered(const FInputActionValue& Value);
+	void OnJumpPressed(const FInputActionValue& Value);
+	void OnJumpReleased(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
 	void OnResetTriggered(const FInputActionValue& Value);
 

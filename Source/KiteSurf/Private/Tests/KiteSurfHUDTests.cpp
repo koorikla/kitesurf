@@ -214,7 +214,7 @@ bool FKiteSurfHUDJumpRejection::RunTest(const FString& Parameters)
 			TestTrue(TEXT("Initially rejection text is empty"), HUD->GetJumpRejectionText().IsEmpty());
 
 			HUD->ShowJumpRejection(EJumpRejectReason::NotPlaning);
-			TestEqual(TEXT("Shows Not planing"), HUD->GetJumpRejectionText(), TEXT("Not planing"));
+			TestEqual(TEXT("Shows why there is no pop"), HUD->GetJumpRejectionText(), FString(TEXT("Get up on the board first")));
 			TestTrue(TEXT("Remaining time > 0"), HUD->GetJumpRejectionRemainingTime() > 0.0f);
 
 			HUD->ShowJumpRejection(EJumpRejectReason::TooSlow);

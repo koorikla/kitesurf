@@ -15,7 +15,7 @@ The board lifecycle transitions through four distinct states in `EBoardState`:
 A rider can always pop while they are up on the board on the water: no edge and no minimum speed are needed. `Jump()` is refused (`NotPlaning`, shown as "Get up on the board first") only in the air, during a crash, or while floating. A part-sunk board gives proportionally less push.
 
 ### Load
-Holding the jump button (`AKiteRiderPawn::SetLoadHeld`, `UBoardMovementComponent::SetLoadHeld`) puts the rider into a crouch with their weight over the back of the board. `GetLoadAmount()` builds to 1 over 0.4 s (`LoadRatePerSec`) and lets go at `LoadReleaseRatePerSec`. While loaded:
+Holding the jump button (`AKiteRiderPawn::SetLoadHeld`, `UBoardMovementComponent::SetLoadHeld`) puts the rider into a crouch with their weight over the back of the board: the jointed rider's pelvis drops and the knees bend. `GetLoadAmount()` builds to 1 over 0.4 s (`LoadRatePerSec`) and lets go at `LoadReleaseRatePerSec`. While loaded:
 - lateral grip rises by up to `LoadGripBonus` (150%), so the board slips downwind less and the lines pull harder. How much depends on where the kite is: an edge resists a pull across the board, not one along it. Riding the 9 m in 20 kn, slip drops from 85 to 37 cm/s and tension rises from 556 to 636 N;
 - the board is held down as with a full edge (see below);
 - the pop that follows is up to `LoadPopBonus` (60%) stronger: 4.6 m/s against 3.1 m/s from a tap.

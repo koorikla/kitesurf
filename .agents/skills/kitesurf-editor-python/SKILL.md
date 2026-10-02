@@ -39,6 +39,10 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
      stills use a frame of the film, so run that first, then this.
    - `scripts/editor/import_spot_assets.py` generates and imports the island, sandbar and shark
      meshes and their materials. Their sand shapes are mirrored in `KiteSurfSpot.cpp`.
+   - `scripts/editor/import_rider_parts.py` generates and imports the jointed riders' parts (torso,
+     thigh, shin, upper arm, forearm per rider) that the ride poses every frame. Their lengths are
+     mirrored in `RiderRig.h`. The one-piece rider meshes from `import_geometry.py` are only for
+     the gear screen's preview.
    - `scripts/editor/import_geometry.py` generates and imports the kite (`SM_Kite`, and the
      five-strut `SM_KiteBoost`), board, bar and rider meshes (`generate_mesh_objs.py`) and one
      canopy texture per kite model (`make_kite_texture.sh <out> loop|boost`, needs ImageMagick);

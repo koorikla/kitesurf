@@ -250,7 +250,10 @@ def _limb(mesh, material, color, points, radii):
 
 
 def build_rider(variant):
-    """variant: 'santa' (shirtless, swim trunks, hat and beard) or 'wetsuit'."""
+    """The rider as one piece in a riding pose, used where it only has to be looked at (the gear
+    screen's preview). In the ride itself the jointed parts below are posed every frame.
+
+    variant: 'santa' (shirtless, swim trunks, hat and beard) or 'wetsuit'."""
     santa = variant == 'santa'
     mesh = Mesh()
     body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
@@ -316,6 +319,110 @@ def build_rider(variant):
     else:
         add_ellipsoid(mesh, 'RiderBlack', BLACK, (-4.0, 0.0, 160.0), (11.8, 10.9, 10.5), rings=8, segments=14)  # hair
     return mesh
+
+
+# ----------------------------------------------------------------------------------------------
+# Jointed rider: the same figure as build_rider(), cut into parts that the game poses every frame
+# (RiderRig.cpp). The torso's origin is the pelvis, facing +X with +Z up. Each limb part's origin
+# is its upper joint, with the bone running along +X and +Z the way the joint bends (knee
+# forwards, elbow down). RiderRig.cpp has the same lengths and joint positions: change them together.
+# ----------------------------------------------------------------------------------------------
+
+RIDER_THIGH_LENGTH = 45.0
+RIDER_SHIN_LENGTH = 42.0
+RIDER_UPPER_ARM_LENGTH = 26.5
+RIDER_FOREARM_LENGTH = 27.0
+RIDER_PELVIS = (-10.0, 0.0, 82.0)   # where the pelvis is in build_rider()'s coordinates
+
+
+def build_rider_torso(variant):
+    """Pelvis, trunk, chest, neck and head: everything that is not a limb. variant: 'santa' or 'wetsuit'."""
+    santa = variant == 'santa'
+    mesh = Mesh()
+    body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
+    ox, oy, oz = RIDER_PELVIS
+
+    def at(point):
+        return (point[0] - ox, point[1] - oy, point[2] - oz)
+
+    if santa:
+        add_ellipsoid(mesh, 'RiderRed', RED, at((-9.0, 0.0, 86.0)), (19.0, 24.0, 14.0))        # swim trunks
+        add_ellipsoid(mesh, 'RiderWhite', WHITE, at((-8.0, 0.0, 96.0)), (20.5, 25.0, 3.5))     # waistband trim
+        add_ellipsoid(mesh, 'RiderBlack', BLACK, at((-7.0, 0.0, 91.0)), (20.2, 25.2, 2.2))     # belt
+        add_ellipsoid(mesh, 'RiderSkin', SKIN, at((-2.0, 0.0, 109.0)), (24.0, 25.0, 21.0))     # belly
+    else:
+        add_ellipsoid(mesh, body_material, body_color, at((-9.0, 0.0, 87.0)), (16.0, 20.0, 14.0))
+        add_ellipsoid(mesh, body_material, body_color, at((-6.0, 0.0, 107.0)), (15.0, 19.0, 19.0))
+        add_ellipsoid(mesh, 'RiderAccent', ACCENT, at((-6.0, 0.0, 99.0)), (15.6, 19.6, 3.0))   # harness
+    add_ellipsoid(mesh, body_material, body_color, at((-6.0, 0.0, 129.0)), (17.0, 23.0, 15.0))  # chest
+    _limb(mesh, 'RiderSkin', SKIN, [at((-5.0, 0.0, 138.0)), at((-3.0, 0.0, 148.0))], [6.0, 5.5])  # neck
+
+    add_ellipsoid(mesh, 'RiderSkin', SKIN, at((-2.0, 0.0, 156.0)), (11.5, 10.5, 12.5), rings=10, segments=14)  # head
+    add_ellipsoid(mesh, 'RiderSkin', SKIN, at((9.5, 0.0, 156.0)), (3.0, 2.6, 2.6), rings=6, segments=8)       # nose
+    for side in (-1.0, 1.0):
+        add_ellipsoid(mesh, 'RiderBlack', BLACK, at((8.0, side * 4.2, 160.0)), (1.6, 1.6, 1.8), rings=6, segments=8)
+
+    if santa:
+        add_ellipsoid(mesh, 'RiderWhite', WHITE, at((5.0, 0.0, 147.5)), (9.5, 11.0, 10.5))
+        add_ellipsoid(mesh, 'RiderWhite', WHITE, at((2.0, 0.0, 140.0)), (8.0, 8.5, 9.0))
+        for side in (-1.0, 1.0):
+            add_ellipsoid(mesh, 'RiderWhite', WHITE, at((9.5, side * 4.0, 152.5)), (2.6, 4.2, 1.8), rings=6, segments=8)
+        add_ellipsoid(mesh, 'RiderWhite', WHITE, at((-2.0, 0.0, 164.5)), (13.5, 12.5, 4.0))
+        _limb(mesh, 'RiderRed', RED,
+              [at((-2.0, 0.0, 165.0)), at((-6.0, 2.0, 176.0)), at((-14.0, 6.0, 184.0)), at((-24.0, 10.0, 184.0)), at((-30.0, 12.0, 176.0))],
+              [11.5, 9.0, 6.0, 3.5, 2.0])
+        add_ellipsoid(mesh, 'RiderWhite', WHITE, at((-31.0, 12.5, 172.5)), (4.5, 4.5, 4.5), rings=6, segments=8)
+    else:
+        add_ellipsoid(mesh, 'RiderBlack', BLACK, at((-4.0, 0.0, 160.0)), (11.8, 10.9, 10.5), rings=8, segments=14)  # hair
+    return mesh
+
+
+def build_rider_limb(variant, part):
+    """part: 'thigh', 'shin', 'upper_arm' or 'forearm'. Bone along +X from the origin."""
+    santa = variant == 'santa'
+    mesh = Mesh()
+    body_material, body_color = ('RiderSkin', SKIN) if santa else ('RiderWetsuit', WETSUIT)
+    if part == 'thigh':
+        length = RIDER_THIGH_LENGTH
+        _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [10.5, 7.5])
+        add_ellipsoid(mesh, body_material, body_color, (length, 0.0, 0.0), (7.8, 7.8, 7.8), rings=6, segments=10)  # knee
+        if santa:
+            add_ellipsoid(mesh, 'RiderRed', RED, (0.28 * length, 0.0, 0.0), (9.0, 11.5, 11.5), rings=6, segments=12)   # trouser leg
+            add_ellipsoid(mesh, 'RiderWhite', WHITE, (0.55 * length, 0.0, 0.0), (3.2, 10.5, 10.5), rings=6, segments=12)  # hem
+    elif part == 'shin':
+        length = RIDER_SHIN_LENGTH
+        _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [7.5, 5.5])
+        # The foot, pointing the way the knee bends.
+        add_ellipsoid(mesh, 'RiderSkin', SKIN, (length + 1.0, 0.0, 6.0), (4.5, 6.0, 13.0))
+    elif part == 'upper_arm':
+        length = RIDER_UPPER_ARM_LENGTH
+        add_ellipsoid(mesh, body_material, body_color, (0.0, 0.0, 0.0), (7.5, 7.5, 7.5), rings=6, segments=10)  # shoulder
+        _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [6.5, 5.5])
+    elif part == 'forearm':
+        length = RIDER_FOREARM_LENGTH
+        add_ellipsoid(mesh, body_material, body_color, (0.0, 0.0, 0.0), (5.6, 5.6, 5.6), rings=6, segments=10)  # elbow
+        _limb(mesh, body_material, body_color, [(0.0, 0.0, 0.0), (length, 0.0, 0.0)], [5.5, 4.5])
+        add_ellipsoid(mesh, 'RiderSkin', SKIN, (length, 0.0, 0.0), (5.5, 5.0, 5.0), rings=6, segments=10)       # hand
+    else:
+        raise ValueError(part)
+    return mesh
+
+
+RIDER_PARTS = (('Torso', None), ('Thigh', 'thigh'), ('Shin', 'shin'), ('UpperArm', 'upper_arm'), ('Forearm', 'forearm'))
+
+
+def generate_rider_parts(output_dir):
+    """Writes the jointed riders' OBJs and returns {asset name: path}."""
+    os.makedirs(output_dir, exist_ok=True)
+    paths = {}
+    for variant, label in (('santa', 'Santa'), ('wetsuit', 'Wetsuit')):
+        for part_label, part in RIDER_PARTS:
+            name = f'SM_Rider{label}_{part_label}'
+            path = os.path.join(output_dir, f'rider_{variant}_{part_label.lower()}.obj')
+            mesh = build_rider_torso(variant) if part is None else build_rider_limb(variant, part)
+            mesh.write(path)
+            paths[name] = path
+    return paths
 
 
 def generate_board_obj(filepath):
@@ -616,5 +723,5 @@ def generate_all(output_dir):
 if __name__ == '__main__':
     import sys
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'Saved', 'Geometry')
-    for name, path in {**generate_all(out), **generate_spot(out), **generate_preview(out)}.items():
+    for name, path in {**generate_all(out), **generate_spot(out), **generate_preview(out), **generate_rider_parts(out)}.items():
         print(f'{name}: {path}')

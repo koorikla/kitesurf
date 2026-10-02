@@ -5,6 +5,7 @@
 #include "InputActionValue.h"
 #include "RiderCharacter.h"
 #include "KiteMotionBar.h"
+#include "RiderRig.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -196,7 +197,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rider")
 	ERiderCharacter GetRiderCharacter() const { return RiderCharacter; }
 
-	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderStaticMesh.Get(); }
+	/** The jointed rider's torso (pelvis to head). */
+	UStaticMeshComponent* GetRiderStaticMesh() const { return RiderTorso.Get(); }
+
+	/** The jointed rider's limb parts: thigh, shin, upper arm and forearm for the left side, then the same for the right. */
+	const TArray<TObjectPtr<UStaticMeshComponent>>& GetRiderLimbs() const { return RiderLimbs; }
+
+	/** How the jointed rider is posed now: where the pelvis, knees, feet, elbows and hands are. */
+	const FRiderRigPose& GetRiderRigPose() const { return RiderPose; }
 
 	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
 	UFUNCTION(BlueprintCallable, Category = "Input")
@@ -257,10 +265,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderLoadLeanDeg;
 
-	/** How much shorter the rider is drawn in a full loaded crouch, as a fraction of their height. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
-	float RiderLoadCrouch;
-
 	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderAirHangLeanDeg;
@@ -273,7 +277,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderSwitchTurnRateDeg;
 
-	/** The harness hook on the rider's body: forward, right, up from the feet (cm). */
+	/** The harness hook on the rider's body: forward, right, up from the pelvis (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	FVector HarnessHookOffsetCm;
 
@@ -290,9 +294,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USkeletalMeshComponent> RiderMesh;
 
-	/** The posed riders (Santa, wetsuit); the robot uses the skeletal RiderMesh. */
+	/** The jointed riders (Santa, wetsuit): a torso and eight limb parts, posed every frame by RiderRig. The robot uses the skeletal RiderMesh. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	TObjectPtr<UStaticMeshComponent> RiderStaticMesh;
+	TObjectPtr<UStaticMeshComponent> RiderTorso;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TArray<TObjectPtr<UStaticMeshComponent>> RiderLimbs;
+
+	FRiderRigPose RiderPose;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rider")
 	ERiderCharacter RiderCharacter;

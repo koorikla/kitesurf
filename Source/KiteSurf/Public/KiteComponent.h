@@ -8,6 +8,9 @@ class UWindComponent;
 class UStaticMeshComponent;
 class UCableComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnKiteCrashed, FVector, WaterLocation);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
+
 /**
  * The kite, flown on the sphere of its lines.
  *
@@ -19,6 +22,9 @@ class UCableComponent;
  * Steering asks for a direction of travel round the window; the kite stops where the bar is
  * centred. With the loop input held, steering turns the kite directly at a rate proportional to
  * its airspeed, so holding the bar over flies a loop.
+ *
+ * Flown into the water (a loop taken too low) or starved of wind (the rider outrunning it), the
+ * kite goes down: it lies on the water with slack lines until it relaunches.
  *
  * Line tension follows the kite's airspeed squared, so a kite diving through the middle of the
  * window pulls several times harder than a parked one.
@@ -51,6 +57,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	bool IsLoopHeld() const { return bLoopHeld; }
+
+	/** True while the kite is lying on the water. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	bool IsCrashed() const { return bCrashed; }
+
+	/** Seconds until a crashed kite relaunches by itself; 0 when flying. */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	float GetRelaunchSecondsRemaining() const { return bCrashed ? FMath::Max(RelaunchDelaySeconds - CrashedSeconds, 0.0f) : 0.0f; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Kite|Events")
+	FOnKiteCrashed OnKiteCrashed;
+
+	UPROPERTY(BlueprintAssignable, Category = "Kite|Events")
+	FOnKiteRelaunched OnKiteRelaunched;
 
 	// Outputs
 	UFUNCTION(BlueprintCallable, Category = "Kite")
@@ -185,9 +205,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float SteerAssistMaxRateDegPerSec;
 
-	/** The kite is kept at least this far above the water. */
+	/** Plain steering will not fly the kite lower than this; a loop or a stall can. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float MinElevationDeg;
+
+	/** The kite has hit the water when it gets this low. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
+	float CrashElevationDeg;
+
+	/** A kite on the water relaunches by itself after this long, or sooner if steered. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
+	float RelaunchDelaySeconds;
+
+	/** Below this airflow the kite stops flying and starts to fall (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
+	float StallFlowSpeedCmS;
+
+	/** How fast a fully stalled kite falls (cm/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
+	float StallSinkSpeedCmS;
 
 	/** Cap on line tension, standing in for line stretch and the rider letting go (N). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
@@ -236,6 +272,11 @@ protected:
 	float CentredBarSeconds;
 	bool bPlacementPending;
 	bool bLoopHeld;
+	bool bCrashed;
+	float CrashedSeconds;
+
+	void Crash();
+	void Relaunch();
 
 	FVector KiteWorldPosition;
 	FRotator KiteWorldRotation;

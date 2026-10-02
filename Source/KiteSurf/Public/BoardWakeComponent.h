@@ -88,6 +88,11 @@ private:
 	UFUNCTION()
 	void HandleBoardCrash(float Intensity);
 
+	UFUNCTION()
+	void HandleKiteCrashed(FVector WaterLocation);
+
+	void EmitSplashAt(const FVector& Location, float Intensity);
+
 	UInstancedStaticMeshComponent* CreateInstances(const TCHAR* Name, const TCHAR* MeshPath, const TCHAR* MaterialPath, int32 Count);
 	void UpdateInstances();
 	void AddSprayDrop(const FVector& Position, const FVector& Velocity);

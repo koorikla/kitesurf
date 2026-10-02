@@ -17,12 +17,12 @@ This document outlines the board movement, edging, planing transition, and physi
 ### Course keeping, edging and carving
 - **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$, capped at $m / \Delta t$ so one step can at most cancel the sideways speed. The base term is the fins and a neutral stance: with no edge input the board holds its heading against the kite's sideways pull.
 - **Edge Drive**: Hydrodynamic lift along the board rail converts lateral holding force into forward thrust: $F_{fwd} = |F_{lat}| \cdot |\text{EdgeInput}| \cdot \eta_{edge}$.
-- **Carving** (A / D, left stick X): A carve input turns the board: its heading moves towards $v_{heading} + \text{EdgeInput} \cdot \text{MaxEdgeAngleDeg}$ at up to `CarveTurnRate`. Holding an edge keeps turning, so a steady course is ridden with the edge neutral.
+- **Turning** (A / D, left stick X): A turn input carves the board: its heading moves towards $v_{heading} + \text{EdgeInput} \cdot \text{MaxEdgeAngleDeg}$ at up to `CarveTurnRate`. Holding an edge keeps turning, so a steady course is ridden with the edge neutral.
 - **Switching stance**: A twin-tip rides either way. When the board is moving tail-first faster than `SwitchStanceSpeedCmS`, nose and tail swap, so after flying the kite to the other side the rider simply rides off on the new tack.
 - **Load heel**: The board heels away from the kite by up to `AutoHeelDeg` in proportion to the sideways line force.
 
-### Edge pressure, liftoff and the air
-- **Edge pressure** (W / S, left stick Y): scales lateral grip by `EdgePressureGripScale` to the power of the input, so pressing the rail in bites harder (and drags a little more) and flattening the board lets it slide off downwind. It also adds to the pop.
+### Weight shift, liftoff and the air
+- **Weight shift** (W / S, left stick Y): +1 is weight on the nose, -1 on the tail. Weight back sinks the tail: lateral grip is scaled by `TailWeightGripScale`, drag rises by `TailWeightDrag`, the board heels further, the nose lifts, and the pop gains `TailWeightPopBonus`. Weight forward flattens the board: grip drops by the same factor, planing drag falls by `NoseWeightDragSaving`, and the nose dips. In the air it tips the board by up to `AirWeightShiftPitchDeg`.
 - **Off the plane** the board pivots towards a beam reach on the kite's side at up to `LowSpeedPivotRate`, so a stalled rider is lined up for the kite to pull them back onto the plane.
 - **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight. Sending the kite overhead with the bar in does this without a pop.
 - **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
@@ -30,6 +30,7 @@ This document outlines the board movement, edging, planing transition, and physi
 ### How the kite drives the board
 - The kite is a point flying on the sphere of its lines (`UKiteComponent`). It has a heading; it flies along it at an airspeed of glide ratio times the wind blowing along the lines, and drifts with the wind blowing across them. Nose-out of the window the two cancel, and the kite parks at the window edge.
 - **Steering** asks for a direction of travel round the window; the kite stops where the bar is centred. With the **loop** input held, steering turns the kite directly at airspeed / `MinTurnRadiusCm`, so holding the bar over flies a loop.
+- **Going down**: with the loop input held the kite can be flown into the water, and with too little air flowing over it (`StallFlowSpeedCmS`: no wind, or a rider outrunning it) it stalls and falls. On the water the lines are slack; it relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
 - **Line tension** follows the kite's airspeed squared: about 450 N parked in 15 kn, close to 3000 N (the `MaxLineTensionN` cap) for a kite looping through the middle of the window.
 - The wind the kite feels is the true wind minus the rider's velocity, so the parked position falls back as the board speeds up. That is what limits board speed and upwind angle.
 - The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
@@ -51,13 +52,14 @@ All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Ca
 | `PlaningDragCoef` | `8.0f` | Linear planing drag coefficient. |
 | `PlaningQuadraticDragCoef` | `0.03f` | Quadratic planing drag coefficient. |
 | `BaseLateralDragCoef` | `500.0f` | Lateral grip with no edge input (fins, neutral stance). |
-| `EdgeGripCoef` | `1700.0f` | Extra lateral grip at full edge input. |
+| `EdgeGripCoef` | `2000.0f` | Extra lateral grip at full turn input. |
 | `EdgeDriveEfficiency` | `0.35f` | Forward drive efficiency gained from rail edging. |
 | `MaxEdgeAngleDeg` | `35.0f` | Maximum board roll and yaw carve angle. |
 | `MaxBoardSpeed` | `1800.4f` (35 kn) | Velocity magnitude clamp in cm/s. |
-| `CarveTurnRate` | `45.0f` | Turn rate at full carve once planing, in degrees per second. |
+| `CarveTurnRate` | `60.0f` | Turn rate at full turn input once planing, in degrees per second. |
 | `CarveResponse` | `6.0f` | How quickly the carve follows the input (1/s). |
-| `EdgePressureGripScale` | `2.5f` | Grip multiplier at full edge pressure; inverse when flattened. |
+| `TailWeightGripScale` | `2.5f` | Grip multiplier with the weight on the tail; inverse on the nose. |
+| `WeightShiftPitchDeg` | `8.0f` | Board pitch at full weight shift on the water. |
 | `LowSpeedPivotRate` | `120.0f` | Pivot rate towards a beam reach when stopped, in degrees per second. |
 | `LiftoffWeightFactor` | `1.5f` | Upward line force, in rider weights, that lifts the board off. |
 | `AirSpinRate` | `200.0f` | Board spin rate in the air at full carve, in degrees per second. |

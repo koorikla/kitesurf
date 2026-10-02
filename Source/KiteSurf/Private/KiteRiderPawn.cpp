@@ -11,6 +11,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
 #include "KiteSurfHUD.h"
+#include "UI/KiteSurfGameInstance.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Components/AudioComponent.h"
@@ -51,6 +53,13 @@ AKiteRiderPawn::AKiteRiderPawn()
 		RiderMesh->SetAnimation(RiderAnimFinder.Object);
 		RiderMesh->Play(true);
 	}
+
+	// Posed riders stand on the board; which one is shown is set by SetRiderCharacter.
+	RiderStaticMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderStaticMesh"));
+	RiderStaticMesh->SetupAttachment(RootComponent);
+	RiderStaticMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 2.0f));
+	RiderStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RiderStaticMesh->SetUsingAbsoluteRotation(true);
 
 	// ControlBarMesh attached to BoardMesh, positioned in front of rider chest height
 	ControlBarMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ControlBarMesh"));
@@ -148,6 +157,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 		ResetSound = ResetFinder.Object;
 	}
 
+	RiderCharacter = ERiderCharacter::Santa;
+	SetRiderCharacter(RiderCharacter);
+
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
 	SheetRateInput = 0.0f;
@@ -167,6 +179,14 @@ AKiteRiderPawn::AKiteRiderPawn()
 void AKiteRiderPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			SetRiderCharacter(GI->RiderCharacter);
+		}
+	}
 
 	if (BoardMovement)
 	{
@@ -213,10 +233,10 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
-		if (EdgePressureAction)
+		if (WeightShiftAction)
 		{
-			EnhancedInputComponent->BindAction(EdgePressureAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgePressureTriggered);
-			EnhancedInputComponent->BindAction(EdgePressureAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgePressureTriggered);
+			EnhancedInputComponent->BindAction(WeightShiftAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnWeightShiftTriggered);
+			EnhancedInputComponent->BindAction(WeightShiftAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnWeightShiftTriggered);
 		}
 		if (LoopAction)
 		{
@@ -254,7 +274,7 @@ void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 	SteerKite(KeySteerInput + MouseSteerInput);
 }
 
-void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float EdgePressure, bool bLoop)
+void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop)
 {
 	KeySteerInput = FMath::Clamp(Steer, -1.0f, 1.0f);
 	SteerKite(KeySteerInput);
@@ -262,16 +282,16 @@ void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carv
 	EdgeBoard(Carve);
 	if (BoardMovement)
 	{
-		BoardMovement->SetEdgePressure(EdgePressure);
+		BoardMovement->SetWeightShift(WeightShift);
 	}
 	bLoopKeyHeld = bLoop;
 }
 
-void AKiteRiderPawn::OnEdgePressureTriggered(const FInputActionValue& Value)
+void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
 {
 	if (BoardMovement)
 	{
-		BoardMovement->SetEdgePressure(Value.Get<float>());
+		BoardMovement->SetWeightShift(Value.Get<float>());
 	}
 }
 
@@ -447,6 +467,29 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	UpdateAudioModulation(DeltaTime);
 }
 
+void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
+{
+	RiderCharacter = RiderCharacter::FromIndex(static_cast<int32>(InCharacter));
+
+	const bool bRobot = RiderCharacter == ERiderCharacter::Robot;
+	if (RiderMesh)
+	{
+		RiderMesh->SetVisibility(bRobot);
+	}
+	if (RiderStaticMesh)
+	{
+		if (!bRobot)
+		{
+			const TCHAR* MeshPath = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("/Game/Meshes/SM_RiderWetsuit") : TEXT("/Game/Meshes/SM_RiderSanta");
+			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, MeshPath))
+			{
+				RiderStaticMesh->SetStaticMesh(Mesh);
+			}
+		}
+		RiderStaticMesh->SetVisibility(!bRobot);
+	}
+}
+
 bool AKiteRiderPawn::HasKitePosition() const
 {
 	if (!Kite)
@@ -484,6 +527,11 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	{
 		// The mannequin's front is +Y in mesh space.
 		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
+	}
+	if (RiderStaticMesh)
+	{
+		// The posed riders are built facing +X.
+		RiderStaticMesh->SetWorldRotation(BodyQuat);
 	}
 
 	if (ControlBarMesh && Kite)

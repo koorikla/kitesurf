@@ -161,9 +161,9 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 1:
 		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [Up / Down or Right Stick]");
 	case 2:
-		return TEXT("Carve the board with A / D; W digs the edge in, S flattens it [or Left Stick]");
+		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:
-		return TEXT("Send it: load the edge and pop off the water to jump [SPACE or Bottom Face Button]");
+		return TEXT("Send it: weight back on the tail and pop off the water to jump [S + SPACE or Bottom Face Button]");
 	default:
 		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
 	}
@@ -239,7 +239,7 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		return;
 	}
 
-	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 226.0f);
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 330.0f, 226.0f);
 	DrawText(TEXT("KITESURF TELEMETRY"), FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 28.0f, nullptr, 1.1f);
 
 	FVector Vel = RiderPawn->GetBoardVelocity();
@@ -292,8 +292,14 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 
 	if (const UKiteComponent* KiteComp = RiderPawn->GetKite())
 	{
+		if (KiteComp->IsCrashed())
+		{
+			DrawText(FString::Printf(TEXT("KITE DOWN - relaunch in %.0f s (or steer)"), FMath::CeilToFloat(KiteComp->GetRelaunchSecondsRemaining())),
+				FLinearColor(1.0f, 0.35f, 0.35f), 32.0f, 192.0f, nullptr, 1.2f);
+		}
+
 		const int32 Loops = FMath::FloorToInt(FMath::Abs(KiteComp->GetTurnDeg()) / 360.0f);
-		if (Loops > 0)
+		if (Loops > 0 && !KiteComp->IsCrashed())
 		{
 			DrawText(FString::Printf(TEXT("KITE LOOP x%d"), Loops), FLinearColor(1.0f, 0.5f, 0.1f), 32.0f, 192.0f, nullptr, 1.2f);
 		}
@@ -491,7 +497,7 @@ void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
 		{
 			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
 			{
-				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f || FMath::Abs(BoardMove->GetEdgePressure()) > 0.2f)
+				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f || FMath::Abs(BoardMove->GetWeightShift()) > 0.2f)
 				{
 					CurrentStepProgress += DeltaTime * 0.75f;
 				}

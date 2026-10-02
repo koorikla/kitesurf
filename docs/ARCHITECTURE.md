@@ -22,7 +22,9 @@
 | `AKiteRiderPawn` | `void SteerKite(float Axis)` | Bar steering: asks the kite to travel round the wind window that way (right = clockwise looking downwind), or turns it directly while the loop input is held; `Axis` clamped to `[-1.0, 1.0]`. |
 | `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | While held, steering turns the kite at a rate set by its airspeed, so holding the bar over flies a loop. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |
-| `UBoardMovementComponent` | `void SetEdgePressure(float Value)` | Rail pressure in `[-1.0, 1.0]`: grip, drag, heel and pop. |
+| `UBoardMovementComponent` | `void SetWeightShift(float Value)` | Rider weight along the board in `[-1.0, 1.0]`: +1 on the nose, -1 on the tail. |
+| `UKiteComponent` | `bool IsCrashed() const` | True while the kite lies on the water; `OnKiteCrashed` / `OnKiteRelaunched` fire on the way in and out. |
+| `AKiteRiderPawn` | `void SetRiderCharacter(ERiderCharacter)` | Shows Santa, the wetsuit rider or the robot; the choice is stored by `UKiteSurfGameInstance`. |
 | `AKiteRiderPawn` | `void SheetKite(float Amount)` | Sets the bar position, which persists; `Amount` clamped to `[0.0, 1.0]`. |
 | `AKiteRiderPawn` | `void SetSheetRateInput(float Axis)` | Held sheet-in/out input; moves the bar at `SheetRatePerSec`. |
 | `UKiteComponent` | `void SetWindowPosition(float ClockDeg, float DepthDeg)` | Places the kite by clock position and depth in the wind window. |

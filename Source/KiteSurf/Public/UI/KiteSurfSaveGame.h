@@ -28,6 +28,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bOnboardingCompleted;
 
+	/** Chosen rider, as an ERiderCharacter index (default 0, Santa) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	int32 RiderCharacterIndex;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

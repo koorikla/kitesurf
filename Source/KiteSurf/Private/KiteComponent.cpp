@@ -53,6 +53,10 @@ UKiteComponent::UKiteComponent()
 	SteerAssistGain = 6.0f;
 	SteerAssistMaxRateDegPerSec = 200.0f;
 	MinElevationDeg = 10.0f;
+	CrashElevationDeg = 1.5f;
+	RelaunchDelaySeconds = 3.0f;
+	StallFlowSpeedCmS = 350.0f;
+	StallSinkSpeedCmS = 600.0f;
 	MaxLineTensionN = 3000.0f;
 	bDrawDebug = false;
 
@@ -63,6 +67,8 @@ UKiteComponent::UKiteComponent()
 	CentredBarSeconds = 0.0f;
 	bPlacementPending = true;
 	bLoopHeld = false;
+	bCrashed = false;
+	CrashedSeconds = 0.0f;
 
 	KiteWorldPosition = FVector::ZeroVector;
 	KiteWorldRotation = FRotator::ZeroRotator;
@@ -185,8 +191,9 @@ void UKiteComponent::UpdateVisuals()
 	const FVector LeftBarPos = GetBarEndWorldPosition(true);
 	const FVector RightBarPos = GetBarEndWorldPosition(false);
 
-	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, -200.0f, -40.0f));
-	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(0.0f, 200.0f, -40.0f));
+	// The trailing corner of each wingtip, as built by generate_mesh_objs.kite_wingtip().
+	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, -223.0f, -178.0f));
+	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, 223.0f, -178.0f));
 
 	if (LeftLine)
 	{
@@ -371,6 +378,31 @@ void UKiteComponent::PlaceParked()
 	TurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
 	bPlacementPending = false;
+	bCrashed = false;
+	CrashedSeconds = 0.0f;
+}
+
+void UKiteComponent::Crash()
+{
+	bCrashed = true;
+	CrashedSeconds = 0.0f;
+	AirspeedCmS = 0.0f;
+	TurnDeg = 0.0f;
+	LineTensionN = 0.0f;
+	LineForce = FVector::ZeroVector;
+	KiteVelocity = FVector::ZeroVector;
+	KiteWorldPosition = GetRiderPosition() + KiteDir * LineLengthCm;
+	UpdateAngles();
+	OnKiteCrashed.Broadcast(KiteWorldPosition);
+}
+
+void UKiteComponent::Relaunch()
+{
+	// Back into the air where it lies, just above the water, parked nose-out.
+	UpdateAngles();
+	ElevationDeg = MinElevationDeg;
+	PlaceParked();
+	OnKiteRelaunched.Broadcast();
 }
 
 void UKiteComponent::UpdateAngles()
@@ -390,6 +422,27 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 	const FVector RiderPos = GetRiderPosition();
 	const FVector RiderVelocity = GetRiderVelocity();
+
+	if (bCrashed)
+	{
+		// On the water: slack lines, dragged along with the rider, until it relaunches.
+		CrashedSeconds += DeltaTime;
+		KiteWorldPosition = RiderPos + KiteDir * LineLengthCm;
+		KiteVelocity = RiderVelocity;
+		LineTensionN = 0.0f;
+		LineForce = FVector::ZeroVector;
+
+		const float MinSecondsBeforeSteeredRelaunch = 1.0f;
+		const bool bSteeredUp = CrashedSeconds >= MinSecondsBeforeSteeredRelaunch && FMath::Abs(Steer) >= CentredBarThreshold;
+		// It will not come off the water without enough wind to fly in.
+		const bool bEnoughWind = (GetWindAt(KiteWorldPosition) - RiderVelocity).SizeSquared() >= FMath::Square(StallFlowSpeedCmS);
+		if (bEnoughWind && (CrashedSeconds >= RelaunchDelaySeconds || bSteeredUp))
+		{
+			Relaunch();
+		}
+		return;
+	}
+
 	const float ClampedSheet = FMath::Clamp(Sheet, 0.0f, 1.0f);
 	const float GlideRatio = FMath::Lerp(GlideRatioSheetedOut, GlideRatioSheetedIn, ClampedSheet);
 
@@ -454,11 +507,38 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 		// 3. Position: fly along the heading, drift with the wind across the lines.
 		KiteMotion = AirspeedCmS * KiteHeading + CrossLineWind;
+
+		// Without enough air flowing over it the kite stops flying and falls.
+		const float FlowSpeedCmS = FMath::Sqrt(FMath::Square(AirspeedCmS) + FMath::Square(FMath::Max(AlongLineWind, 0.0f)));
+		const bool bStalled = FlowSpeedCmS < StallFlowSpeedCmS;
+		if (bStalled)
+		{
+			const FVector DownTangent = TangentTowards(KiteDir, -FVector::UpVector);
+			KiteMotion += DownTangent * StallSinkSpeedCmS * (1.0f - FlowSpeedCmS / FMath::Max(StallFlowSpeedCmS, 1.0f));
+		}
+
 		FVector NewDir = (KiteDir + KiteMotion * (DeltaTime / LineLengthCm)).GetSafeNormal();
 
-		// Keep the kite off the water: hold it at the minimum elevation and level its nose.
-		const float MinUp = FMath::Sin(FMath::DegreesToRadians(MinElevationDeg));
-		if (NewDir.Z < MinUp)
+		// A loop or a stall can take the kite into the water.
+		const float CrashUp = FMath::Sin(FMath::DegreesToRadians(CrashElevationDeg));
+		const bool bCanHitWater = bStalled || (bLoopHeld && bSteering);
+		if (bCanHitWater && NewDir.Z <= CrashUp)
+		{
+			FVector Horizontal = NewDir.GetSafeNormal2D();
+			if (Horizontal.IsNearlyZero())
+			{
+				Horizontal = GetDownwindDir();
+			}
+			KiteDir = Horizontal * FMath::Sqrt(1.0f - CrashUp * CrashUp) + FVector::UpVector * CrashUp;
+			KiteHeading = TangentTowards(KiteDir, FVector::UpVector);
+			Crash();
+			return;
+		}
+
+		// Plain steering keeps the kite off the water: it will not fly lower than the minimum
+		// elevation (or lower than it already is, if a loop left it below that), and its nose is levelled.
+		const float MinUp = FMath::Min(FMath::Sin(FMath::DegreesToRadians(MinElevationDeg)), FMath::Max(KiteDir.Z, CrashUp));
+		if (!bCanHitWater && NewDir.Z < MinUp)
 		{
 			FVector Horizontal = NewDir.GetSafeNormal2D();
 			if (Horizontal.IsNearlyZero())

@@ -30,6 +30,9 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    - `scripts/editor/make_open_water_level.py` builds `/Game/Maps/L_OpenWater`.
    - `scripts/editor/make_input_assets.py` builds `IA_*`, `IMC_Default` and `BP_KiteRider`
      defaults.
+   - `scripts/editor/import_geometry.py` generates and imports the kite, board, bar and rider
+     meshes (`generate_mesh_objs.py`) and the kite canopy texture (`make_kite_texture.sh`,
+     needs ImageMagick); run `scripts/editor/create_materials.py` after it to assign materials.
    - `scripts/editor/make_water_fx_materials.py` builds `M_WaterFoam` and `M_WaterSpray`,
      the per-instance-fading materials used by `UBoardWakeComponent`.
    Extend the existing script so one run still rebuilds the whole asset.

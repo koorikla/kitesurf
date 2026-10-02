@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "GenericPlatform/GenericWindow.h"
+#include "RiderCharacter.h"
 #include "KiteSurfSettingsWidget.generated.h"
 
 class USlider;
@@ -121,6 +122,13 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Settings")
 	bool bSkipOnboarding;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	ERiderCharacter CurrentRiderCharacter;
+
+	/** Steps to the next rider in the list. */
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void CycleRiderCharacter();
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleSkipOnboarding();
 
@@ -157,6 +165,9 @@ private:
 	TSharedPtr<SComboBox<TSharedPtr<FString>>> SlateResolutionCombo;
 	TArray<TSharedPtr<FString>> ResolutionOptions;
 	TSharedPtr<STextBlock> SlateResolutionText;
+
+	TSharedPtr<SButton> SlateRiderButton;
+	TSharedPtr<STextBlock> SlateRiderText;
 
 	TSharedPtr<SButton> SlateVSyncButton;
 	TSharedPtr<STextBlock> SlateVSyncText;

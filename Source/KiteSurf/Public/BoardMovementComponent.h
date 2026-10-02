@@ -74,14 +74,16 @@ public:
 	float GetEdgeInput() const { return CurrentEdgeInput; }
 
 	/**
-	 * How hard the rider presses the rail in: +1 digs the edge in (more grip, a little more drag,
-	 * a bigger pop), -1 flattens the board (less grip, so it slides off downwind). Clamped to [-1, 1].
+	 * Where the rider's weight is along the board: +1 on the nose, -1 on the tail. Clamped to [-1, 1].
+	 * Weight back sinks the tail: more grip, more drag, a loaded edge and a bigger pop.
+	 * Weight forward flattens the board: less drag and less grip, so it runs faster and slides more.
+	 * In the air it tips the board nose-down or nose-up.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Board|Input")
-	void SetEdgePressure(float Value);
+	void SetWeightShift(float Value);
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Input")
-	float GetEdgePressure() const { return CurrentEdgePressure; }
+	float GetWeightShift() const { return CurrentWeightShift; }
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	bool IsPlaning() const { return CurrentDragRegime == EBoardDragRegime::Planing; }
@@ -215,17 +217,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveResponse;
 
-	/** Grip multiplier at full edge pressure; a flattened board gets the inverse. */
+	/** Grip multiplier with the weight fully on the tail; fully on the nose gets the inverse. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgePressureGripScale;
+	float TailWeightGripScale;
 
-	/** Extra planing drag at full edge pressure, as a fraction. */
+	/** Extra planing drag with the weight fully on the tail, as a fraction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgePressureDrag;
+	float TailWeightDrag;
 
-	/** Extra heel at full edge pressure (deg). */
+	/** Planing drag saved with the weight fully on the nose, as a fraction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgePressureHeelDeg;
+	float NoseWeightDragSaving;
+
+	/** Extra heel with the weight fully on the tail (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float TailWeightHeelDeg;
+
+	/** Board pitch at full weight shift on the water (deg): nose down forward, nose up back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
+	float WeightShiftPitchDeg;
+
+	/** Board pitch at full weight shift in the air (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	float AirWeightShiftPitchDeg;
 
 	/** The kite lifts the rider off the water when its upward pull exceeds this multiple of their weight. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
@@ -235,9 +249,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirSpinRate;
 
-	/** Extra pop at full edge pressure, as a fraction of BaseJumpImpulse. */
+	/** Extra pop with the weight fully on the tail, as a fraction of BaseJumpImpulse. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float EdgePressurePopBonus;
+	float TailWeightPopBonus;
 
 	/** Tail-first speed at which the board swaps nose and tail (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -293,7 +307,7 @@ private:
 	EBoardState CurrentBoardState;
 
 	float CurrentEdgeInput;
-	float CurrentEdgePressure;
+	float CurrentWeightShift;
 	float SmoothedCarveInput;
 
 	/** Puts the board in the air and starts the jump telemetry. */

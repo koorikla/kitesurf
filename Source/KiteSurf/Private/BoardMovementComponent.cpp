@@ -49,17 +49,18 @@ UBoardMovementComponent::UBoardMovementComponent()
 	WeightShiftPitchDeg = 8.0f;
 	AirWeightShiftPitchDeg = 30.0f;
 	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
+	EdgedLiftoffWeightBonus = 3.0f;
 	AirSpinRate = 200.0f;
 	TailWeightPopBonus = 0.5f;
 	AutoHeelDeg = 12.0f;
 	AutoHeelFullLoadForce = 50000.0f; // 500 N
 
 	// Jump tunables (Spec defaults)
-	BaseJumpImpulse = 35000.0f; // kg*cm/s
-	KiteLiftFactor = 0.8f;      // s
+	BaseJumpImpulse = 21000.0f; // kg*cm/s: about 2.5 m/s from the legs alone; height comes from the kite
+	KiteLiftFactor = 0.22f;     // s: the release of the edge; after that the lines keep pulling as a force
 	JumpMinSpeedKnots = 8.0f;   // 8 kn
 	JumpMinEdgeInput = 0.4f;    // 0.4
-	MaxJumpHeight = 1200.0f;    // 1200 cm = 12 m
+	MaxJumpHeight = 4000.0f;    // 4000 cm = 40 m
 	MaxLandingAngle = 30.0f;    // 30 deg
 	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
@@ -345,7 +346,7 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				CurrentJumpApexHeight = CurrentJumpHeight;
 			}
 
-			// Clamp apex at MaxJumpHeight (default 12 m = 1200 cm)
+			// Clamp apex at MaxJumpHeight (default 40 m = 4000 cm)
 			if (Location.Z >= WaterHeight + MaxJumpHeight)
 			{
 				FVector ClampedLocation = Location;
@@ -367,7 +368,11 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 		// The kite lifts the rider off when it pulls up harder than they weigh: sending the kite
 		// overhead or looping it does this without a pop.
-		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffWeightFactor - 1.0f))
+		// A rider who is edging (carving, or with their weight back) leans against the lines with
+		// the board dug in, and can hold a much harder pull down until they let the edge go.
+		const float EdgeHold = FMath::Clamp(FMath::Max(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift), 0.0f, 1.0f);
+		const float LiftoffFactor = LiftoffWeightFactor + EdgedLiftoffWeightBonus * EdgeHold;
+		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffFactor - 1.0f))
 		{
 			BeginAirborne();
 			bLiftedByKite = true;

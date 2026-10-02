@@ -14,7 +14,7 @@ namespace
 		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet, left button loops"), TEXT("") },
 		{ TEXT("Turn the board; spin in the air"), TEXT("A / D"),                     TEXT("Left stick left / right") },
 		{ TEXT("Weight on the nose / the tail"),   TEXT("W / S"),                     TEXT("Left stick up / down") },
-		{ TEXT("Jump (pop)"),                      TEXT("Space"),                     TEXT("Bottom face button") },
+		{ TEXT("Pop (hold S + send the kite first)"), TEXT("Space"),                     TEXT("Bottom face button") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
 		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },
 	};

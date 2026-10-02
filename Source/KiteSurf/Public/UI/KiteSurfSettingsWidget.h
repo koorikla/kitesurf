@@ -125,6 +125,18 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Settings")
 	ERiderCharacter CurrentRiderCharacter;
 
+	/** Chosen kite size in m^2; 0 means the size recommended for the chosen wind. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	float CurrentKiteSizeM2;
+
+	/** Steps through: recommended for the wind, then each kite size. */
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void CycleKiteSize();
+
+	/** What the kite row shows, e.g. "AUTO: 6 m for 30 kn" or "9 m (6 m recommended)". */
+	UFUNCTION(BlueprintPure, Category = "Settings")
+	FString GetKiteSizeText() const;
+
 	/** Steps to the next rider in the list. */
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void CycleRiderCharacter();
@@ -165,6 +177,9 @@ private:
 	TSharedPtr<SComboBox<TSharedPtr<FString>>> SlateResolutionCombo;
 	TArray<TSharedPtr<FString>> ResolutionOptions;
 	TSharedPtr<STextBlock> SlateResolutionText;
+
+	TSharedPtr<SButton> SlateKiteButton;
+	TSharedPtr<STextBlock> SlateKiteText;
 
 	TSharedPtr<SButton> SlateRiderButton;
 	TSharedPtr<STextBlock> SlateRiderText;

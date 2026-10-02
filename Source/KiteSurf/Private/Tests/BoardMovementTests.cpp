@@ -382,12 +382,12 @@ bool FKiteSurfJumpApexEnvelope::RunTest(const FString& Parameters)
 				UE_LOG(LogKiteSurf, Log, TEXT("ApexEnvelope: Max Height = %.1f cm (%.2f m), BestJump = %.1f cm"),
 					MaxHeightReached, MaxHeightReached / 100.0f, BoardComp->GetBestJumpHeight());
 
-				// Standard conditions yield 2m to 6m apex
-				TestTrue(TEXT("Apex reached at least 2m (200 cm)"), MaxHeightReached >= 200.0f);
-				TestTrue(TEXT("Apex within 12m clamp"), MaxHeightReached <= 1200.0f);
-				TestTrue(TEXT("Best jump height recorded"), BoardComp->GetBestJumpHeight() >= 200.0f);
+				// A pop on its own, under a kite that is just parked overhead, is a hop: the legs give
+				// about 2.5 m/s. Height comes from loading the edge against a moving kite (KiteSurf.Jump.TimedReleaseBeatsPop).
+				TestTrue(FString::Printf(TEXT("A plain pop is a hop of 30 cm to 2 m (%.0f cm)"), MaxHeightReached), MaxHeightReached >= 30.0f && MaxHeightReached <= 200.0f);
+				TestTrue(TEXT("Best jump height recorded"), BoardComp->GetBestJumpHeight() >= 30.0f);
 
-				// Test hard ceiling clamp at MaxJumpHeight (1200 cm)
+				// Test hard ceiling clamp at MaxJumpHeight
 				Pawn->SetActorLocation(FVector(0.0f, 0.0f, 0.0f));
 				BoardComp->Velocity = FVector(0.0f, 0.0f, 10000.0f);
 				BoardComp->SetBoardState(EBoardState::Airborne);

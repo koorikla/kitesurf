@@ -1,4 +1,8 @@
 #include "UI/KiteSurfSettingsWidget.h"
+#include "KiteComponent.h"
+#include "KiteRiderPawn.h"
+#include "WindComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfSaveGame.h"
 #include "Components/Slider.h"
@@ -28,6 +32,7 @@ UKiteSurfSettingsWidget::UKiteSurfSettingsWidget(const FObjectInitializer& Objec
 	, bCurrentVSync(false)
 	, CurrentQualityPreset(3)
 	, CurrentRiderCharacter(ERiderCharacter::Santa)
+	, CurrentKiteSizeM2(0.0f)
 {
 	SetIsFocusable(true);
 	if (!HasAnyFlags(RF_ClassDefaultObject))
@@ -54,6 +59,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			CurrentVolume = GI->MasterVolume;
 			bSkipOnboarding = GI->bSkipOnboarding;
 			CurrentRiderCharacter = GI->RiderCharacter;
+			CurrentKiteSizeM2 = GI->KiteSizeM2;
 		}
 		else
 		{
@@ -64,11 +70,12 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 				CurrentVolume = SaveGame->MasterVolume;
 				bSkipOnboarding = SaveGame->bSkipOnboarding;
 				CurrentRiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
+				CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SaveGame->KiteSizeM2) ? SaveGame->KiteSizeM2 : 0.0f;
 			}
 		}
 	}
 
-	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, 8.0f, 30.0f);
+	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, 8.0f, 40.0f);
 	CurrentVolume = FMath::Clamp(CurrentVolume, 0.0f, 1.0f);
 
 	if (UGameUserSettings* UserSettings = UGameUserSettings::GetGameUserSettings())
@@ -118,7 +125,7 @@ void UKiteSurfSettingsWidget::NativeConstruct()
 	if (WindSlider)
 	{
 		WindSlider->SetMinValue(8.0f);
-		WindSlider->SetMaxValue(30.0f);
+		WindSlider->SetMaxValue(40.0f);
 		WindSlider->SetStepSize(1.0f);
 		WindSlider->SetValue(CurrentWindKnots);
 		WindSlider->OnValueChanged.AddDynamic(this, &UKiteSurfSettingsWidget::OnWindSliderChanged);
@@ -254,10 +261,10 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.VAlign(VAlign_Center)
 					[
 						SAssignNew(SlateWindSlider, SSlider)
-						.Value((CurrentWindKnots - 8.0f) / 22.0f)
+						.Value((CurrentWindKnots - 8.0f) / 32.0f)
 						.OnValueChanged_Lambda([this](float NewNormValue)
 						{
-							OnWindSliderChanged(8.0f + NewNormValue * 22.0f);
+							OnWindSliderChanged(8.0f + NewNormValue * 32.0f);
 						})
 					]
 					+ SHorizontalBox::Slot()
@@ -396,6 +403,42 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						[
 							SAssignNew(SlateResolutionText, STextBlock)
 							.Text(FText::FromString(FString::Printf(TEXT("%d x %d"), CurrentResolution.X, CurrentResolution.Y)))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
+				// Kite row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("KITE:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateKiteButton, SButton)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							CycleKiteSize();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateKiteText, STextBlock)
+							.Text(FText::FromString(GetKiteSizeText()))
 							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
 						]
 					]
@@ -545,7 +588,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 
 void UKiteSurfSettingsWidget::OnWindSliderChanged(float Value)
 {
-	CurrentWindKnots = FMath::Clamp(Value, 8.0f, 30.0f);
+	CurrentWindKnots = FMath::Clamp(Value, 8.0f, 40.0f);
 	UpdateTextDisplays();
 }
 
@@ -610,6 +653,25 @@ void UKiteSurfSettingsWidget::SetQualityPreset(int32 InPresetIndex)
 	CurrentQualityPreset = FMath::Clamp(InPresetIndex, 0, 3);
 	ApplyVideoSettings();
 	UpdateTextDisplays();
+}
+
+void UKiteSurfSettingsWidget::CycleKiteSize()
+{
+	const TConstArrayView<float> Sizes = UKiteComponent::GetKiteSizesM2();
+	const int32 Index = Sizes.IndexOfByKey(CurrentKiteSizeM2);
+	// Recommended, then smallest to biggest, then back to recommended.
+	CurrentKiteSizeM2 = Index == INDEX_NONE ? Sizes[0] : (Index + 1 < Sizes.Num() ? Sizes[Index + 1] : 0.0f);
+	UpdateTextDisplays();
+}
+
+FString UKiteSurfSettingsWidget::GetKiteSizeText() const
+{
+	const float Recommended = UKiteComponent::RecommendKiteSizeM2(CurrentWindKnots);
+	if (CurrentKiteSizeM2 <= 0.0f)
+	{
+		return FString::Printf(TEXT("AUTO: %.0f m for %.0f kn"), Recommended, CurrentWindKnots);
+	}
+	return FString::Printf(TEXT("%.0f m (%.0f m recommended)"), CurrentKiteSizeM2, Recommended);
 }
 
 void UKiteSurfSettingsWidget::CycleRiderCharacter()
@@ -716,6 +778,11 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 		SlateResolutionText->SetText(FText::FromString(ResStr));
 	}
 
+	if (SlateKiteText.IsValid())
+	{
+		SlateKiteText->SetText(FText::FromString(GetKiteSizeText()));
+	}
+
 	if (SlateRiderText.IsValid())
 	{
 		SlateRiderText->SetText(FText::FromString(RiderCharacter::GetDisplayName(CurrentRiderCharacter)));
@@ -749,7 +816,23 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			GI->SetMasterVolume(CurrentVolume);
 			GI->SetSkipOnboarding(bSkipOnboarding);
 			GI->SetRiderCharacter(CurrentRiderCharacter);
+			GI->SetKiteSizeM2(CurrentKiteSizeM2);
 			GI->SaveSettingsToDisk();
+
+			// A ride that is already under way gets the new wind and kite straight away.
+			const APlayerController* PC = World->GetFirstPlayerController();
+			if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+			{
+				if (UWindComponent* Wind = Rider->GetWind())
+				{
+					const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
+					Wind->BaseWind = Direction * GI->PendingWindKnots * 51.44f;
+				}
+				if (UKiteComponent* Kite = Rider->GetKite())
+				{
+					Kite->SetKiteSize(GI->GetEffectiveKiteSizeM2());
+				}
+			}
 		}
 		else
 		{
@@ -760,6 +843,7 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 				SaveGame->MasterVolume = CurrentVolume;
 				SaveGame->bSkipOnboarding = bSkipOnboarding;
 				SaveGame->RiderCharacterIndex = static_cast<int32>(CurrentRiderCharacter);
+				SaveGame->KiteSizeM2 = CurrentKiteSizeM2;
 				SaveGame->SaveSettings();
 			}
 		}

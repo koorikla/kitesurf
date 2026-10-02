@@ -23,6 +23,9 @@
 | `UKiteComponent` | `void SetLoopHeld(bool bHeld)` | While held, steering turns the kite at a rate set by its airspeed, so holding the bar over flies a loop. |
 | `UKiteComponent` | `float GetTurnDeg() const` | Degrees turned under the current steering input; 360 is one loop. |
 | `UBoardMovementComponent` | `void SetWeightShift(float Value)` | Rider weight along the board in `[-1.0, 1.0]`: +1 on the nose, -1 on the tail. |
+| `UKiteComponent` | `void SetKiteSize(float AreaM2)` / `static float RecommendKiteSizeM2(float WindKnots, float RiderMassKg)` | Rigs a kite of that area (mass and turning radius follow); the size a rider would pick for the wind. |
+| `UKiteComponent` | `void SetBarEnds(const FVector&, const FVector&)` | The rider says where the bar is; the lines run from there. |
+| `AKiteRiderPawn` | `FVector GetHarnessHookWorldPosition() const` | Where the lines pull on the rider: the front of the waist. |
 | `UKiteComponent` | `float GetAppliedSteer() const` | Steering reaching the kite, -1..1: the bar while looping, the assist's command otherwise. |
 | `UBoardMovementComponent` | `bool IsFloating() const` / `float GetFloatDepthCm() const` | Whether the rider is in the water rather than up on the board, and how deep the board sits. |
 | `UKiteComponent` | `bool AreLinesTaut() const` | False while the lines are slack: the kite is not flying and the rider feels no pull. |
@@ -48,7 +51,7 @@
 ## Game Instance, Settings & Master Volume
 
 - **GameInstance**: `UKiteSurfGameInstance` persists user settings across level transitions (`L_MainMenu` -> `L_OpenWater`).
-- **Settings Persistence**: Game-specific gameplay settings (wind strength: 8–30 kn, master volume: 0.0–1.0) save and load via `UKiteSurfSaveGame`. Display and engine scalability settings (resolution, window mode, VSync, and overall quality scalability presets Low/Medium/High/Epic) are managed by `UGameUserSettings` (`Saved/Config/Linux/GameUserSettings.ini`) and mapped via `Config/DefaultScalability.ini`.
+- **Settings Persistence**: Game-specific gameplay settings (wind strength: 8–40 kn, kite size: recommended or 5–17 m², master volume: 0.0–1.0) save and load via `UKiteSurfSaveGame`. Display and engine scalability settings (resolution, window mode, VSync, and overall quality scalability presets Low/Medium/High/Epic) are managed by `UGameUserSettings` (`Saved/Config/Linux/GameUserSettings.ini`) and mapped via `Config/DefaultScalability.ini`.
 - **Rider Character Materials**: Mannequin materials and textures (`MI_Manny_01_New`, `MI_Manny_02_New`, `M_Mannequin`, and physics asset `PA_Mannequin`) are committed directly under `Content/Characters/Mannequins/` from the Unreal Engine mannequin template assets to ensure `SKM_Manny_Simple` dependencies resolve cleanly without `LoadErrors`.
 - **Master Volume**: Controlled via `FApp::SetVolumeMultiplier(MasterVolume)` both when settings are loaded from disk (`LoadSettingsFromDisk`) and when updated interactively (`SetMasterVolume`).
 - **Entry Level & Maps**: In standalone/packaged runs (`-game`), `GameDefaultMap` is `/Game/Maps/L_MainMenu` and uses `AKiteSurfMainMenuGameMode` configured via `L_MainMenu.umap` WorldSettings. `EditorStartupMap` remains `/Game/Maps/L_OpenWater`.

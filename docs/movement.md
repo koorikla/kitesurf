@@ -27,7 +27,7 @@ The board only carries the rider at speed. Below `FloatUntilSpeedFraction` of th
 ### Weight shift, liftoff and the air
 - **Weight shift** (W / S, left stick Y): +1 is weight on the nose, -1 on the tail. Weight back sinks the tail: lateral grip is scaled by `TailWeightGripScale`, drag rises by `TailWeightDrag`, the board heels further, the nose lifts, and the pop gains `TailWeightPopBonus`. Weight forward flattens the board: grip drops by the same factor, planing drag falls by `NoseWeightDragSaving`, and the nose dips. In the air it tips the board by up to `AirWeightShiftPitchDeg`.
 - **Off the plane** the board pivots towards a beam reach on the kite's side at up to `LowSpeedPivotRate`, so a stalled rider is lined up for the kite to pull them back onto the plane.
-- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight. Sending the kite overhead with the bar in does this without a pop.
+- **Liftoff**: the board leaves the water when the kite's upward pull exceeds `LiftoffWeightFactor` times the rider's weight, or up to `EdgedLiftoffWeightBonus` more when the rider is edging. Holding the edge while the kite is sent, then popping, is how a jump is loaded; see `docs/jumping.md`.
 - **In the air** the carve input spins the board at `AirSpinRate`; left alone it comes back in line with the direction of travel. A twin-tip lands either way round, so only the angle to the board's axis decides between a clean landing and a crash. A skip shorter than 0.25 s and lower than 30 cm is not counted as a jump.
 
 ### How the kite drives the board
@@ -40,6 +40,7 @@ The kite (`UKiteComponent`) is a point mass on the end of its lines, stepped at 
 - **Steering** turns the nose at airspeed / `MinTurnRadiusCm`, wound in at `TurnResponse`. Normally an assist flies the bar: bar over means travel round the window that way, bar centred means hold this clock position (it leans the nose against gravity and gusts), and it turns the nose up before the kite reaches the water. With the **loop** input held the rider's bar goes straight to the kite, so holding it flies a loop, and a loop taken too low goes into the water.
 - **In the water** the lines are slack; the kite relaunches after `RelaunchDelaySeconds`, or sooner if steered, provided there is wind to fly in.
 - The pull passed to the rider is capped at `MaxLineTensionN`.
+- **Size**: `SetKiteSize` rigs a kite of a given area and scales its mass, the air it has to push and its turning radius with it (12 m^2: 3 kg, 4.2 m radius). `RecommendKiteSizeM2` gives the size a rider would rig for the wind, about 2.2 x rider kg / knots, from the sizes on offer (5 to 17 m^2). The game rigs that size unless one is chosen in Settings; the HUD shows it next to the wind.
 - The bar position is persistent: sheet input moves it at `SheetRatePerSec` and it stays there.
 - A ride starts on a beam reach at 12 kn with the kite at clock 65 on that side (`AKiteSurfGameMode::InitializeRide`). In steady 15 kn wind with no input the board settles at about 15 kn with about 500 N in the lines; pointed 30 degrees above a beam reach it gains about 2.2 m/s against the wind.
 
@@ -79,8 +80,12 @@ All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Ca
 | `BuoyancyDamping` | `800.0f` | Vertical damping constant. |
 | `PlaningLiftCoef` | `50.0f` | Planing hydrodynamic lift force coefficient. |
 
-## Rider stance
-The rider's feet are in the straps, so the body always stands square across the board and turns with it: through carves, and through every spin in the air (`AKiteRiderPawn::UpdateRiderPose`). Which rail they face is chosen to face the kite only when they get on the board (start, reset, or while floating). After that it is whichever rail keeps them facing the way they were, so carving round onto the other tack leaves them riding toeside with their back to the kite, and a twin-tip swapping ends under them does not turn them round. The lean is always away from the kite's pull, whichever way the body faces. Board-off tricks, where the feet leave the straps, are not modelled yet.
+## Rider stance and harness
+The rider's feet are in the straps, so the body always stands square across the board and turns with it: through carves, and through every spin in the air (`AKiteRiderPawn::UpdateRiderPose`). Which rail they face is chosen to face the kite when they get on the board (start, reset, or while floating). After that it is whichever rail keeps them facing the way they were, so a twin-tip swapping ends under them does not turn them round.
+
+The lines pull on the harness hook at the front of the rider's waist (`HarnessHookOffsetCm`), and the bar rides on them just beyond it, further out the more it is sheeted out. The bar is always in front of the body. On the water a rider who ends up with their back to the kite slides the board round after `RiderSwitchDelaySeconds` and faces it again; in the air they are free to spin, and the lines come over their shoulder while their back is turned.
+
+The lean is away from the kite's pull. On the water that is leaning out against it; in the air the rider hangs from the harness, so the lower the kite, the further back the shoulders go (up to `RiderAirHangLeanDeg`). Board-off tricks, where the feet leave the straps, are not modelled yet.
 
 ## Bar display
 The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite and match while looping.

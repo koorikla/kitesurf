@@ -68,11 +68,12 @@ UKiteComponent::UKiteComponent()
 	SteeringDragCoefficient = 0.06f;
 	SideForceCoefficient = 1.2f;
 	SlackDragCoefficient = 0.7f;
+	SlackCollapseCm = 150.0f;
 	TrimSheetedOutDeg = -13.0f;
 	TrimSheetedInDeg = -1.0f;
 
-	MinTurnRadiusCm = 600.0f;
-	TurnResponse = 6.0f;
+	MinTurnRadiusCm = 420.0f;
+	TurnResponse = 9.0f;
 	WeathercockGain = 0.2f;
 	GravityTurnGain = 0.15f;
 	TravelHeadingDeg = 100.0f;
@@ -83,7 +84,7 @@ UKiteComponent::UKiteComponent()
 	CrashHeightCm = 60.0f;
 	RelaunchDelaySeconds = 3.0f;
 	MinRelaunchWindCmS = 350.0f;
-	MaxLineTensionN = 3000.0f;
+	MaxLineTensionN = 6000.0f;
 	bDrawDebug = false;
 
 	KiteDir = FVector(FMath::Cos(FMath::DegreesToRadians(45.0f)), 0.0f, FMath::Sin(FMath::DegreesToRadians(45.0f)));
@@ -154,6 +155,7 @@ void UKiteComponent::SetupVisuals()
 			{
 				KiteMesh->SetStaticMesh(SM_Kite);
 			}
+			KiteMesh->SetWorldScale3D(FVector(GetSizeScale()));
 		}
 	}
 
@@ -225,8 +227,9 @@ void UKiteComponent::UpdateVisuals()
 	const FVector RightBarPos = GetBarEndWorldPosition(false);
 
 	// The trailing corner of each wingtip, as built by generate_mesh_objs.kite_wingtip().
-	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, -223.0f, -178.0f));
-	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, 223.0f, -178.0f));
+	const float SizeScale = GetSizeScale();
+	const FVector LeftTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, -223.0f, -178.0f) * SizeScale);
+	const FVector RightTipPos = KiteWorldPosition + KiteWorldRotation.RotateVector(FVector(-150.0f, 223.0f, -178.0f) * SizeScale);
 
 	if (LeftLine)
 	{
@@ -365,8 +368,57 @@ FVector UKiteComponent::GetWindowAxis() const
 	return Axis.IsNearlyZero() ? GetDownwindDir() : Axis;
 }
 
+TConstArrayView<float> UKiteComponent::GetKiteSizesM2()
+{
+	static const float Sizes[] = { 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 12.0f, 14.0f, 17.0f };
+	return Sizes;
+}
+
+float UKiteComponent::RecommendKiteSizeM2(float WindKnots, float RiderMassKg)
+{
+	// The rule of thumb riders use: area = 2.2 x weight / wind, then the nearest kite in the bag.
+	const float IdealAreaM2 = 2.2f * FMath::Max(RiderMassKg, 1.0f) / FMath::Max(WindKnots, 1.0f);
+	float Best = GetKiteSizesM2()[0];
+	for (const float Size : GetKiteSizesM2())
+	{
+		if (FMath::Abs(Size - IdealAreaM2) < FMath::Abs(Best - IdealAreaM2))
+		{
+			Best = Size;
+		}
+	}
+	return Best;
+}
+
+void UKiteComponent::SetKiteSize(float InAreaM2)
+{
+	AreaM2 = FMath::Clamp(InAreaM2, 1.0f, 25.0f);
+	const float AreaRatio = AreaM2 / ReferenceAreaM2;
+	const float Scale = GetSizeScale();
+	// Reference 12 m^2 kite: 3 kg, 3 kg of air to push, 4.2 m turning radius.
+	MassKg = 3.0f * AreaRatio;
+	AddedMassKg = 3.0f * AreaRatio * Scale;
+	MinTurnRadiusCm = 420.0f * Scale;
+	if (KiteMesh)
+	{
+		KiteMesh->SetWorldScale3D(FVector(Scale));
+	}
+}
+
+void UKiteComponent::SetBarEnds(const FVector& LeftEnd, const FVector& RightEnd)
+{
+	BarLeftEnd = LeftEnd;
+	BarRightEnd = RightEnd;
+	bHasBarEnds = true;
+}
+
 FVector UKiteComponent::GetBarEndWorldPosition(bool bLeft) const
 {
+	if (bHasBarEnds)
+	{
+		return bLeft ? BarLeftEnd : BarRightEnd;
+	}
+
+
 	const FVector RiderPos = GetRiderPosition();
 	FVector TowardsKite = (KiteWorldPosition - RiderPos).GetSafeNormal2D();
 	if (TowardsKite.IsNearlyZero())
@@ -637,9 +689,15 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	}
 	else
 	{
-		// Slack lines: nothing holds the canopy to the wind. It is a sheet in the air: drag and weight.
-		Force = HalfRhoArea * SlackDragCoefficient * FlowSpeed * Airflow + Weight;
+		// Slack lines. With a little slack the canopy keeps its shape and keeps flying, which is
+		// what takes the slack back up: a rider who pops towards the kite does not drop it. With
+		// a lot of slack nothing holds it to the wind and it is a sheet in the air: drag and weight.
+		const float Collapse = FMath::Clamp((LineLengthCm - TautSlackCm - DistanceCm) / FMath::Max(SlackCollapseCm, 1.0f), 0.0f, 1.0f);
+		const FVector SheetForce = HalfRhoArea * SlackDragCoefficient * FlowSpeed * Airflow;
+		Force = FMath::Lerp(FlyingForce, SheetForce, Collapse) + Weight;
 		TurnRateRadS = 0.0f;
+		AirspeedCmS = PlaneFlowSpeed * CmPerM;
+		AngleOfAttackDeg = AlphaDeg;
 
 		// A loose canopy is still hanging from its bridle: the rider keeps its nose towards the
 		// edge of the window, so when the lines come tight it flies out of the window rather than

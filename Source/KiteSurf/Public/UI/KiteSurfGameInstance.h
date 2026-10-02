@@ -40,6 +40,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetRiderCharacter(ERiderCharacter InCharacter);
 
+	/** Chosen kite size in m^2; 0 means the size recommended for the wind. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	float KiteSizeM2;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetKiteSizeM2(float InSizeM2);
+
+	/** The kite that will be rigged: the chosen size, or the recommended one for PendingWindKnots. */
+	UFUNCTION(BlueprintPure, Category = "Settings")
+	float GetEffectiveKiteSizeM2() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetSkipOnboarding(bool bInSkip);
 

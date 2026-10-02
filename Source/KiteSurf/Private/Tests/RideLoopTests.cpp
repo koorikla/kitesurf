@@ -1,5 +1,6 @@
 #include "CoreMinimal.h"
 #include "Misc/AutomationTest.h"
+#include "UI/KiteSurfGameInstance.h"
 #include "BoardMovementComponent.h"
 #include "BoardWakeComponent.h"
 #include "Camera/CameraComponent.h"
@@ -890,12 +891,27 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 	const float Side = Pawn->GetRiderStanceSide();
 	const float OffBoardDeg = FacingOffBoardDeg();
 
-	// Spin the board one full turn, as an air spin does. The rider goes round with it, the same
-	// rail under their toes the whole way, and so ends up with their back to the kite half way.
+	auto BarInFrontOfBody = [Pawn, &Ride]()
+	{
+		const FVector BarCentre = (Ride.Kite->GetBarEndWorldPosition(true) + Ride.Kite->GetBarEndWorldPosition(false)) * 0.5f;
+		const FVector BodyFacing = FRotator(0.0f, Pawn->GetRiderBodyYawDeg(), 0.0f).Vector();
+		const FVector FromHook = BarCentre - Pawn->GetHarnessHookWorldPosition();
+		return FVector::DotProduct(FromHook, BodyFacing) > 0.0f && FromHook.Size() < 80.0f;
+	};
+	TestTrue(TEXT("The lines start at the bar, just in front of the harness hook"), BarInFrontOfBody());
+	const FVector HookFromFeet = Pawn->GetHarnessHookWorldPosition() - Pawn->GetActorLocation();
+	TestTrue(FString::Printf(TEXT("The hook is at the front of the waist (%.0f cm up)"), HookFromFeet.Z), HookFromFeet.Z > 70.0f && HookFromFeet.Z < 130.0f
+		&& FVector::DotProduct(HookFromFeet, FRotator(0.0f, Pawn->GetRiderBodyYawDeg(), 0.0f).Vector()) > 0.0f);
+
+	// Spin the board one full turn in the air. The rider goes round with it, the same rail under
+	// their toes the whole way, and so has their back to the kite half way; the bar stays in
+	// front of them with the lines coming over their shoulder.
+	Ride.Board->SetBoardState(EBoardState::Airborne);
 	float RiderTurnedDeg = 0.0f;
 	float PreviousFacingDeg = Pawn->GetRiderFacingYawDeg();
 	float FacingKiteAtHalfTurn = 1.0f;
 	bool bStayedSquare = true;
+	bool bBarStayedInFront = true;
 	const float SpinStepDeg = 5.0f;
 	const int32 SpinSteps = 72;
 	for (int32 Step = 1; Step <= SpinSteps; ++Step)
@@ -905,6 +921,7 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 		RiderTurnedDeg += FRotator::NormalizeAxis(Pawn->GetRiderFacingYawDeg() - PreviousFacingDeg);
 		PreviousFacingDeg = Pawn->GetRiderFacingYawDeg();
 		bStayedSquare = bStayedSquare && FMath::IsNearlyEqual(FacingOffBoardDeg(), OffBoardDeg, 0.01f);
+		bBarStayedInFront = bBarStayedInFront && BarInFrontOfBody();
 		if (Step == SpinSteps / 2)
 		{
 			FacingKiteAtHalfTurn = FacingTowardsKite();
@@ -913,6 +930,8 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Through the spin the rider keeps the same stance on the board"), bStayedSquare && Pawn->GetRiderStanceSide() == Side);
 	TestNearlyEqual(TEXT("The rider turned as far as the board did"), RiderTurnedDeg, 360.0f, 0.1f);
 	TestTrue(FString::Printf(TEXT("Half way round the rider has their back to the kite (%.2f)"), FacingKiteAtHalfTurn), FacingKiteAtHalfTurn < -0.3f);
+	TestTrue(TEXT("The bar stays in front of the rider's body through the spin"), bBarStayedInFront);
+	Ride.Board->SetBoardState(EBoardState::Planing);
 
 	// A twin-tip swapping ends is the board's heading flipping, not the rider turning round.
 	const float FacingBeforeSwapDeg = Pawn->GetRiderFacingYawDeg();
@@ -921,19 +940,231 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("When the board swaps ends the rider stays facing the same way"), static_cast<float>(FRotator::NormalizeAxis(Pawn->GetRiderFacingYawDeg() - FacingBeforeSwapDeg)), 0.0f, 0.01f);
 	TestEqual(TEXT("which is the other rail of the renamed board"), Pawn->GetRiderStanceSide(), -Side);
 
-	// Carve half a turn so the rider is riding toeside, back to the kite, and stays that way.
-	for (int32 Step = 0; Step < 60; ++Step)
+	// Carve half a turn on the water. That leaves the rider's back to the kite, and the hook is
+	// on their front: within a moment they slide the board round and face the kite again.
+	for (int32 Step = 0; Step < 12; ++Step)
 	{
-		Pawn->SetActorRotation(FRotator(0.0f, Pawn->GetActorRotation().Yaw + 3.0f, 0.0f));
+		Pawn->SetActorRotation(FRotator(0.0f, Pawn->GetActorRotation().Yaw + 15.0f, 0.0f));
 		Pawn->Tick(RideDeltaTime);
 	}
-	TestTrue(FString::Printf(TEXT("After carving half a turn the rider is toeside, back to the kite (%.2f)"), FacingTowardsKite()), FacingTowardsKite() < -0.3f);
+	TestTrue(FString::Printf(TEXT("Straight after carving half a turn the rider has their back to the kite (%.2f)"), FacingTowardsKite()), FacingTowardsKite() < -0.3f);
+	for (int32 Step = 0; Step < 90; ++Step)
+	{
+		Pawn->Tick(RideDeltaTime);
+	}
+	TestTrue(FString::Printf(TEXT("A moment later they have slid round to face it (%.2f)"), FacingTowardsKite()), FacingTowardsKite() > 0.3f);
+	TestNearlyEqual(TEXT("still square across the board"), FMath::Abs(FacingOffBoardDeg()), 90.0f, 0.02f);
+	TestNearlyEqual(TEXT("and the slide round has finished"), static_cast<float>(FRotator::NormalizeAxis(Pawn->GetRiderBodyYawDeg() - Pawn->GetRiderFacingYawDeg())), 0.0f, 0.01f);
 
 	// A reset puts the rider back on the board facing the kite.
 	Ride.Board->ResetToTack(12.0f);
 	Ride.Simulate(1.0f);
 	TestNearlyEqual(TEXT("After a reset the rider is square across the board"), FMath::Abs(FacingOffBoardDeg()), 90.0f, 0.02f);
 	TestTrue(FString::Printf(TEXT("and faces the kite again (%.2f)"), FacingTowardsKite()), FacingTowardsKite() > 0.3f);
+	return true;
+}
+
+namespace
+{
+	struct FJumpResult
+	{
+		float PeakCm = 0.0f;
+		float AirSeconds = 0.0f;
+		float SlackSecondsInAir = 0.0f;
+		bool bPulledOffEdge = false;
+		bool bCrashed = false;
+		bool bKiteDown = false;
+	};
+
+	/**
+	 * Rides for a few seconds at 30 kn on the recommended kite, then jumps. With bSend the kite is
+	 * steered hard up; with bHoldEdge the rider's weight is on the tail until ReleaseSeconds after
+	 * that, when they pull the bar in and pop. ReleaseSeconds < 0 means never pop.
+	 */
+	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds)
+	{
+		FJumpResult Result;
+		FRideFixture Ride(30.0f);
+		if (!Ride.IsValid())
+		{
+			return Result;
+		}
+		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(30.0f));
+		Ride.Simulate(8.0f);
+
+		if (bSend)
+		{
+			Ride.Pawn->SteerKite(-1.0f);
+		}
+		if (bHoldEdge)
+		{
+			Ride.Board->SetWeightShift(-1.0f);
+		}
+		bool bLeftWater = false;
+		for (float Elapsed = 0.0f; Elapsed < 20.0f; Elapsed += RideDeltaTime)
+		{
+			Ride.Simulate(RideDeltaTime);
+			const bool bAir = Ride.Board->GetBoardState() == EBoardState::Airborne;
+			if (bAir && !bLeftWater)
+			{
+				// Off the water before the release: the kite pulled the rider off their edge.
+				bLeftWater = true;
+				Result.bPulledOffEdge = true;
+				Ride.Board->SetWeightShift(0.0f);
+				Ride.Pawn->SheetKite(1.0f);
+			}
+			if (!bLeftWater && ReleaseSeconds >= 0.0f && Elapsed >= ReleaseSeconds)
+			{
+				Ride.Board->SetWeightShift(-1.0f);
+				Ride.Pawn->SheetKite(1.0f);
+				Ride.Board->Jump();
+				Ride.Board->SetWeightShift(0.0f);
+				bLeftWater = true;
+			}
+			if (Ride.Kite->GetClockDeg() < 0.0f)
+			{
+				Ride.Pawn->SteerKite(0.0f); // keep the kite overhead
+			}
+			if (bAir)
+			{
+				Result.AirSeconds += RideDeltaTime;
+				if (!Ride.Kite->AreLinesTaut())
+				{
+					Result.SlackSecondsInAir += RideDeltaTime;
+				}
+			}
+			Result.PeakCm = FMath::Max(Result.PeakCm, Ride.Board->GetCurrentJumpHeight());
+			if (bLeftWater && !bAir && Result.AirSeconds > 0.3f)
+			{
+				break;
+			}
+		}
+		Ride.Simulate(1.0f);
+		Result.bCrashed = Ride.Board->IsCrashing();
+		Result.bKiteDown = Ride.Kite->IsCrashed();
+		return Result;
+	}
+}
+
+// Height has to be earned: a pop alone is a hop, sending the kite without an edge plucks the rider
+// off early, and the big jump comes from holding the edge against the rising kite and letting go
+// at the right moment.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpTimedReleaseBeatsPop, "KiteSurf.Jump.TimedReleaseBeatsPop", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
+{
+	const FJumpResult Pop = RunJump(false, false, 0.0f);
+	const FJumpResult SendOnly = RunJump(true, false, -1.0f);
+	const FJumpResult Timed = RunJump(true, true, 0.7f);
+	const FJumpResult TooEarly = RunJump(true, true, 0.3f);
+	const FJumpResult TooLate = RunJump(true, true, 3.0f);
+	UE_LOG(LogKiteSurf, Log, TEXT("TimedReleaseBeatsPop: pop %.1f m, send only %.1f m, timed %.1f m (%.1f s in the air), early %.1f m, late %.1f m (pulled off %d)"),
+		Pop.PeakCm / 100.0f, SendOnly.PeakCm / 100.0f, Timed.PeakCm / 100.0f, Timed.AirSeconds, TooEarly.PeakCm / 100.0f, TooLate.PeakCm / 100.0f, TooLate.bPulledOffEdge);
+
+	TestTrue(FString::Printf(TEXT("A pop with the kite parked is a hop under 2 m (%.1f m)"), Pop.PeakCm / 100.0f), Pop.PeakCm > 30.0f && Pop.PeakCm < 200.0f);
+	TestTrue(TEXT("Sending the kite without an edge pulls the rider off the water"), SendOnly.bPulledOffEdge);
+	TestTrue(FString::Printf(TEXT("A well-timed release goes over 10 m (%.1f m)"), Timed.PeakCm / 100.0f), Timed.PeakCm > 1000.0f);
+	TestFalse(TEXT("and was the rider's release, not the kite's"), Timed.bPulledOffEdge);
+	TestTrue(TEXT("It beats sending the kite without holding an edge by half as much again"), Timed.PeakCm > 1.5f * SendOnly.PeakCm);
+	TestTrue(TEXT("Letting go too early, before the kite has loaded up, is lower"), TooEarly.PeakCm < 0.8f * Timed.PeakCm);
+	TestTrue(TEXT("Holding on too long gets the rider pulled off their edge"), TooLate.bPulledOffEdge);
+	TestTrue(TEXT("which is lower too"), TooLate.PeakCm < 0.8f * Timed.PeakCm);
+
+	// The rider hangs under a flying kite all the way.
+	TestTrue(FString::Printf(TEXT("The lines stay tight through the big jump (%.2f s slack)"), Timed.SlackSecondsInAir), Timed.SlackSecondsInAir < 0.3f);
+	TestTrue(FString::Printf(TEXT("and through the hop (%.2f s slack)"), Pop.SlackSecondsInAir), Pop.SlackSecondsInAir < 0.3f);
+	TestFalse(TEXT("The kite stays in the air"), Timed.bKiteDown || Pop.bKiteDown || SendOnly.bKiteDown);
+	TestFalse(TEXT("The rider lands the big jump"), Timed.bCrashed);
+	return true;
+}
+
+// An edging rider leans against the lines with the board dug in and is much harder to lift.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpEdgeHoldsRiderDown, "KiteSurf.Jump.EdgeHoldsRiderDown", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfJumpEdgeHoldsRiderDown::RunTest(const FString& Parameters)
+{
+	for (const bool bEdging : { false, true })
+	{
+		FRideFixture Ride;
+		if (!Ride.IsValid())
+		{
+			return false;
+		}
+		UBoardMovementComponent* Board = Ride.Board;
+		const float WeightForce = Board->MassKg * 980.0f;
+		Board->SetWeightShift(bEdging ? -1.0f : 0.0f);
+
+		// Twice the rider's weight straight up: enough to lift a flat board, not an edged one.
+		Board->AddExternalForce(FVector(0.0f, 0.0f, 2.0f * WeightForce));
+		Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
+		if (bEdging)
+		{
+			TestTrue(TEXT("Edging, the rider holds twice their weight down"), Board->GetBoardState() != EBoardState::Airborne);
+
+			// Past the edge's limit they go.
+			Board->AddExternalForce(FVector(0.0f, 0.0f, (Board->LiftoffWeightFactor + Board->EdgedLiftoffWeightBonus + 0.2f) * WeightForce));
+			Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
+			TestTrue(TEXT("but not more than the edge can take"), Board->GetBoardState() == EBoardState::Airborne);
+		}
+		else
+		{
+			TestTrue(TEXT("Riding flat, twice the rider's weight lifts them off"), Board->GetBoardState() == EBoardState::Airborne);
+		}
+	}
+	return true;
+}
+
+// Riders rig for the wind: small kites when it blows, big ones when it does not.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteSizes, "KiteSurf.Kite.SizeForWind", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfKiteSizes::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("15 kn: 12 m"), UKiteComponent::RecommendKiteSizeM2(15.0f), 12.0f);
+	TestEqual(TEXT("20 kn: 9 m"), UKiteComponent::RecommendKiteSizeM2(20.0f), 9.0f);
+	TestEqual(TEXT("30 kn: 6 m"), UKiteComponent::RecommendKiteSizeM2(30.0f), 6.0f);
+	TestEqual(TEXT("40 kn: 5 m"), UKiteComponent::RecommendKiteSizeM2(40.0f), 5.0f);
+	TestEqual(TEXT("8 kn: the biggest kite there is"), UKiteComponent::RecommendKiteSizeM2(8.0f), 17.0f);
+	TestTrue(TEXT("A lighter rider takes a smaller kite"), UKiteComponent::RecommendKiteSizeM2(20.0f, 60.0f) < UKiteComponent::RecommendKiteSizeM2(20.0f, 85.0f));
+	float Previous = 100.0f;
+	for (float Knots = 8.0f; Knots <= 40.0f; Knots += 1.0f)
+	{
+		const float Size = UKiteComponent::RecommendKiteSizeM2(Knots);
+		TestTrue(FString::Printf(TEXT("%.0f kn: %.0f m is a size on offer and no bigger than for less wind"), Knots, Size), UKiteComponent::GetKiteSizesM2().Contains(Size) && Size <= Previous);
+		Previous = Size;
+	}
+
+	// A small kite pulls less, is lighter and turns tighter than a big one in the same wind.
+	float ParkedTensionN[2] = { 0.0f, 0.0f };
+	float TurnRadiusCm[2] = { 0.0f, 0.0f };
+	const float Sizes[2] = { 7.0f, 14.0f };
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FStandingFixture Standing;
+		if (!Standing.Kite)
+		{
+			return false;
+		}
+		Standing.Kite->SetKiteSize(Sizes[Index]);
+		TestEqual(TEXT("The kite is the size that was rigged"), Standing.Kite->AreaM2, Sizes[Index]);
+		Standing.Kite->SetWindowPosition(45.0f, 10.0f);
+		FKiteFlight Parked;
+		Parked.Fly(Standing.Kite, 0.0f, 6.0f);
+		ParkedTensionN[Index] = Standing.Kite->GetLineTensionN();
+		TurnRadiusCm[Index] = Standing.Kite->MinTurnRadiusCm;
+		TestTrue(TEXT("It flies: lines tight, not stalled"), Standing.Kite->AreLinesTaut() && Standing.Kite->GetAngleOfAttackDeg() < Standing.Kite->StallAngleDeg);
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("SizeForWind: parked in 15 kn, 7 m pulls %.0f N and 14 m pulls %.0f N"), ParkedTensionN[0], ParkedTensionN[1]);
+	TestTrue(FString::Printf(TEXT("Twice the area pulls about twice as hard (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] > 1.5f * ParkedTensionN[0] && ParkedTensionN[1] < 2.6f * ParkedTensionN[0]);
+	TestTrue(TEXT("The small kite turns tighter"), TurnRadiusCm[0] < TurnRadiusCm[1]);
+
+	// The game instance rigs the recommended size unless one has been chosen.
+	UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
+	GI->SetPendingWindKnots(30.0f);
+	TestEqual(TEXT("With no size chosen the kite is the recommended one"), GI->GetEffectiveKiteSizeM2(), 6.0f);
+	GI->SetKiteSizeM2(9.0f);
+	TestEqual(TEXT("A chosen size is used"), GI->GetEffectiveKiteSizeM2(), 9.0f);
+	GI->SetKiteSizeM2(8.5f);
+	TestEqual(TEXT("A size that is not on offer falls back to the recommended one"), GI->GetEffectiveKiteSizeM2(), 6.0f);
 	return true;
 }
 

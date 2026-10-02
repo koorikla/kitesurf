@@ -69,6 +69,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rider")
 	float GetRiderFacingYawDeg() const { return RiderFacingYawDeg; }
 
+	/** World yaw the rider's body is shown facing: the stance yaw, plus any slide round still in progress. */
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	float GetRiderBodyYawDeg() const { return FRotator::NormalizeAxis(RiderFacingYawDeg + RiderTurnOffsetDeg); }
+
+	/** Where the lines pull on the rider: the harness hook at the front of their waist. */
+	UFUNCTION(BlueprintCallable, Category = "Rider")
+	FVector GetHarnessHookWorldPosition() const { return HarnessHookPosition; }
+
 	/** +1 when the rider faces the board's right rail, -1 when they face its left. */
 	UFUNCTION(BlueprintCallable, Category = "Rider")
 	float GetRiderStanceSide() const { return RiderStanceSide; }
@@ -148,6 +156,22 @@ public:
 	/** Extra lean back while floating in the water (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderFloatLeanDeg;
+
+	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderAirHangLeanDeg;
+
+	/** How long the rider rides with their back to the kite before sliding the board round to face it (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderSwitchDelaySeconds;
+
+	/** How fast the rider comes round when they slide the board to face the kite (deg/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderSwitchTurnRateDeg;
+
+	/** The harness hook on the rider's body: forward, right, up from the feet (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	FVector HarnessHookOffsetCm;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UKiteComponent> Kite;
@@ -277,6 +301,10 @@ private:
 	float CameraLookPitchDeg;
 	float RiderFacingYawDeg;
 	float RiderStanceSide;
+	/** Yaw still to come off while the rider slides round to face the kite (deg). */
+	float RiderTurnOffsetDeg;
+	float BackToKiteSeconds;
+	FVector HarnessHookPosition;
 	/** Time left in which a rider who has just got on the board picks the rail that faces the kite (s). */
 	float StanceChoiceSecondsLeft;
 	static constexpr float StanceChoiceWindowSeconds = 0.3f;

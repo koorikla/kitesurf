@@ -273,6 +273,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float LiftoffWeightFactor;
 
+	/** Added to LiftoffWeightFactor at full edge (turn input or weight on the tail): holding the edge holds the rider down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float EdgedLiftoffWeightBonus;
+
 	/** Board spin rate in the air at full carve input (deg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirSpinRate;

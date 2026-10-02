@@ -1,0 +1,15 @@
+newmtl RiderSkin
+Kd 0.930 0.680 0.550
+
+newmtl RiderRobotMetal
+Kd 0.600 0.620 0.650
+
+newmtl RiderRobotDark
+Kd 0.200 0.200 0.220
+
+newmtl RiderRobotAccent
+Kd 0.000 0.800 1.000
+
+newmtl RiderBlack
+Kd 0.030 0.030 0.030
+

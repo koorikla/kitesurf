@@ -8,13 +8,15 @@ namespace
 {
 	const FKiteSurfControlBinding Bindings[] =
 	{
-		{ TEXT("Steer the kite (hold to loop it)"), TEXT("Left / Right, or mouse with right button held"), TEXT("Right stick left / right") },
-		{ TEXT("Sheet in / out (power)"),           TEXT("Up / Down, or mouse with right button held"),    TEXT("Right stick up / down") },
-		{ TEXT("Carve the board; spin in the air"), TEXT("A / D"),                                           TEXT("Left stick left / right") },
-		{ TEXT("Edge harder / flatten the board"),  TEXT("W / S"),                                           TEXT("Left stick up / down") },
-		{ TEXT("Jump (pop)"),                       TEXT("Space"),                                           TEXT("Bottom face button") },
-		{ TEXT("Reset the rider"),                  TEXT("R"),                                               TEXT("Right face button") },
-		{ TEXT("Pause menu"),                       TEXT("Esc or P"),                                        TEXT("Start") },
+		{ TEXT("Steer the kite round the window"), TEXT("Left / Right"),              TEXT("Right stick left / right") },
+		{ TEXT("Sheet in / out (power)"),          TEXT("Up / Down"),                 TEXT("Right stick up / down, triggers") },
+		{ TEXT("Loop the kite"),                   TEXT("Hold Shift while steering"), TEXT("Hold right bumper while steering") },
+		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet, left button loops"), TEXT("") },
+		{ TEXT("Carve the board; spin in the air"), TEXT("A / D"),                    TEXT("Left stick left / right") },
+		{ TEXT("Edge harder / flatten the board"), TEXT("W / S"),                     TEXT("Left stick up / down") },
+		{ TEXT("Jump (pop)"),                      TEXT("Space"),                     TEXT("Bottom face button") },
+		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
+		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },
 	};
 
 	const float ActionColumnWidth = 290.0f;

@@ -64,13 +64,15 @@ AKiteRiderPawn::AKiteRiderPawn()
 	}
 
 	SheetRatePerSec = 0.8f;
+	MouseSteerSensitivity = 0.02f;
+	MouseSheetSensitivity = 0.01f;
 	CameraArmLengthCm = 1000.0f;
 	CameraBoomPitchDeg = -12.0f;
 	CameraFOVDeg = 95.0f;
 	CameraMaxKiteYawOffsetDeg = 30.0f;
 	CameraKiteHeadroomDeg = 22.0f;
 	CameraMinLookPitchDeg = -6.0f;
-	CameraMaxLookPitchDeg = 14.0f;
+	CameraMaxLookPitchDeg = 10.0f;
 	CameraTurnSpeed = 2.5f;
 	RiderMaxLeanDeg = 22.0f;
 
@@ -149,6 +151,10 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
 	SheetRateInput = 0.0f;
+	KeySteerInput = 0.0f;
+	MouseSteerInput = 0.0f;
+	bLoopKeyHeld = false;
+	SmoothedKiteOffset = FVector::ZeroVector;
 	CameraYawDeg = 0.0f;
 	CameraLookPitchDeg = 0.0f;
 	RiderFacingYawDeg = 0.0f;
@@ -207,6 +213,16 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgeTriggered);
 			EnhancedInputComponent->BindAction(EdgeAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgeTriggered);
 		}
+		if (EdgePressureAction)
+		{
+			EnhancedInputComponent->BindAction(EdgePressureAction, ETriggerEvent::Triggered, this, &AKiteRiderPawn::OnEdgePressureTriggered);
+			EnhancedInputComponent->BindAction(EdgePressureAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnEdgePressureTriggered);
+		}
+		if (LoopAction)
+		{
+			EnhancedInputComponent->BindAction(LoopAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnLoopStarted);
+			EnhancedInputComponent->BindAction(LoopAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnLoopCompleted);
+		}
 		if (PauseAction)
 		{
 			EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPauseTriggered);
@@ -234,7 +250,68 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 {
-	SteerKite(Value.Get<float>());
+	KeySteerInput = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
+	SteerKite(KeySteerInput + MouseSteerInput);
+}
+
+void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float EdgePressure, bool bLoop)
+{
+	KeySteerInput = FMath::Clamp(Steer, -1.0f, 1.0f);
+	SteerKite(KeySteerInput);
+	SetSheetRateInput(SheetRate);
+	EdgeBoard(Carve);
+	if (BoardMovement)
+	{
+		BoardMovement->SetEdgePressure(EdgePressure);
+	}
+	bLoopKeyHeld = bLoop;
+}
+
+void AKiteRiderPawn::OnEdgePressureTriggered(const FInputActionValue& Value)
+{
+	if (BoardMovement)
+	{
+		BoardMovement->SetEdgePressure(Value.Get<float>());
+	}
+}
+
+void AKiteRiderPawn::OnLoopStarted(const FInputActionValue& Value)
+{
+	bLoopKeyHeld = true;
+}
+
+void AKiteRiderPawn::OnLoopCompleted(const FInputActionValue& Value)
+{
+	bLoopKeyHeld = false;
+}
+
+void AKiteRiderPawn::UpdateMouseBar()
+{
+	// The mouse is the bar while the right button is held: sideways steers, towards you sheets
+	// in, and the left button is the hard pull that loops the kite. Letting go centres the bar.
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	const bool bMouseBar = PC && PC->IsInputKeyDown(EKeys::RightMouseButton);
+	bool bMouseLoop = false;
+	if (bMouseBar)
+	{
+		float DeltaX = 0.0f;
+		float DeltaY = 0.0f;
+		PC->GetInputMouseDelta(DeltaX, DeltaY);
+		MouseSteerInput = FMath::Clamp(MouseSteerInput + DeltaX * MouseSteerSensitivity, -1.0f, 1.0f);
+		SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+		bMouseLoop = PC->IsInputKeyDown(EKeys::LeftMouseButton);
+		SteerKite(KeySteerInput + MouseSteerInput);
+	}
+	else if (MouseSteerInput != 0.0f)
+	{
+		MouseSteerInput = 0.0f;
+		SteerKite(KeySteerInput);
+	}
+
+	if (Kite)
+	{
+		Kite->SetLoopHeld(bLoopKeyHeld || bMouseLoop);
+	}
 }
 
 void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
@@ -346,6 +423,20 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
 	}
 
+	if (GetController())
+	{
+		UpdateMouseBar();
+	}
+
+	// The rider and the camera follow where the kite generally is, not every swing of a loop.
+	if (HasKitePosition())
+	{
+		const FVector KiteOffset = Kite->GetKiteWorldPosition() - GetActorLocation();
+		SmoothedKiteOffset = bViewInitialized && !SmoothedKiteOffset.IsNearlyZero()
+			? FMath::VInterpTo(SmoothedKiteOffset, KiteOffset, DeltaTime, 2.0f)
+			: KiteOffset;
+	}
+
 	UpdateRiderPose(DeltaTime);
 	UpdateCamera(DeltaTime);
 	bViewInitialized = true;
@@ -373,8 +464,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	float LeanDeg = 0.0f;
 	if (HasKitePosition())
 	{
-		const FVector ToKite = Kite->GetKiteWorldPosition() - GetActorLocation();
-		TargetFacingYawDeg = ToKite.Rotation().Yaw;
+		TargetFacingYawDeg = SmoothedKiteOffset.Rotation().Yaw;
 
 		// Lean back against the horizontal pull of the lines.
 		const float FullLeanForce = 60000.0f; // 600 N
@@ -417,13 +507,14 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 	if (HasKitePosition())
 	{
 		// Look along the heading, but never further from the kite than the offset that keeps it in frame.
-		const FVector PivotToKite = Kite->GetKiteWorldPosition() - CameraBoom->GetComponentLocation();
+		const FVector SmoothedKitePosition = GetActorLocation() + SmoothedKiteOffset;
+		const FVector PivotToKite = SmoothedKitePosition - CameraBoom->GetComponentLocation();
 		const float KiteYawDeg = PivotToKite.Rotation().Yaw;
 		const float HeadingFromKiteDeg = FMath::FindDeltaAngleDegrees(KiteYawDeg, HeadingYawDeg);
 		TargetYawDeg = KiteYawDeg + FMath::Clamp(HeadingFromKiteDeg, -CameraMaxKiteYawOffsetDeg, CameraMaxKiteYawOffsetDeg);
 
 		// Tilt up only as far as needed to keep a high kite below the top of the screen.
-		const FVector CameraToKite = Kite->GetKiteWorldPosition() - FollowCamera->GetComponentLocation();
+		const FVector CameraToKite = SmoothedKitePosition - FollowCamera->GetComponentLocation();
 		const float KiteElevationFromCameraDeg = FMath::RadiansToDegrees(FMath::Atan2(CameraToKite.Z, CameraToKite.Size2D()));
 		TargetLookPitchDeg = FMath::Clamp(KiteElevationFromCameraDeg - CameraKiteHeadroomDeg, CameraMinLookPitchDeg, CameraMaxLookPitchDeg);
 	}

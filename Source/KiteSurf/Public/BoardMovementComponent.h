@@ -203,7 +203,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotMaxSpeedCmS;
 
-	/** Pivot rate when stopped (deg/s); fades to nothing at LowSpeedPivotMaxSpeedCmS. */
+	/** Pivot rate when stopped (deg/s); eases to a fifth of this at LowSpeedPivotMaxSpeedCmS. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotRate;
 

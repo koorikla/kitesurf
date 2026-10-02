@@ -35,13 +35,13 @@ UBoardMovementComponent::UBoardMovementComponent()
 	CarveTurnRate = 45.0f; // deg/s at full edge once planing: about a 12 m carve at 20 kn
 	SwitchStanceSpeedCmS = 100.0f;
 	CarveResponse = 6.0f;
-	LowSpeedPivotMaxSpeedCmS = 300.0f;
+	LowSpeedPivotMaxSpeedCmS = 400.0f; // the planing threshold: a planing board holds its own course
 	LowSpeedPivotRate = 120.0f;
 	LowSpeedPivotMinForce = 8000.0f; // 80 N
 	EdgePressureGripScale = 2.5f;
 	EdgePressureDrag = 0.35f;
 	EdgePressureHeelDeg = 12.0f;
-	LiftoffWeightFactor = 1.1f;
+	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
 	AirSpinRate = 200.0f;
 	EdgePressurePopBonus = 0.5f;
 	AutoHeelDeg = 12.0f;
@@ -505,17 +505,36 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 				const float MaxTurnStep = CarveTurnRate * FMath::Abs(SmoothedCarveInput) * FMath::Clamp(Speed2D / PlaningThresholdCmS, 0.5f, 1.0f) * DeltaTime;
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + FMath::Clamp(DeltaYaw, -MaxTurnStep, MaxTurnStep));
 			}
-			// Nearly stopped, the rider can pivot the board freely, and points it along the kite's
-			// pull so the next pull drives it forward (the water-start position).
+			// Off the plane the rider can pivot the board freely, and lines it up for the kite to
+			// pull it back onto the plane (the water-start position).
 			else if (Speed2D < LowSpeedPivotMaxSpeedCmS && ExternalForce2D.SizeSquared() > FMath::Square(LowSpeedPivotMinForce))
 			{
-				const float PullHeading = FMath::RadiansToDegrees(FMath::Atan2(ExternalForce2D.Y, ExternalForce2D.X));
+				// Across the wind on the kite's side is where the pull drives the board best; pointing
+				// straight at the kite would just drag the rider downwind after it.
+				FVector PivotDirection = ExternalForce2D;
+				if (const AActor* OwnerActor = GetOwner())
+				{
+					if (const UKiteComponent* KiteComp = OwnerActor->FindComponentByClass<UKiteComponent>())
+					{
+						// A pull straight downwind has no side to choose: follow it.
+						const FVector Crosswind = FVector::CrossProduct(FVector::UpVector, KiteComp->GetDownwindDir());
+						const float SidewaysPull = FVector::DotProduct(ExternalForce2D, Crosswind);
+						if (FMath::Abs(SidewaysPull) >= 0.3f * ExternalForce2D.Size())
+						{
+							PivotDirection = Crosswind * (SidewaysPull >= 0.0f ? 1.0f : -1.0f);
+						}
+					}
+				}
+				const float PullHeading = FMath::RadiansToDegrees(FMath::Atan2(PivotDirection.Y, PivotDirection.X));
 				float YawError = FRotator::NormalizeAxis(PullHeading - Rotation.Yaw);
 				if (FMath::Abs(YawError) > 90.0f)
 				{
 					YawError = FRotator::NormalizeAxis(YawError + 180.0f); // either end of a twin-tip will do
 				}
-				const float MaxStep = LowSpeedPivotRate * (1.0f - Speed2D / LowSpeedPivotMaxSpeedCmS) * DeltaTime;
+				// Full rate when stopped, easing to a fifth just below planing speed, so a slow drift
+				// in the wrong direction still comes round.
+				const float PivotScale = FMath::Clamp(1.0f - Speed2D / LowSpeedPivotMaxSpeedCmS, 0.2f, 1.0f);
+				const float MaxStep = LowSpeedPivotRate * PivotScale * DeltaTime;
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + FMath::Clamp(YawError, -MaxStep, MaxStep));
 			}
 		}

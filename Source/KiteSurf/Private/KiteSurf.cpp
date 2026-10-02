@@ -50,6 +50,37 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Input"),
+			TEXT("Holds inputs on the player's rider. Usage: kitesurf.Input <Steer -1..1> <SheetRate -1..1> <Carve -1..1> <EdgePressure -1..1> <Loop 0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->ApplyScriptedInput(Arg(0), Arg(1), Arg(2), Arg(3), Arg(4) > 0.5f);
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Jump"),
+			TEXT("Pops the player's rider off the water, as the jump key does."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->Jump();
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.OpenSettings"),
 			TEXT("Opens the settings screen from whichever menu is on screen."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -80,6 +111,8 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.After"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.TogglePause"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

@@ -157,13 +157,13 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	switch (CurrentOnboardingStep)
 	{
 	case 0:
-		return TEXT("Steer the kite: fly it up and over to the other side to turn around [A / D or Left Stick]");
+		return TEXT("Steer the kite: fly it over the top to change direction; hold Shift to loop it [Left / Right or Right Stick]");
 	case 1:
-		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [W / S or Triggers]");
+		return TEXT("Sheet in for power, out to slow down - the bar stays where you leave it [Up / Down or Right Stick]");
 	case 2:
-		return TEXT("Carve the board: hold an edge to turn upwind or downwind [Q / E or Left Stick up / down]");
+		return TEXT("Carve the board with A / D; W digs the edge in, S flattens it [or Left Stick]");
 	case 3:
-		return TEXT("Send it: hold an edge and pop off the water to jump [SPACE or Bottom Face Button]");
+		return TEXT("Send it: load the edge and pop off the water to jump [SPACE or Bottom Face Button]");
 	default:
 		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
 	}
@@ -201,7 +201,8 @@ void AKiteSurfHUD::DrawHUD()
 	if (RiderPawn)
 	{
 		DrawTelemetry(RiderPawn);
-		DrawWindWindowArc(RiderPawn, ScreenW * 0.5f, ScreenH - 50.0f, 110.0f);
+		// Bottom left: the rider is in the bottom centre of the view.
+		DrawWindWindowArc(RiderPawn, 180.0f, ScreenH - 50.0f, 110.0f);
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
 		UpdateOnboarding(DeltaTime, RiderPawn);
 	}
@@ -238,7 +239,7 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		return;
 	}
 
-	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 204.0f);
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.65f), 20.0f, 20.0f, 280.0f, 226.0f);
 	DrawText(TEXT("KITESURF TELEMETRY"), FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 28.0f, nullptr, 1.1f);
 
 	FVector Vel = RiderPawn->GetBoardVelocity();
@@ -288,6 +289,15 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 
 	const FString SheetStr = FString::Printf(TEXT("BAR: %.0f%% sheeted in"), RiderPawn->GetCurrentSheetInput() * 100.0f);
 	DrawText(SheetStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 168.0f, nullptr, 1.1f);
+
+	if (const UKiteComponent* KiteComp = RiderPawn->GetKite())
+	{
+		const int32 Loops = FMath::FloorToInt(FMath::Abs(KiteComp->GetTurnDeg()) / 360.0f);
+		if (Loops > 0)
+		{
+			DrawText(FString::Printf(TEXT("KITE LOOP x%d"), Loops), FLinearColor(1.0f, 0.5f, 0.1f), 32.0f, 192.0f, nullptr, 1.2f);
+		}
+	}
 }
 
 void AKiteSurfHUD::DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius)
@@ -481,7 +491,7 @@ void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
 		{
 			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
 			{
-				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f)
+				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f || FMath::Abs(BoardMove->GetEdgePressure()) > 0.2f)
 				{
 					CurrentStepProgress += DeltaTime * 0.75f;
 				}

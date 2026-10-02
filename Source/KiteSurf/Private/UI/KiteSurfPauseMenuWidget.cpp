@@ -246,7 +246,10 @@ void UKiteSurfPauseMenuWidget::OnSettingsClicked()
 	if (ActiveSettingsWidget)
 	{
 		ActiveSettingsWidget->OnBackClickedDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnSettingsClosed);
-		ActiveSettingsWidget->AddToViewport(110); // above the pause menu
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSettingsWidget->AddToViewport(110); // above the pause menu
+		}
 		ActiveSettingsWidget->FocusFirst();
 
 		// One screen at a time: the pause menu comes back when settings close.

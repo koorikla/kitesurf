@@ -46,13 +46,13 @@ UKiteComponent::UKiteComponent()
 	Steer = 0.0f;
 	GlideRatioSheetedOut = 7.0f;
 	GlideRatioSheetedIn = 5.5f;
-	MinTurnRadiusCm = 500.0f;
+	MinTurnRadiusCm = 400.0f;
 	MaxAirspeedCmS = 1800.0f;
 	AirspeedResponse = 2.0f;
 	TravelHeadingDeg = 100.0f;
 	SteerAssistGain = 6.0f;
 	SteerAssistMaxRateDegPerSec = 200.0f;
-	MinElevationDeg = 8.0f;
+	MinElevationDeg = 10.0f;
 	MaxLineTensionN = 3000.0f;
 	bDrawDebug = false;
 

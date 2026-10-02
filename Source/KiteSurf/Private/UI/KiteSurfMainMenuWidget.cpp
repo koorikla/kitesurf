@@ -189,7 +189,10 @@ void UKiteSurfMainMenuWidget::OnSettingsClicked()
 	if (ActiveSettingsWidget)
 	{
 		ActiveSettingsWidget->OnBackClickedDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::OnSettingsClosed);
-		ActiveSettingsWidget->AddToViewport(20);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSettingsWidget->AddToViewport(20);
+		}
 		ActiveSettingsWidget->FocusFirst();
 
 		// One screen at a time: the menu comes back when settings close.

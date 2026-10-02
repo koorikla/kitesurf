@@ -17,6 +17,7 @@
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
 #include "KiteSurf.h"
+#include "KiteSurfUnits.h"
 #include "KiteSurfGameMode.h"
 #include "WindComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -1229,6 +1230,26 @@ bool FKiteSurfRiderSpinsWithBoard::RunTest(const FString& Parameters)
 
 namespace
 {
+	/** One sample of a jump, for the hang-time diagnosis. */
+	struct FJumpSample
+	{
+		float AirSeconds = 0.0f;       // since the board left the water
+		float HeightM = 0.0f;          // above the water
+		float RiderVzMS = 0.0f;
+		float LineForceUpN = 0.0f;     // the lines' pull on the rider, upward part
+		float TensionN = 0.0f;
+		float KiteElevationDeg = 0.0f;
+		float KiteClockDeg = 0.0f;
+		float AlphaDeg = 0.0f;
+		float LiftCoefficient = 0.0f;
+		float DragCoefficient = 0.0f;
+		float AirspeedMS = 0.0f;
+		float KiteVzMS = 0.0f;
+		float Sheet = 0.0f;
+		float AppliedSteer = 0.0f;
+		bool bTaut = false;
+	};
+
 	struct FJumpResult
 	{
 		float PeakCm = 0.0f;
@@ -1237,6 +1258,9 @@ namespace
 		bool bPulledOffEdge = false;
 		bool bCrashed = false;
 		bool bKiteDown = false;
+		/** Samples at TraceHz while the rider is in the air, when asked for. */
+		TArray<FJumpSample> Trace;
+		float RiderWeightN = 0.0f;
 	};
 
 	/**
@@ -1245,7 +1269,7 @@ namespace
 	 * the kite starts to answer that (the bar reaches it after its steering dead time), when they
 	 * pull the bar in and pop. ReleaseSeconds < 0 means never pop.
 	 */
-	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop)
+	FJumpResult RunJump(bool bSend, bool bHoldEdge, float ReleaseSeconds, EKiteModel Model = EKiteModel::Loop, float TraceHz = 0.0f)
 	{
 		FJumpResult Result;
 		FRideFixture Ride(30.0f);
@@ -1255,6 +1279,7 @@ namespace
 		}
 		Ride.Kite->SetKiteModel(Model);
 		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(30.0f));
+		Result.RiderWeightN = Ride.Board->MassKg * KiteUnits::GravityMS2;
 		Ride.Simulate(8.0f);
 
 		float SendDeadTimeSeconds = 0.0f;
@@ -1294,6 +1319,28 @@ namespace
 			}
 			if (bAir)
 			{
+				const int32 FramesPerSample = TraceHz > 0.0f ? FMath::Max(FMath::RoundToInt(1.0f / (TraceHz * RideDeltaTime)), 1) : 0;
+				const int32 AirFrame = FMath::RoundToInt(Result.AirSeconds / RideDeltaTime);
+				if (FramesPerSample > 0 && AirFrame % FramesPerSample == 0)
+				{
+					const FKiteStepDebug& KiteStep = Ride.Kite->GetLastStepDebug();
+					FJumpSample& Sample = Result.Trace.AddDefaulted_GetRef();
+					Sample.AirSeconds = Result.AirSeconds;
+					Sample.HeightM = Ride.Board->GetCurrentJumpHeight() / 100.0f;
+					Sample.RiderVzMS = Ride.Board->Velocity.Z / 100.0f;
+					Sample.LineForceUpN = Ride.Kite->GetLineForce().Z / 100.0f;
+					Sample.TensionN = Ride.Kite->GetLineTensionN();
+					Sample.KiteElevationDeg = Ride.Kite->GetElevationDeg();
+					Sample.KiteClockDeg = Ride.Kite->GetClockDeg();
+					Sample.AlphaDeg = KiteStep.AlphaDeg;
+					Sample.LiftCoefficient = KiteStep.LiftCoefficient;
+					Sample.DragCoefficient = KiteStep.DragCoefficient;
+					Sample.AirspeedMS = Ride.Kite->GetAirspeedCmS() / 100.0f;
+					Sample.KiteVzMS = Ride.Kite->GetKiteVelocity().Z / 100.0f;
+					Sample.Sheet = Ride.Kite->Sheet;
+					Sample.AppliedSteer = Ride.Kite->GetAppliedSteer();
+					Sample.bTaut = Ride.Kite->AreLinesTaut();
+				}
 				Result.AirSeconds += RideDeltaTime;
 				if (!Ride.Kite->AreLinesTaut())
 				{
@@ -1342,6 +1389,72 @@ bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("and through the hop (%.2f s slack)"), Pop.SlackSecondsInAir), Pop.SlackSecondsInAir < 0.3f);
 	TestFalse(TEXT("The kite stays in the air"), Timed.bKiteDown || Pop.bKiteDown || SendOnly.bKiteDown);
 	TestFalse(TEXT("The rider lands the big jump"), Timed.bCrashed);
+	return true;
+}
+
+// Hang time: how much of the rider's weight the kite carries through a big jump, as effective
+// gravity 8 h / t^2 (h the apex, t the time in the air). Real jumps give 1.5 to 3.5 m/s^2 (WOO
+// height and airtime pairs, docs/physics/research.md 3.3): the kite carries 65 to 85% of the rider.
+//
+// Known gap: the model gives about 7.8 m/s^2, the kite carrying about a fifth of the rider, and this
+// test pins that value until the jump is reworked. The 20 Hz trace it logs shows why. The rider
+// leaves the water at 10 m/s, 5.7 m/s of it from the edge-release impulse (EdgeReleaseSeconds
+// times the kite's 2.2 kN of upward pull) and 3.7 m/s from the pop, and climbs level with the
+// kite: at the apex the kite is under 20 deg above the rider, out to the side. With the bar still
+// held over for the send, the assist steers by the wind the rider feels, which in the air is
+// dominated by the rider's own climb and fall, so the kite never gets back over the top. On the
+// way down it is low and slow (about 19 deg above the rider, 8 m/s of air, alpha 14 to 17 deg,
+// stalling past 18 near the water) and its lines hold up about 80 N of the rider's 830. One kite
+// tunable at a time (stall angle, camber, trim, travel heading, steering drag) leaves 8h/t^2
+// between 7.0 and 7.8 m/s^2; undoing all of the steering terms gives 6.5. What is missing is the
+// kite flying to and holding the zenith of the airborne rider's window: an assist that steers by
+// the horizontal wind in the air, and a send that keeps the kite climbing ahead of the rider rather
+// than a launch impulse.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHangTime, "KiteSurf.Physics.HangTime", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
+{
+	const float TraceHz = 20.0f;
+	const float RealEffectiveGravityMin = 1.5f;     // m/s^2, research
+	const float RealEffectiveGravityMax = 3.5f;
+	const float ModelEffectiveGravity = 7.8f;       // m/s^2, what the model gives today (see the known gap above)
+	const float ModelTolerance = 0.1f;
+	const FJumpResult Timed = RunJump(true, true, 0.7f, EKiteModel::Loop, TraceHz);
+	const float HeightM = Timed.PeakCm / 100.0f;
+	const float EffectiveGravity = 8.0f * HeightM / FMath::Max(FMath::Square(Timed.AirSeconds), KINDA_SMALL_NUMBER);
+	UE_LOG(LogKiteSurf, Log, TEXT("HangTime: timed jump at 30 kn on the recommended kite: %.1f m, %.2f s in the air, 8h/t^2 = %.2f m/s^2 (%.0f%% of g carried; real jumps %.1f to %.1f)"),
+		HeightM, Timed.AirSeconds, EffectiveGravity, 100.0f * (1.0f - EffectiveGravity / KiteUnits::GravityMS2), RealEffectiveGravityMin, RealEffectiveGravityMax);
+
+	// The way down: how much the lines hold up, where the kite is and how it is flying.
+	float UpSum = 0.0f;
+	float ElevationSum = 0.0f;
+	float AirspeedSum = 0.0f;
+	int32 Descending = 0;
+	int32 Stalled = 0;
+	UE_LOG(LogKiteSurf, Log, TEXT("HangTime trace: t_s,height_m,rider_vz_ms,line_up_n,tension_n,kite_el_deg,kite_clock_deg,alpha_deg,cl,cd,airspeed_ms,kite_vz_ms,sheet,steer,taut"));
+	for (const FJumpSample& Sample : Timed.Trace)
+	{
+		UE_LOG(LogKiteSurf, Log, TEXT("HangTime trace: %.2f,%.2f,%.2f,%.0f,%.0f,%.1f,%.1f,%.1f,%.2f,%.2f,%.1f,%.2f,%.2f,%.2f,%d"),
+			Sample.AirSeconds, Sample.HeightM, Sample.RiderVzMS, Sample.LineForceUpN, Sample.TensionN, Sample.KiteElevationDeg, Sample.KiteClockDeg,
+			Sample.AlphaDeg, Sample.LiftCoefficient, Sample.DragCoefficient, Sample.AirspeedMS, Sample.KiteVzMS, Sample.Sheet, Sample.AppliedSteer, Sample.bTaut);
+		if (Sample.RiderVzMS < 0.0f)
+		{
+			UpSum += Sample.LineForceUpN;
+			ElevationSum += Sample.KiteElevationDeg;
+			AirspeedSum += Sample.AirspeedMS;
+			Stalled += Sample.AlphaDeg > 18.0f ? 1 : 0;
+			++Descending;
+		}
+	}
+	const float WeightN = Timed.RiderWeightN;
+	const float DescentCount = static_cast<float>(FMath::Max(Descending, 1));
+	UE_LOG(LogKiteSurf, Log, TEXT("HangTime: on the way down (%d samples) the lines hold up %.0f N on average (%.0f%% of %.0f N), the kite is %.1f deg above the rider at %.1f m/s of air, stalled in %d samples"),
+		Descending, UpSum / DescentCount, 100.0f * UpSum / DescentCount / FMath::Max(WeightN, 1.0f), WeightN, ElevationSum / DescentCount, AirspeedSum / DescentCount, Stalled);
+
+	TestTrue(FString::Printf(TEXT("A big jump: 10 to 20 m (%.1f m)"), HeightM), HeightM >= 10.0f && HeightM <= 20.0f);
+	TestTrue(TEXT("The trace was recorded"), Timed.Trace.Num() > 20 && Descending > 5);
+	TestNearlyEqual(FString::Printf(TEXT("8h/t^2 is the model's %.1f m/s^2 within %.0f%% (%.2f; real jumps %.1f to %.1f, see the known gap)"), ModelEffectiveGravity, 100.0f * ModelTolerance, EffectiveGravity, RealEffectiveGravityMin, RealEffectiveGravityMax),
+		EffectiveGravity, ModelEffectiveGravity, ModelTolerance * ModelEffectiveGravity);
 	return true;
 }
 

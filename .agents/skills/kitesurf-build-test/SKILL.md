@@ -45,13 +45,19 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    scripts/run-editor.sh -game -windowed -ResX=1920 -ResY=1080 -log
    ```
    Without `-game` the same script opens the editor.
-5. **Package a Linux Shipping build.**
+5. **Run the GPU smoke test headless** (exercises real Vulkan SM6 rendering, captures screenshot, and exits cleanly):
+   ```bash
+   scripts/smoke-test.sh
+   # or:
+   scripts/run-editor.sh -game -RenderOffScreen -ResX=1280 -ResY=720 -log -ExecCmds="HighResShot 1, kitesurf.SmokeFrames 600" -unattended
+   python3 scripts/ci/scan_game_log.py Saved/Logs/KiteSurf.log
+   ```
+6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh
    ```
    Output is archived under `Build/`.
-6. **CI** runs steps 2 and 3 on a self-hosted runner for every push and pull request to
-   `main`.
+7. **CI** runs steps 2 and 3 on a self-hosted runner, followed by a non-blocking `gpu-smoke` job (step 5) for every push and pull request to `main`.
 
 ## Pitfalls
 
@@ -63,8 +69,10 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
   (see `kitesurf-automation-tests`) or they will fail or silently do nothing.
 - **A cook or `-nullrhi` log saying "Ray tracing is disabled. Reason: not supported by
   current RHI" is expected.** It says nothing about the real game; check a `-game` run.
-- **Headless `-RenderOffScreen` runs of the editor have lost the Vulkan device** in the
-  editor-only selection outline pass. Prefer `-game` for rendering checks.
+- **Headless `-RenderOffScreen` runs of the editor hit `VK_ERROR_DEVICE_LOST`** in the editor-only selection outline pass. Always use `-game` mode (not editor) for off-screen rendering checks and CI smoke tests. If Vulkan device loss ever occurs on specific hardware or driver configurations, apply the following mitigations:
+  - Add `-NoRaytracing` to bypass hardware ray tracing pipeline initialization.
+  - Disable async compute: `-ExecCmds="r.Vulkan.AllowAsyncCompute=0, r.RDG.AsyncCompute=0"`.
+  - On the `koorikla` runner (NVIDIA RTX 4070 Ti SUPER, Linux 7.2 Vulkan SM6), standard `-game -RenderOffScreen` executes without requiring these flags.
 - **Binary assets are in Git LFS** (`.uasset`, `.umap`, textures, audio). A checkout
   without LFS content builds but fails at runtime.
 - **Logs** are in `Saved/Logs/KiteSurf.log`; each run rotates the previous log to a

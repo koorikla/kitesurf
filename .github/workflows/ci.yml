@@ -22,3 +22,36 @@ jobs:
 
       - name: Run Automation Tests
         run: scripts/run-tests.sh -nullrhi
+
+  gpu-smoke:
+    runs-on: [self-hosted, linux, unreal]
+    needs: build-and-test
+    continue-on-error: true
+    concurrency: gpu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Build KiteSurfEditor
+        run: scripts/build.sh Development
+
+      - name: Run GPU Smoke Test
+        run: |
+          mkdir -p Saved/Screenshots/LinuxEditor
+          rm -f Saved/Screenshots/LinuxEditor/*.png
+          scripts/run-editor.sh -game -RenderOffScreen -ResX=1280 -ResY=720 -log -ExecCmds="HighResShot 1, kitesurf.SmokeFrames 600" -unattended
+
+      - name: Scan Game Log
+        run: python3 scripts/ci/scan_game_log.py Saved/Logs/KiteSurf.log
+
+      - name: Upload GPU Smoke Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-smoke-artifacts
+          path: |
+            Saved/Logs/KiteSurf.log
+            Saved/Screenshots/LinuxEditor/*.png
+          if-no-files-found: warn

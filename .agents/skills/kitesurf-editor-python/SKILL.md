@@ -30,6 +30,8 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
    - `scripts/editor/make_open_water_level.py` builds `/Game/Maps/L_OpenWater`.
    - `scripts/editor/make_input_assets.py` builds `IA_*`, `IMC_Default` and `BP_KiteRider`
      defaults.
+   - `scripts/editor/make_water_fx_materials.py` builds `M_WaterFoam` and `M_WaterSpray`,
+     the per-instance-fading materials used by `UBoardWakeComponent`.
    Extend the existing script so one run still rebuilds the whole asset.
 2. **Write the script against the `unreal` module** and make it idempotent: load the asset
    if it exists, create it if not, then set every property explicitly.

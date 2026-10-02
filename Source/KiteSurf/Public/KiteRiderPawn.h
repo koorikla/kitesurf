@@ -11,6 +11,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UWindComponent;
 class UBoardMovementComponent;
+class UBoardWakeComponent;
 class UKiteComponent;
 class UInputMappingContext;
 class UInputAction;
@@ -56,6 +57,7 @@ public:
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
+	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	USkeletalMeshComponent* GetRiderMesh() const { return RiderMesh.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
@@ -65,6 +67,49 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSheetInput() const { return CurrentSheetInput; }
+
+	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void SetSheetRateInput(float Axis);
+
+	/** Sheet in (+) / out (-) input currently held, -1..1. The bar position itself is GetCurrentSheetInput(). */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	float GetSheetRateInput() const { return SheetRateInput; }
+
+	/** Bar travel per second at full sheet input (0..1 range). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite")
+	float SheetRatePerSec;
+
+	// Camera framing: the view sits behind the rider and turns far enough towards the kite to keep it on screen.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraArmLengthCm;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraBoomPitchDeg;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraFOVDeg;
+
+	/** Largest horizontal angle between the view direction and the kite (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraMaxKiteYawOffsetDeg;
+
+	/** How far above the centre of the view the kite is allowed to sit before the camera tilts up (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraKiteHeadroomDeg;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraMinLookPitchDeg;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraMaxLookPitchDeg;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraTurnSpeed;
+
+	/** Lean away from the kite at full line load (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderMaxLeanDeg;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UKiteComponent> Kite;
@@ -93,6 +138,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UBoardMovementComponent> BoardMovement;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UBoardWakeComponent> Wake;
 
 	// Procedural Audio Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
@@ -157,9 +205,19 @@ private:
 	void HandleBoardLanding(float LandingG);
 
 	void UpdateAudioModulation(float DeltaTime);
+	void UpdateCamera(float DeltaTime);
+	void UpdateRiderPose(float DeltaTime);
+
+	/** True once the kite simulation has placed the kite at line length from the rider. */
+	bool HasKitePosition() const;
 
 	float CurrentSteerInput;
 	float CurrentSheetInput;
+	float SheetRateInput;
+	float CameraYawDeg;
+	float CameraLookPitchDeg;
+	float RiderFacingYawDeg;
+	bool bViewInitialized;
 	float KiteAzimuthDeg;
 	FVector BoardVelocity;
 };

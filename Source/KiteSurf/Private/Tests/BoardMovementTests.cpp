@@ -554,11 +554,12 @@ bool FKiteSurfMovementCrashReset::RunTest(const FString& Parameters)
 				const FVector ActualHeading = BoardComp->UpdatedComponent->GetForwardVector().GetSafeNormal2D();
 				TestNearlyEqual(TEXT("Board heading aligned with tack"), (float)FVector::DotProduct(ExpectedHeading, ActualHeading), 1.0f, 0.05f);
 
-				// 6. Verify kite parked at 10:30 (Azimuth -45 deg, Elevation 45 deg)
+				// 6. Verify kite parked at 45 deg on the side the board is riding towards.
+				// The tack heads to the right of the default +X wind, so that is 1:30 (Azimuth +45 deg).
 				if (KiteComp)
 				{
 					TestNearlyEqual(TEXT("Kite elevation reset to 45 deg"), KiteComp->GetElevationDeg(), 45.0f, 1.0f);
-					TestNearlyEqual(TEXT("Kite azimuth reset to -45 deg (10:30 park)"), KiteComp->GetAzimuthDeg(), -45.0f, 1.0f);
+					TestNearlyEqual(TEXT("Kite azimuth reset to +45 deg (1:30 park on the tack side)"), KiteComp->GetAzimuthDeg(), 45.0f, 1.0f);
 				}
 
 				// 7. Verify manual reset (R key) resets mid-ride

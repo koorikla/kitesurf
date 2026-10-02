@@ -19,8 +19,13 @@
 | `UWindComponent` | `float DirectionDriftDeg` | Maximum wind direction drift in degrees (default: 10.0°). |
 | `UWindComponent` | `float ShearHeightCm` | Height at which wind reaches full speed (default: 1000 cm; 70% at Z=0). |
 | `UKiteWindMath` | Static Math Library | `KnotsToCmPerSec`, `ApparentWind`, `WindWindowAzimuthDeg`, `KitePositionInWindow`. |
-| `AKiteRiderPawn` | `void SteerKite(float Axis)` | Steers kite left/right; `Axis` clamped to `[-1.0, 1.0]`. |
-| `AKiteRiderPawn` | `void SheetKite(float Amount)` | Pulls/releases kite bar; `Amount` clamped to `[0.0, 1.0]`. |
+| `AKiteRiderPawn` | `void SteerKite(float Axis)` | Flies the kite around the wind window like a clock hand (right = clockwise looking downwind); `Axis` clamped to `[-1.0, 1.0]`. |
+| `AKiteRiderPawn` | `void SheetKite(float Amount)` | Sets the bar position, which persists; `Amount` clamped to `[0.0, 1.0]`. |
+| `AKiteRiderPawn` | `void SetSheetRateInput(float Axis)` | Held sheet-in/out input; moves the bar at `SheetRatePerSec`. |
+| `UKiteComponent` | `void SetWindowPosition(float ClockDeg, float DepthDeg)` | Places the kite by clock position and depth in the wind window. |
+| `UKiteComponent` | `FVector GetWindowAxis() const` | Axis of the wind window: where the apparent wind blows towards. |
+| `UBoardWakeComponent` | `void EmitSplash(float Intensity)` | Throws a ring of spray; foam trail and rail spray are automatic. |
+| `AKiteSurfGameMode` | `static void InitializeRide(AKiteRiderPawn*, float SpeedCmS)` | Starts the pawn on a beam reach with the kite powered up. |
 | `AKiteRiderPawn` | `FVector GetBoardVelocity() const` | Returns current board velocity vector. |
 | `AKiteRiderPawn` | `float GetKiteAzimuthDeg() const` | Returns kite azimuth angle in degrees (`[-90.0, 90.0]`). |
 
@@ -44,4 +49,5 @@ Physics simulation and component updates execute in the following sequential ord
 1. **Wind Simulation**: `UWindComponent` evaluates ambient wind vector and spatial gusts.
 2. **Kite Aerodynamics**: Kite azimuth, apparent wind, lift, and steering pull calculated.
 3. **Board Hydrodynamics**: Board hull planning forces, fin resistance, drag, and velocity updates. Z position clamped to water surface (Z=0).
-4. **Camera & HUD**: SpringArm lag, camera position, HUD wind indicator, and speedometer update.
+4. **Rider, camera & HUD**: rider faces and leans against the kite; the camera looks along the heading, turned towards the kite far enough to keep it in frame; HUD wind indicator, wind window and speedometer update.
+5. **Wake**: `UBoardWakeComponent` (post-physics) lays foam and throws spray from the board's new position.

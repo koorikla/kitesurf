@@ -14,16 +14,18 @@ map_path = '/Game/Maps/L_OpenWater'
 SUN_PITCH_DEG = -40.0
 SUN_YAW_DEG = -30.0
 
-# Water mesh tile size. The quadtree is capped at 256 tiles per side
-# (r.Water.WaterMesh.MaxDimensionInTiles), so the zone is 256 tiles: 12.3 km square,
-# about 8 minutes of riding in a straight line at 25 kn from the centre to the edge.
-WATER_TILE_SIZE_CM = 4800.0
-ZONE_EXTENT_CM = 256 * WATER_TILE_SIZE_CM
-# Beyond the zone the flat far-distance mesh carries the ocean to the horizon.
-FAR_MESH_EXTENT_CM = 4000000.0
+# The ocean is 100 km square, so a session cannot reach its edge (about an hour in a straight
+# line at 27 kn from the centre).
+ZONE_EXTENT_CM = 10000000.0
+# A zone that large cannot be one static quadtree (capped at 256 tiles per side by
+# r.Water.WaterMesh.MaxDimensionInTiles), so the wave-displaced mesh is built in a window that
+# follows the camera: 256 tiles of 24 m, 6.1 km across. Outside it the ocean's own flat static
+# mesh carries the water to the horizon.
+WATER_TILE_SIZE_CM = 2400.0
+LOCAL_TESSELLATION_EXTENT_CM = 256 * WATER_TILE_SIZE_CM
 # An ocean body cuts a hole for its "island": the bounding box of its spline plus its own
 # origin (WaterBodyOceanComponent.cpp, GenerateWaterBodyMesh). The default island is a
-# 200 m square around the actor, so park the actor near the zone corner, 5.6 km from spawn.
+# 200 m square around the actor, so park the actor near the zone corner, 70 km from spawn.
 OCEAN_ISLAND_OFFSET_CM = -(ZONE_EXTENT_CM / 2.0 - 50000.0)
 
 # Light sea haze; the engine default (0.02) hides the horizon and the water surface.
@@ -115,11 +117,16 @@ if not water_zone:
     raise RuntimeError("Failed to spawn WaterZone")
 water_zone.set_actor_label('WaterZone')
 water_zone.set_editor_property('zone_extent', unreal.Vector2D(ZONE_EXTENT_CM, ZONE_EXTENT_CM))
+water_zone.set_editor_property('enable_local_only_tessellation', True)
+water_zone.set_editor_property(
+    'local_tessellation_extent',
+    unreal.Vector(LOCAL_TESSELLATION_EXTENT_CM, LOCAL_TESSELLATION_EXTENT_CM, 10000.0)
+)
 for c in water_zone.get_components_by_class(unreal.WaterMeshComponent):
     far_mat = unreal.EditorAssetLibrary.load_asset('/Water/Materials/WaterSurface/Water_FarMesh')
     if far_mat:
         c.set_editor_property('far_distance_material', far_mat)
-        c.set_editor_property('far_distance_mesh_extent', FAR_MESH_EXTENT_CM)
+        c.set_editor_property('far_distance_mesh_extent', ZONE_EXTENT_CM)
         print("Configured WaterMeshComponent far distance mesh")
     c.set_editor_property('tile_size', WATER_TILE_SIZE_CM)
     break
@@ -167,6 +174,9 @@ ocean_comp = ocean.get_water_body_component()
 ocean_extents = ocean_comp.get_editor_property('ocean_extents')
 if abs(ocean_extents.x - ZONE_EXTENT_CM) > 1.0 or abs(ocean_extents.y - ZONE_EXTENT_CM) > 1.0:
     raise RuntimeError(f"Ocean did not fill the water zone: extents {ocean_extents}")
+
+# The fallback mesh for everything outside the tessellated window.
+ocean_comp.set_water_body_static_mesh_enabled(True)
 
 # Refuse to save an ocean with no mesh (see the note at the top of this file).
 info_meshes = ocean.get_components_by_class(unreal.WaterBodyInfoMeshComponent)

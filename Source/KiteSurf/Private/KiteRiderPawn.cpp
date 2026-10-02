@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "WindComponent.h"
 #include "BoardMovementComponent.h"
+#include "BoardWakeComponent.h"
 #include "KiteComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -62,22 +63,40 @@ AKiteRiderPawn::AKiteRiderPawn()
 		ControlBarMesh->SetStaticMesh(BarMeshFinder.Object);
 	}
 
-	// CameraBoom (800cm, -20 deg pitch, camera lag)
+	SheetRatePerSec = 0.8f;
+	CameraArmLengthCm = 1000.0f;
+	CameraBoomPitchDeg = -12.0f;
+	CameraFOVDeg = 95.0f;
+	CameraMaxKiteYawOffsetDeg = 30.0f;
+	CameraKiteHeadroomDeg = 22.0f;
+	CameraMinLookPitchDeg = -6.0f;
+	CameraMaxLookPitchDeg = 14.0f;
+	CameraTurnSpeed = 2.5f;
+	RiderMaxLeanDeg = 22.0f;
+
+	// The rider faces the kite and leans against it rather than turning with the board (see UpdateRiderPose).
+	RiderMesh->SetUsingAbsoluteRotation(true);
+	ControlBarMesh->SetUsingAbsoluteLocation(true);
+	ControlBarMesh->SetUsingAbsoluteRotation(true);
+
+	// CameraBoom: pivots at chest height and is aimed in world space by UpdateCamera, so the
+	// horizon stays level while the board pitches with the swell and rolls with the edge.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 800.0f;
-	CameraBoom->SetRelativeRotation(FRotator(-20.0f, 0.0f, 0.0f));
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	CameraBoom->TargetArmLength = CameraArmLengthCm;
+	CameraBoom->SetRelativeRotation(FRotator(CameraBoomPitchDeg, 0.0f, 0.0f));
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 3.0f;
 	CameraBoom->bUsePawnControlRotation = false;
-	// Keep the horizon level: the board pitches with the swell and rolls with the edge, so the
-	// boom takes only the board's heading (applied in Tick) and keeps its own pitch.
+	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->SetUsingAbsoluteRotation(true);
 
 	// FollowCamera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+	FollowCamera->SetFieldOfView(CameraFOVDeg);
 
 	// Wind component
 	Wind = CreateDefaultSubobject<UWindComponent>(TEXT("Wind"));
@@ -88,6 +107,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// Kite component: aerodynamics producing the line force consumed by BoardMovement
 	Kite = CreateDefaultSubobject<UKiteComponent>(TEXT("Kite"));
+
+	// Foam trail and spray behind the board
+	Wake = CreateDefaultSubobject<UBoardWakeComponent>(TEXT("Wake"));
 
 	// Procedural audio components
 	AudioBedComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("AudioBedComponent"));
@@ -126,6 +148,11 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
+	SheetRateInput = 0.0f;
+	CameraYawDeg = 0.0f;
+	CameraLookPitchDeg = 0.0f;
+	RiderFacingYawDeg = 0.0f;
+	bViewInitialized = false;
 	KiteAzimuthDeg = 0.0f;
 	BoardVelocity = FVector::ZeroVector;
 }
@@ -211,7 +238,13 @@ void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 
 void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 {
-	SheetKite(Value.Get<float>());
+	SetSheetRateInput(Value.Get<float>());
+}
+
+void AKiteRiderPawn::SetSheetRateInput(float Axis)
+{
+	// The bar stays where it is put: the input moves it in or out (see Tick) instead of setting it.
+	SheetRateInput = FMath::Clamp(Axis, -1.0f, 1.0f);
 }
 
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
@@ -307,21 +340,110 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
 
-	// Update ControlBar rotation to reflect steering angle
-	if (ControlBarMesh)
+	if (!FMath::IsNearlyZero(SheetRateInput))
 	{
-		ControlBarMesh->SetRelativeRotation(FRotator(0.0f, CurrentSteerInput * 30.0f, 0.0f));
+		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
 	}
 
-	if (CameraBoom)
-	{
-		CameraBoom->SetWorldRotation(FRotator(CameraBoom->GetRelativeRotation().Pitch, GetActorRotation().Yaw, 0.0f));
-	}
+	UpdateRiderPose(DeltaTime);
+	UpdateCamera(DeltaTime);
+	bViewInitialized = true;
 
 	const FVector Vel = GetBoardVelocity();
 	ensureAlwaysMsgf(!Vel.ContainsNaN(), TEXT("AKiteRiderPawn::Tick: BoardVelocity contains NaN or Inf: %s"), *Vel.ToString());
 
 	UpdateAudioModulation(DeltaTime);
+}
+
+bool AKiteRiderPawn::HasKitePosition() const
+{
+	if (!Kite)
+	{
+		return false;
+	}
+	const float KiteDistance = FVector::Dist(Kite->GetKiteWorldPosition(), GetActorLocation());
+	return FMath::IsNearlyEqual(KiteDistance, Kite->LineLengthCm, Kite->LineLengthCm * 0.5f);
+}
+
+void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
+{
+	// Face the kite, falling back to the board's heading before the kite has a position.
+	float TargetFacingYawDeg = GetActorRotation().Yaw;
+	float LeanDeg = 0.0f;
+	if (HasKitePosition())
+	{
+		const FVector ToKite = Kite->GetKiteWorldPosition() - GetActorLocation();
+		TargetFacingYawDeg = ToKite.Rotation().Yaw;
+
+		// Lean back against the horizontal pull of the lines.
+		const float FullLeanForce = 60000.0f; // 600 N
+		LeanDeg = RiderMaxLeanDeg * FMath::Clamp(Kite->GetLineForce().Size2D() / FullLeanForce, 0.0f, 1.0f);
+	}
+
+	RiderFacingYawDeg = bViewInitialized
+		? FMath::FixedTurn(RiderFacingYawDeg, TargetFacingYawDeg, 240.0f * DeltaTime)
+		: TargetFacingYawDeg;
+
+	const FVector Facing = FRotator(0.0f, RiderFacingYawDeg, 0.0f).Vector();
+	const float LeanRad = FMath::DegreesToRadians(LeanDeg);
+	const FVector BodyUp = FVector::UpVector * FMath::Cos(LeanRad) - Facing * FMath::Sin(LeanRad);
+	const FQuat BodyQuat = FRotationMatrix::MakeFromZX(BodyUp, Facing).ToQuat();
+
+	if (RiderMesh)
+	{
+		// The mannequin's front is +Y in mesh space.
+		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
+	}
+
+	if (ControlBarMesh && Kite)
+	{
+		const FVector BarCentre = (Kite->GetBarEndWorldPosition(true) + Kite->GetBarEndWorldPosition(false)) * 0.5f;
+		ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotator(0.0f, RiderFacingYawDeg, CurrentSteerInput * 25.0f));
+	}
+}
+
+void AKiteRiderPawn::UpdateCamera(float DeltaTime)
+{
+	if (!CameraBoom || !FollowCamera)
+	{
+		return;
+	}
+
+	const float HeadingYawDeg = GetActorRotation().Yaw;
+	float TargetYawDeg = HeadingYawDeg;
+	float TargetLookPitchDeg = CameraMinLookPitchDeg;
+
+	if (HasKitePosition())
+	{
+		// Look along the heading, but never further from the kite than the offset that keeps it in frame.
+		const FVector PivotToKite = Kite->GetKiteWorldPosition() - CameraBoom->GetComponentLocation();
+		const float KiteYawDeg = PivotToKite.Rotation().Yaw;
+		const float HeadingFromKiteDeg = FMath::FindDeltaAngleDegrees(KiteYawDeg, HeadingYawDeg);
+		TargetYawDeg = KiteYawDeg + FMath::Clamp(HeadingFromKiteDeg, -CameraMaxKiteYawOffsetDeg, CameraMaxKiteYawOffsetDeg);
+
+		// Tilt up only as far as needed to keep a high kite below the top of the screen.
+		const FVector CameraToKite = Kite->GetKiteWorldPosition() - FollowCamera->GetComponentLocation();
+		const float KiteElevationFromCameraDeg = FMath::RadiansToDegrees(FMath::Atan2(CameraToKite.Z, CameraToKite.Size2D()));
+		TargetLookPitchDeg = FMath::Clamp(KiteElevationFromCameraDeg - CameraKiteHeadroomDeg, CameraMinLookPitchDeg, CameraMaxLookPitchDeg);
+	}
+
+	if (bViewInitialized)
+	{
+		const float YawStepDeg = FMath::FindDeltaAngleDegrees(CameraYawDeg, TargetYawDeg) * FMath::Clamp(CameraTurnSpeed * DeltaTime, 0.0f, 1.0f);
+		CameraYawDeg = FRotator::NormalizeAxis(CameraYawDeg + YawStepDeg);
+		CameraLookPitchDeg = FMath::FInterpTo(CameraLookPitchDeg, TargetLookPitchDeg, DeltaTime, CameraTurnSpeed);
+	}
+	else
+	{
+		CameraYawDeg = TargetYawDeg;
+		CameraLookPitchDeg = TargetLookPitchDeg;
+	}
+
+	// The boom keeps the camera above the water; the camera itself tilts to look up at the kite.
+	CameraBoom->TargetArmLength = CameraArmLengthCm;
+	CameraBoom->SetWorldRotation(FRotator(CameraBoomPitchDeg, CameraYawDeg, 0.0f));
+	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraBoomPitchDeg, 0.0f, 0.0f));
+	FollowCamera->SetFieldOfView(CameraFOVDeg);
 }
 
 void AKiteRiderPawn::OnResetTriggered(const FInputActionValue& Value)

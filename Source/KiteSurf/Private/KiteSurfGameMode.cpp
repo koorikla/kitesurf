@@ -13,13 +13,8 @@ AKiteSurfGameMode::AKiteSurfGameMode()
 	HUDClass = AKiteSurfHUD::StaticClass();
 }
 
-static void InitializePawnVelocity(APawn* Pawn, float InitialSpeedCmPerSec)
+void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec)
 {
-	if (!Pawn)
-	{
-		return;
-	}
-	AKiteRiderPawn* RiderPawn = Cast<AKiteRiderPawn>(Pawn);
 	if (!RiderPawn)
 	{
 		return;
@@ -38,20 +33,24 @@ static void InitializePawnVelocity(APawn* Pawn, float InitialSpeedCmPerSec)
 		}
 	}
 
-	// Initialize moving state
+	// Start on a beam reach: riding across the wind with the kite powered up low on that side,
+	// so the session opens with the rider planing instead of drifting downwind under a parked kite.
+	UKiteComponent* Kite = RiderPawn->GetKite();
+	const FVector DownwindDir = Kite ? Kite->GetDownwindDir() : FVector::ForwardVector;
+	const FVector Heading = FVector::CrossProduct(FVector::UpVector, DownwindDir); // to the right, looking downwind
+	RiderPawn->SetActorRotation(Heading.Rotation());
+
 	if (UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
 	{
-		const FVector Forward2D = RiderPawn->GetActorForwardVector().GetSafeNormal2D();
-		BoardMove->Velocity = Forward2D * InitialSpeedCmPerSec;
+		BoardMove->Velocity = Heading * InitialSpeedCmPerSec;
 		BoardMove->SetBoardState(EBoardState::Planing);
 	}
 
-	// Initialize kite at 45 deg elevation, azimuth at 0
-	if (UKiteComponent* Kite = RiderPawn->GetKite())
+	if (Kite)
 	{
-		Kite->SetElevationDeg(45.0f);
-		Kite->SetAzimuthDeg(0.0f);
+		Kite->SetWindowPosition(StartKiteClockDeg, StartKiteDepthDeg);
 	}
+	RiderPawn->SheetKite(StartSheet);
 }
 
 void AKiteSurfGameMode::RestartPlayer(AController* NewPlayer)
@@ -59,7 +58,7 @@ void AKiteSurfGameMode::RestartPlayer(AController* NewPlayer)
 	Super::RestartPlayer(NewPlayer);
 	if (NewPlayer)
 	{
-		InitializePawnVelocity(NewPlayer->GetPawn(), InitialSpawnSpeedCmPerSec);
+		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }
 
@@ -68,7 +67,7 @@ void AKiteSurfGameMode::RestartPlayerAtPlayerStart(AController* NewPlayer, AActo
 	Super::RestartPlayerAtPlayerStart(NewPlayer, StartSpot);
 	if (NewPlayer)
 	{
-		InitializePawnVelocity(NewPlayer->GetPawn(), InitialSpawnSpeedCmPerSec);
+		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }
 
@@ -77,6 +76,6 @@ void AKiteSurfGameMode::RestartPlayerAtTransform(AController* NewPlayer, const F
 	Super::RestartPlayerAtTransform(NewPlayer, SpawnTransform);
 	if (NewPlayer)
 	{
-		InitializePawnVelocity(NewPlayer->GetPawn(), InitialSpawnSpeedCmPerSec);
+		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }

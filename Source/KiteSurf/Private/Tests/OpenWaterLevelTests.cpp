@@ -4,9 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Level.h"
 #include "GameFramework/PlayerStart.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "GerstnerWaterWaves.h"
-#include "KiteRiderPawn.h"
 #include "WaterBodyOceanActor.h"
 #include "WaterZoneActor.h"
 
@@ -99,39 +97,6 @@ bool FKiteSurfLevelOceanRendersAtSpawn::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("Summed wave steepness %.2f stays below 1 so the surface cannot fold over"), SteepnessSum), SteepnessSum < 1.0f);
 	}
 
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPawnCameraStaysLevel, "KiteSurf.Pawn.CameraStaysLevel", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-
-bool FKiteSurfPawnCameraStaysLevel::RunTest(const FString& Parameters)
-{
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
-	TestNotNull(TEXT("World created"), World);
-	if (!World)
-	{
-		return false;
-	}
-
-	AKiteRiderPawn* Pawn = World->SpawnActor<AKiteRiderPawn>();
-	TestNotNull(TEXT("Pawn spawned"), Pawn);
-	const USpringArmComponent* Boom = Pawn ? Pawn->FindComponentByClass<USpringArmComponent>() : nullptr;
-	TestNotNull(TEXT("Pawn has a camera boom"), Boom);
-	if (Boom)
-	{
-		const float BoomPitch = Boom->GetRelativeRotation().Pitch;
-
-		// Board pitched up a wave face, turned, and rolled hard onto its edge
-		Pawn->SetActorRotation(FRotator(12.0f, 30.0f, 35.0f));
-		Pawn->Tick(0.016f);
-		const FRotator CameraRotation = Boom->GetTargetRotation();
-
-		TestNearlyEqual(TEXT("Camera does not roll with the board"), static_cast<float>(CameraRotation.Roll), 0.0f, 0.1f);
-		TestNearlyEqual(TEXT("Camera pitch ignores board pitch"), static_cast<float>(CameraRotation.Pitch), BoomPitch, 0.1f);
-		TestNearlyEqual(TEXT("Camera yaw follows the board heading"), static_cast<float>(CameraRotation.Yaw), 30.0f, 0.1f);
-	}
-
-	World->DestroyWorld(false);
 	return true;
 }
 

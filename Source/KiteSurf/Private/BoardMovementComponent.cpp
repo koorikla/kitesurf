@@ -527,14 +527,14 @@ void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType
 			if (FMath::Abs(CurrentSubmersion) > 20.0f)
 			{
 				FVector ClampedLocation = NewLocation;
-				ClampedLocation.Z = FMath::Clamp(NewLocation.Z, WaterHeight - 20.0f, WaterHeight + 20.0f);
+				ClampedLocation.Z = FMath::Clamp(NewLocation.Z, WaterHeight - 19.99f, WaterHeight + 19.99f);
 				UpdatedComponent->SetWorldLocation(ClampedLocation);
 				Velocity.Z = 0.0f;
 			}
 
 			if (CurrentBoardState == EBoardState::Planing)
 			{
-				ensureAlwaysMsgf(FMath::Abs(WaterHeight - UpdatedComponent->GetComponentLocation().Z) <= 20.0f,
+				ensureAlwaysMsgf(FMath::Abs(WaterHeight - UpdatedComponent->GetComponentLocation().Z) <= 20.0f + KINDA_SMALL_NUMBER,
 					TEXT("BoardMovement: Planing pawn out of water contact: Submersion = %.2f cm (expected within +/- 20 cm)"),
 					WaterHeight - UpdatedComponent->GetComponentLocation().Z);
 			}

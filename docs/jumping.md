@@ -32,13 +32,15 @@ The legs give about 2.5 m/s, a hop of under a metre. The second term is the edge
 - The kite lifts the rider off the water by itself when its upward pull passes `LiftoffWeightFactor` (1.5) times their weight.
 - A rider who is edging (turn input, weight on the tail, or a loaded crouch) holds more: up to `LiftoffWeightFactor + EdgedLiftoffWeightBonus` (4.5) times their weight at full edge. That is what lets the pull build while the kite is steered up.
 - Releasing the edge with a pop while the lines are loaded is the big jump. Releasing early gives less; holding on until the kite pulls the rider off the edge loses the pop and the timing, and is far lower.
-- Measured with the recommended kite, sending the kite hard and popping at the best moment: about 5 m in 15 kn, 15 m in 30 kn, 25 m in 40 kn. A pop with the kite parked is about 1 m; sending the kite without an edge is about 6 m in 30 kn (`KiteSurf.Jump.TimedReleaseBeatsPop`).
+- Measured with the recommended kite, sending the kite hard and popping at the best moment: about 6 m in 15 kn, 15 m in 30 kn, 20 m in 40 kn, 30 m in 60 kn and 48 m in 90 kn, landing 17, 55, 90, 180 and 300 m downwind. The stronger the wind, the earlier the best moment: 1.6 s after sending the kite in 15 kn, 0.2 s in 90 kn. A pop with the kite parked is about 1 m; sending the kite without an edge is about 6 m in 30 kn (`KiteSurf.Jump.TimedReleaseBeatsPop`).
 
 ### Airborne Dynamics & Apex Envelope
 - The line force continues to act on the rider. A kite kept overhead carries part of their weight on the way down.
 - A little slack in the lines does not drop the kite: the canopy keeps flying and takes the slack back up. Only with more than `SlackCollapseCm` of slack is it a loose sheet that falls.
 - While airborne (> 10 cm above water surface), water buoyancy and water drag forces are disabled.
-- The trajectory is clamped at `MaxJumpHeight` (4000 cm = 40 m), with upward velocity zeroed if the ceiling is reached.
+- The wind pushes on a rider in the air (`UBoardMovementComponent::ComputeAirDragForce`, drag area `AirDragAreaM2` 0.6 m^2, from the wind they feel). `MaxBoardSpeed` holds only on the water. Together these carry a rider downwind in a storm until the wind they feel, and with it the kite's lift, has dropped: that is what brings them down, and what stops the kite towing them ever faster.
+- The only ceiling is `MaxJumpHeight`, at the cloud base (500000 cm = 5 km); upward velocity is zeroed there. No jump measured comes near it.
+- Distance is measured over the water from take-off (`GetCurrentJumpDistance`, `GetLastJumpDistance`, `GetBestJumpDistance`); `GetJumpCount` goes up when a jump's figures are final.
 
 ### Landing Evaluation & Crash Recovery
 Upon re-entering the water surface ($v_z \le 0$ and $z \le z_{\text{water}} + 10 \text{ cm}$):
@@ -73,4 +75,5 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 ## HUD Telemetry
 `AKiteSurfHUD` renders:
 - Current board state: `Displacement`, `Planing`, `Airborne (<height>m)`, or `Landing (Clean/Crash!)`.
-- Jump stats: `Best <height>m` and `Apex <height>m`.
+- Jump stats in the telemetry: best height and distance, and the last jump's.
+- The jump readout, top centre: `12.4 m high   35 m far   2.1 s` while the rider is more than a metre up, then `JUMP  14.8 m high   62 m far   4.1 s` for four seconds after it ends, in gold with NEW BEST when it beat the session's best height (`UpdateJumpReadout`). Hops under a metre are not announced.

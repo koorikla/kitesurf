@@ -100,6 +100,67 @@ float AKiteSurfHUD::KnotsToCmPerSec(float Knots)
 	return Knots * 51.44f;
 }
 
+FString AKiteSurfHUD::FormatJumpLive(float HeightCm, float DistanceCm, float AirSeconds)
+{
+	return FString::Printf(TEXT("%.1f m high   %.0f m far   %.1f s"), HeightCm / 100.0f, DistanceCm / 100.0f, AirSeconds);
+}
+
+FString AKiteSurfHUD::FormatJumpResult(float ApexCm, float DistanceCm, float AirSeconds)
+{
+	return FString::Printf(TEXT("JUMP  %.1f m high   %.0f m far   %.1f s"), ApexCm / 100.0f, DistanceCm / 100.0f, AirSeconds);
+}
+
+void AKiteSurfHUD::UpdateJumpReadout(const UBoardMovementComponent* Board, float DeltaTime)
+{
+	// A hop off a wave is not a jump worth announcing.
+	const float MinHeightCm = 100.0f;
+	if (!Board)
+	{
+		JumpReadoutText.Reset();
+		return;
+	}
+
+	if (Board->GetJumpCount() != SeenJumpCount)
+	{
+		// A jump has just finished: show what it came to.
+		SeenJumpCount = Board->GetJumpCount();
+		if (Board->GetLastJumpApexHeight() >= MinHeightCm)
+		{
+			JumpReadoutText = FormatJumpResult(Board->GetLastJumpApexHeight(), Board->GetLastJumpDistance(), Board->GetLastJumpAirtime());
+			JumpResultRemainingTime = 4.0f;
+			bJumpReadoutNewBest = Board->GetLastJumpApexHeight() > BestHeightBeforeJumpCm && BestHeightBeforeJumpCm > 0.0f;
+			bJumpReadoutLive = false;
+		}
+		BestHeightBeforeJumpCm = Board->GetBestJumpHeight();
+		return;
+	}
+
+	if (Board->GetBoardState() == EBoardState::Airborne && Board->GetCurrentJumpHeight() >= MinHeightCm)
+	{
+		JumpReadoutText = FormatJumpLive(Board->GetCurrentJumpHeight(), Board->GetCurrentJumpDistance(), Board->GetCurrentJumpAirtime());
+		JumpResultRemainingTime = 0.0f;
+		bJumpReadoutNewBest = BestHeightBeforeJumpCm > 0.0f && Board->GetCurrentJumpHeight() > BestHeightBeforeJumpCm;
+		bJumpReadoutLive = true;
+		return;
+	}
+
+	if (bJumpReadoutLive)
+	{
+		// Came down below a metre without the jump being counted yet: clear the live figures.
+		bJumpReadoutLive = false;
+		JumpReadoutText.Reset();
+	}
+	if (JumpResultRemainingTime > 0.0f)
+	{
+		JumpResultRemainingTime = FMath::Max(0.0f, JumpResultRemainingTime - DeltaTime);
+		if (JumpResultRemainingTime <= 0.0f)
+		{
+			JumpReadoutText.Reset();
+			bJumpReadoutNewBest = false;
+		}
+	}
+}
+
 FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)
 {
 	float Knots = CmPerSecToKnots(FMath::Abs(SpeedCmPerSec));
@@ -222,6 +283,28 @@ void AKiteSurfHUD::DrawHUD()
 		DrawOnboardingPrompt(ScreenW, ScreenH);
 	}
 
+	// Top centre: how high and how far the jump is going, then what it came to.
+	UpdateJumpReadout(RiderPawn ? RiderPawn->GetBoardMovement() : nullptr, DeltaTime);
+	if (!JumpReadoutText.IsEmpty())
+	{
+		const float Scale = bJumpReadoutLive ? 1.9f : 1.6f;
+		float TextW = 0.0f;
+		float TextH = 0.0f;
+		GetTextSize(JumpReadoutText, TextW, TextH, nullptr, Scale);
+		const float TextX = ScreenW * 0.5f - TextW * 0.5f;
+		const float TextY = 70.0f;
+		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), TextX - 16.0f, TextY - 6.0f, TextW + 32.0f, TextH + 12.0f);
+		DrawText(JumpReadoutText, bJumpReadoutNewBest ? FLinearColor(1.0f, 0.85f, 0.2f) : FLinearColor::White, TextX, TextY, nullptr, Scale);
+		if (bJumpReadoutNewBest && !bJumpReadoutLive)
+		{
+			const FString BestText = TEXT("NEW BEST");
+			float BestW = 0.0f;
+			float BestH = 0.0f;
+			GetTextSize(BestText, BestW, BestH, nullptr, 1.2f);
+			DrawText(BestText, FLinearColor(1.0f, 0.85f, 0.2f), ScreenW * 0.5f - BestW * 0.5f, TextY + TextH + 10.0f, nullptr, 1.2f);
+		}
+	}
+
 	if (JumpRejectionRemainingTime > 0.0f)
 	{
 		JumpRejectionRemainingTime = FMath::Max(0.0f, JumpRejectionRemainingTime - DeltaTime);
@@ -297,9 +380,11 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		}
 		DrawText(StateStr, FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 120.0f, nullptr, 1.1f);
 
-		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1fm | Apex %.1fm"),
+		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1f m high, %.0f m far | Last %.1f m, %.0f m"),
 			BoardMove->GetBestJumpHeight() / 100.0f,
-			BoardMove->GetLastJumpApexHeight() / 100.0f);
+			BoardMove->GetBestJumpDistance() / 100.0f,
+			BoardMove->GetLastJumpApexHeight() / 100.0f,
+			BoardMove->GetLastJumpDistance() / 100.0f);
 		DrawText(JumpStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 144.0f, nullptr, 1.1f);
 	}
 

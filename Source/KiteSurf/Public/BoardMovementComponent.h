@@ -164,6 +164,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	float GetBestJumpHeight() const { return BestJumpHeight; }
 
+	/** How far over the water the jump in progress has carried, from take-off (cm). */
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetCurrentJumpDistance() const { return CurrentJumpDistance; }
+
+	/** Take-off to touchdown of the last jump, measured over the water (cm). */
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetLastJumpDistance() const { return LastJumpDistance; }
+
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	float GetBestJumpDistance() const { return BestJumpDistance; }
+
+	/** How many jumps have been landed or crashed: it goes up when a jump's figures are final. */
+	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
+	int32 GetJumpCount() const { return JumpCount; }
+
+	/**
+	 * The wind's push on a rider in the air (kg*cm/s^2), from the wind they feel. On the water
+	 * it is part of the board's tuned drag; in the air it is what carries a rider downwind and
+	 * stops the kite towing them faster and faster.
+	 */
+	FVector ComputeAirDragForce(const FVector& WindCmS) const;
+
+	/** Drag area of a rider and board in the air (m^2): about 0.6 for a person hanging under a kite. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Board|Jump")
+	float AirDragAreaM2 = 0.6f;
+
 	/** Puts the rider on a board of this size: pop, the speed it planes at, drag, grip and turning follow it. */
 	UFUNCTION(BlueprintCallable, Category = "Board")
 	void SetBoardSize(EBoardSize InSize);
@@ -401,6 +427,11 @@ private:
 	float LastJumpApexHeight;
 	float LastJumpAirtime;
 	float BestJumpHeight;
+	FVector JumpStartLocation = FVector::ZeroVector;
+	float CurrentJumpDistance = 0.0f;
+	float LastJumpDistance = 0.0f;
+	float BestJumpDistance = 0.0f;
+	int32 JumpCount = 0;
 
 	bool bLastLandingClean;
 	bool bIsCrashing;

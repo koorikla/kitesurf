@@ -47,6 +47,10 @@ struct FBoardSizeTraits
 
 namespace KiteGear
 {
+	/** The wind the player can choose: a light breeze to a hurricane. */
+	inline constexpr float MinWindKnots = 8.0f;
+	inline constexpr float MaxWindKnots = 90.0f;
+
 	KITESURF_API const TCHAR* GetDisplayName(EKiteModel Model);
 	KITESURF_API const TCHAR* GetDescription(EKiteModel Model);
 	KITESURF_API EKiteModel Next(EKiteModel Model);

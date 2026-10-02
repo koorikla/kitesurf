@@ -108,9 +108,36 @@ public:
 	 */
 	static void GetBarEnds(float Steer, float Sheet, const FVector2D& ThrowTop, float ThrowLength, float HalfWidth, float MaxTiltDeg, FVector2D& OutLeftEnd, FVector2D& OutRightEnd);
 
+	/** A jump in progress, e.g. "12.4 m high   35 m far   2.1 s". */
+	static FString FormatJumpLive(float HeightCm, float DistanceCm, float AirSeconds);
+
+	/** A finished jump, e.g. "JUMP  14.8 m high   62 m far   4.1 s". */
+	static FString FormatJumpResult(float ApexCm, float DistanceCm, float AirSeconds);
+
+	/**
+	 * Follows the board's jumps: the height and distance so far while the rider is in the air,
+	 * then the finished jump's figures for a few seconds after it. Hops under a metre are ignored.
+	 */
+	void UpdateJumpReadout(const class UBoardMovementComponent* Board, float DeltaTime);
+
+	/** What the jump readout shows now; empty when there is nothing to show. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetJumpReadoutText() const { return JumpReadoutText; }
+
+	/** Whether the jump being shown beat the session's best height. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	bool IsJumpReadoutNewBest() const { return bJumpReadoutNewBest; }
+
 protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	FString JumpRejectionText;
+
+	FString JumpReadoutText;
+	float JumpResultRemainingTime = 0.0f;
+	int32 SeenJumpCount = 0;
+	float BestHeightBeforeJumpCm = 0.0f;
+	bool bJumpReadoutNewBest = false;
+	bool bJumpReadoutLive = false;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	float JumpRejectionRemainingTime = 0.0f;

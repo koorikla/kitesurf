@@ -678,6 +678,11 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	// In the air the wind pushes on the rider too.
+	if (BoardMovement && Wind && BoardMovement->GetBoardState() == EBoardState::Airborne)
+	{
+		BoardMovement->AddExternalForce(BoardMovement->ComputeAirDragForce(Wind->GetWindAt(GetActorLocation())));
+	}
 
 	UpdateMotionBar(DeltaTime);
 

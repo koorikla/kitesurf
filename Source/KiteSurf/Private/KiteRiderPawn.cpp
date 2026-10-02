@@ -84,6 +84,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraMaxLookPitchDeg = 10.0f;
 	CameraTurnSpeed = 2.5f;
 	RiderMaxLeanDeg = 22.0f;
+	RiderFloatLeanDeg = 30.0f;
 
 	// The rider faces the kite and leans against it rather than turning with the board (see UpdateRiderPose).
 	RiderMesh->SetUsingAbsoluteRotation(true);
@@ -517,6 +518,12 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RiderFacingYawDeg = bViewInitialized
 		? FMath::FixedTurn(RiderFacingYawDeg, TargetFacingYawDeg, 240.0f * DeltaTime)
 		: TargetFacingYawDeg;
+
+	// Floating, the rider lies back in the water with the board out in front.
+	if (BoardMovement && BoardMovement->FloatSubmersionCm > 0.0f)
+	{
+		LeanDeg += RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
+	}
 
 	const FVector Facing = FRotator(0.0f, RiderFacingYawDeg, 0.0f).Vector();
 	const float LeanRad = FMath::DegreesToRadians(LeanDeg);

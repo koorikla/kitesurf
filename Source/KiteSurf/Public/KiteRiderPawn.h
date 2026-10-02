@@ -134,6 +134,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderMaxLeanDeg;
 
+	/** Extra lean back while floating in the water (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderFloatLeanDeg;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UKiteComponent> Kite;
 

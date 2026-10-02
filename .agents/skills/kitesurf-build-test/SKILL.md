@@ -62,6 +62,7 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    - `kitesurf.After <frames> <command...>` runs a console command later.
    - `kitesurf.Input <steer> <sheet rate> <carve> <edge pressure> <loop 0|1>` holds inputs on the rider.
    - `kitesurf.Jump`, `kitesurf.TogglePause` and `kitesurf.OpenSettings` do what the keys and buttons do.
+   - `kitesurf.Wind <knots>` sets the base wind speed, e.g. `kitesurf.After 200 kitesurf.Wind 2` to drop the kite and leave the rider floating.
 6. **Package a Linux Shipping build.**
    ```bash
    scripts/package-linux.sh

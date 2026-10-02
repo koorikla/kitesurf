@@ -14,6 +14,9 @@ This document outlines the board movement, edging, planing transition, and physi
    - Quadratic drag: $F_{quad} = C_{planing,quad} \cdot v^2$. This term dominates, so the settled board speed scales with the wind speed instead of running away in strong wind.
    - Planing hydrodynamic lift: raises the board towards the surface as speed increases, clamped by surface contact falloff.
 
+### Floating and the water start
+The board only carries the rider at speed. Below `FloatUntilSpeedFraction` of the planing threshold the rider floats with the board `FloatSubmersionCm` under the surface (about chest deep) and lies back in the water; between there and the planing threshold they rise, and at planing speed the board rides on the surface. The depth follows the speed at `FloatResponse`, so a rider who loses the kite sinks over a second or so and comes back up as the kite gets them going again. A rider in the air lands on the surface first and sinks from there. `IsFloating()` and `GetFloatDepthCm()` report it; the HUD state line reads Floating, Getting up or Planing.
+
 ### Course keeping, edging and carving
 - **Lateral Resistance**: $F_{lat} = (C_{lat,base} + C_{edge} \cdot |\text{EdgeInput}|) \cdot v_{lat}$, capped at $m / \Delta t$ so one step can at most cancel the sideways speed. The base term is the fins and a neutral stance: with no edge input the board holds its heading against the kite's sideways pull.
 - **Edge Drive**: Hydrodynamic lift along the board rail converts lateral holding force into forward thrust: $F_{fwd} = |F_{lat}| \cdot |\text{EdgeInput}| \cdot \eta_{edge}$.
@@ -75,6 +78,9 @@ All properties are exposed under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Ca
 | `BuoyancySpringStiffness` | `3000.0f` | Vertical water surface equilibrium spring constant. |
 | `BuoyancyDamping` | `800.0f` | Vertical damping constant. |
 | `PlaningLiftCoef` | `50.0f` | Planing hydrodynamic lift force coefficient. |
+
+## Bar display
+The HUD draws the control bar next to the power gauge (`AKiteSurfHUD::DrawControlBar`). The bar slides down its throw as it is pulled in and tilts towards the hand that is pulling, whichever device is driving it (arrow keys, mouse with the right button held, right stick). The lines change colour with the load in them and go dull when slack; the bar lights up while the loop input is held. The scale underneath shows the rider's steering as a filled bar and, as a marker, the steering that actually reaches the kite (`UKiteComponent::GetAppliedSteer`): the two differ while the assist is flying the kite and match while looping.
 
 ## Safety Guards & Telemetry
 - **NaN / Inf Guard**: `ensureAlwaysMsgf(!Velocity.ContainsNaN(), ...)` in `AKiteRiderPawn::Tick` and `UBoardMovementComponent::TickComponent`.

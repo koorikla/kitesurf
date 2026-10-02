@@ -431,6 +431,7 @@ void UKiteComponent::PlaceParked()
 
 	AirspeedCmS = WindFelt.Size();
 	TurnRateRadS = 0.0f;
+	AppliedSteer = 0.0f;
 	TurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
 	bHasParkClock = false;
@@ -738,6 +739,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 		KiteVelocity = FVector::ZeroVector;
 		LineTensionN = 0.0f;
 		LineForce = FVector::ZeroVector;
+		AppliedSteer = 0.0f;
 		UpdateAngles();
 		LastRiderPosition = RiderPos;
 		bHasLastRiderPosition = true;
@@ -755,6 +757,7 @@ void UKiteComponent::UpdateKite(float DeltaTime)
 
 	const FVector Wind = GetWindAt(KiteWorldPosition);
 	const float SteerInput = ComputeSteering(DeltaTime, RiderVelocity, Wind);
+	AppliedSteer = SteerInput;
 
 	// Fixed small steps: the kite's response is fast compared with a frame.
 	float TensionSum = 0.0f;

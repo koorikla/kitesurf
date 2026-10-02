@@ -7,6 +7,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "KiteRiderPawn.h"
+#include "WindComponent.h"
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
@@ -66,6 +67,24 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Wind"),
+			TEXT("Sets the base wind speed for the player's rider, keeping its direction. Usage: kitesurf.Wind <knots>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const float Knots = Args.IsValidIndex(0) ? FMath::Max(FCString::Atof(*Args[0]), 0.0f) : 15.0f;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					UWindComponent* Wind = It->GetWind();
+					if (Wind && It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						const FVector Direction = Wind->BaseWind.IsNearlyZero() ? FVector::ForwardVector : Wind->BaseWind.GetSafeNormal();
+						Wind->BaseWind = Direction * Knots * 51.44f;
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Jump"),
 			TEXT("Pops the player's rider off the water, as the jump key does."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -113,6 +132,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

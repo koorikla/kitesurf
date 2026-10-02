@@ -61,6 +61,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	bool IsLoopHeld() const { return bLoopHeld; }
 
+	/**
+	 * The steering actually reaching the kite, -1..1: the rider's bar while looping, otherwise what
+	 * the assist asks for to carry out the bar's intent. 0 while the kite is in the water.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite")
+	float GetAppliedSteer() const { return AppliedSteer; }
+
 	/** True while the kite is lying on the water. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	bool IsCrashed() const { return bCrashed; }
@@ -347,6 +354,7 @@ protected:
 	float CentredBarSeconds;
 	float ParkClockDeg;
 	float TurnRateRadS;
+	float AppliedSteer = 0.0f;
 	bool bHasParkClock;
 	bool bPlacementPending;
 	bool bLoopHeld;

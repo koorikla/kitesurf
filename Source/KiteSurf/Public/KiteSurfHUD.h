@@ -87,6 +87,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "KiteSurf|HUD")
 	static float KnotsToCmPerSec(float Knots);
 
+	/**
+	 * Where the two ends of the control bar are drawn. The bar slides down the throw as it is
+	 * pulled in (Sheet 0 at ThrowTop, 1 at ThrowTop + ThrowLength) and the end of the hand that
+	 * is pulling drops towards the rider: steer right lowers the right end.
+	 */
+	static void GetBarEnds(float Steer, float Sheet, const FVector2D& ThrowTop, float ThrowLength, float HalfWidth, float MaxTiltDeg, FVector2D& OutLeftEnd, FVector2D& OutRightEnd);
+
 protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	FString JumpRejectionText;
@@ -99,6 +106,7 @@ protected:
 	void DrawWindCompass(const FVector& WindVec, float CenterX, float CenterY, float Radius);
 	void DrawFPS(float ScreenX, float ScreenY);
 	void DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
+	void DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
 	void DrawOnboardingPrompt(float ScreenW, float ScreenH);
 	void UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn);
 

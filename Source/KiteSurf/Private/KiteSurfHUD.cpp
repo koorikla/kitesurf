@@ -204,6 +204,8 @@ void AKiteSurfHUD::DrawHUD()
 		// Bottom left: the rider is in the bottom centre of the view.
 		DrawWindWindowArc(RiderPawn, 180.0f, ScreenH - 50.0f, 110.0f);
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
+		// Left of the power gauge: what the hands are doing to the bar.
+		DrawControlBar(RiderPawn, ScreenW - 500.0f, ScreenH - 280.0f, 230.0f, 245.0f);
 		UpdateOnboarding(DeltaTime, RiderPawn);
 	}
 
@@ -270,7 +272,7 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 	if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
 	{
 		const EBoardState BoardState = BoardMove->GetBoardState();
-		FString StateStr = TEXT("STATE: Displacement");
+		FString StateStr = BoardMove->IsFloating() ? TEXT("STATE: Floating - get the kite pulling") : TEXT("STATE: Getting up");
 		if (BoardState == EBoardState::Planing)
 		{
 			StateStr = TEXT("STATE: Planing");
@@ -443,6 +445,90 @@ void AKiteSurfHUD::DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 	// Tension numeric display
 	FString TensionStr = FString::Printf(TEXT("%.0f N"), LineTensionN);
 	DrawText(TensionStr, FLinearColor::White, ScreenX - 45.0f, ScreenY + Height - 16.0f, nullptr, 0.9f);
+}
+
+void AKiteSurfHUD::GetBarEnds(float Steer, float Sheet, const FVector2D& ThrowTop, float ThrowLength, float HalfWidth, float MaxTiltDeg, FVector2D& OutLeftEnd, FVector2D& OutRightEnd)
+{
+	const FVector2D BarCentre(ThrowTop.X, ThrowTop.Y + FMath::Clamp(Sheet, 0.0f, 1.0f) * ThrowLength);
+	const float TiltRad = FMath::DegreesToRadians(FMath::Clamp(Steer, -1.0f, 1.0f) * MaxTiltDeg);
+	const FVector2D HalfBar(HalfWidth * FMath::Cos(TiltRad), HalfWidth * FMath::Sin(TiltRad));
+	OutLeftEnd = BarCentre - HalfBar;
+	OutRightEnd = BarCentre + HalfBar;
+}
+
+void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height)
+{
+	UKiteComponent* Kite = RiderPawn ? RiderPawn->GetKite() : nullptr;
+	if (!Kite)
+	{
+		return;
+	}
+
+	const float Steer = RiderPawn->GetCurrentSteerInput();
+	const float Sheet = RiderPawn->GetCurrentSheetInput();
+	const bool bLooping = Kite->IsLoopHeld();
+	const bool bFlying = !Kite->IsCrashed() && Kite->AreLinesTaut();
+
+	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.75f), ScreenX, ScreenY, Width, Height);
+	DrawText(TEXT("BAR"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + 10.0f, ScreenY + 6.0f, nullptr, 1.0f);
+	if (bLooping)
+	{
+		DrawText(TEXT("LOOP"), FLinearColor(1.0f, 0.5f, 0.1f), ScreenX + Width - 50.0f, ScreenY + 6.0f, nullptr, 1.0f);
+	}
+
+	// The throw: the centre lines the bar slides on, depowered at the top, pulled in at the bottom.
+	const float CentreX = ScreenX + Width * 0.5f;
+	// The throw starts far enough down that a fully tilted, sheeted-out bar stays below the line tops.
+	const FVector2D ThrowTop(CentreX, ScreenY + 78.0f);
+	const float ThrowLength = 68.0f;
+	const float HalfBar = 68.0f;
+	const float MaxTiltDeg = 22.0f;
+	const float LinesTopY = ScreenY + 28.0f;
+	const float ThrowBottomY = ThrowTop.Y + ThrowLength;
+
+	// Lines glow with the load in them and go dull when slack.
+	const float Load = FMath::Clamp(Kite->GetLineTensionN() / 1200.0f, 0.0f, 1.0f);
+	const FLinearColor LineColor = bFlying
+		? FMath::Lerp(FLinearColor(0.55f, 0.7f, 0.8f, 0.9f), FLinearColor(1.0f, 0.45f, 0.15f, 1.0f), Load)
+		: FLinearColor(0.45f, 0.3f, 0.3f, 0.7f);
+
+	FVector2D LeftEnd;
+	FVector2D RightEnd;
+	GetBarEnds(Steer, Sheet, ThrowTop, ThrowLength, HalfBar, MaxTiltDeg, LeftEnd, RightEnd);
+
+	// Front lines down the middle to the chicken loop, steering lines from the bar ends up to the kite.
+	DrawLine(CentreX, LinesTopY, CentreX, ThrowBottomY + 18.0f, LineColor, 2.0f);
+	DrawLine(LeftEnd.X, LeftEnd.Y, CentreX - 26.0f, LinesTopY, LineColor, 1.5f);
+	DrawLine(RightEnd.X, RightEnd.Y, CentreX + 26.0f, LinesTopY, LineColor, 1.5f);
+	DrawRect(FLinearColor(0.75f, 0.8f, 0.85f, 0.9f), CentreX - 5.0f, ThrowBottomY + 18.0f, 10.0f, 10.0f);
+
+	// The ends of the throw
+	DrawLine(CentreX - 8.0f, ThrowTop.Y, CentreX + 8.0f, ThrowTop.Y, FLinearColor(1.0f, 1.0f, 1.0f, 0.5f), 1.0f);
+	DrawLine(CentreX - 8.0f, ThrowBottomY, CentreX + 8.0f, ThrowBottomY, FLinearColor(1.0f, 1.0f, 1.0f, 0.5f), 1.0f);
+	DrawText(TEXT("out"), FLinearColor(0.7f, 0.8f, 0.9f, 0.8f), ScreenX + 10.0f, ThrowTop.Y - 7.0f, nullptr, 0.8f);
+	DrawText(TEXT("in"), FLinearColor(0.7f, 0.8f, 0.9f, 0.8f), ScreenX + 10.0f, ThrowBottomY - 7.0f, nullptr, 0.8f);
+
+	// The bar itself: red on the left hand as on a real bar, lit up while looping.
+	const FVector2D BarCentre = (LeftEnd + RightEnd) * 0.5f;
+	const FLinearColor RightColor = bLooping ? FLinearColor(1.0f, 0.6f, 0.15f) : FLinearColor(0.85f, 0.88f, 0.92f);
+	DrawLine(LeftEnd.X, LeftEnd.Y, BarCentre.X, BarCentre.Y, FLinearColor(0.95f, 0.2f, 0.2f), 7.0f);
+	DrawLine(BarCentre.X, BarCentre.Y, RightEnd.X, RightEnd.Y, RightColor, 7.0f);
+
+	// Steering scale: the rider's bar (filled) and what actually reaches the kite (marker). They
+	// differ while the assist is flying the kite, and match while looping.
+	const float TrackY = ScreenY + Height - 58.0f;
+	const float TrackHalf = Width * 0.5f - 20.0f;
+	DrawRect(FLinearColor(0.1f, 0.12f, 0.15f, 0.9f), CentreX - TrackHalf, TrackY, TrackHalf * 2.0f, 8.0f);
+	const float FillW = TrackHalf * FMath::Abs(FMath::Clamp(Steer, -1.0f, 1.0f));
+	DrawRect(FLinearColor(0.2f, 0.85f, 1.0f), Steer < 0.0f ? CentreX - FillW : CentreX, TrackY, FillW, 8.0f);
+	DrawLine(CentreX, TrackY - 3.0f, CentreX, TrackY + 11.0f, FLinearColor(1.0f, 1.0f, 1.0f, 0.7f), 1.0f);
+	const float KiteMarkX = CentreX + TrackHalf * FMath::Clamp(Kite->GetAppliedSteer(), -1.0f, 1.0f);
+	DrawRect(FLinearColor(1.0f, 0.85f, 0.2f), KiteMarkX - 2.0f, TrackY - 4.0f, 4.0f, 16.0f);
+
+	const TCHAR* SteerSide = Steer < -0.05f ? TEXT("L") : (Steer > 0.05f ? TEXT("R") : TEXT("-"));
+	DrawText(FString::Printf(TEXT("STEER %s %.0f%%"), SteerSide, FMath::Abs(Steer) * 100.0f), FLinearColor(0.2f, 0.85f, 1.0f), ScreenX + 10.0f, TrackY + 14.0f, nullptr, 0.9f);
+	DrawText(TEXT("kite"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + Width - 42.0f, TrackY + 14.0f, nullptr, 0.9f);
+	DrawText(FString::Printf(TEXT("PULLED IN %.0f%%"), Sheet * 100.0f), FLinearColor::White, ScreenX + 10.0f, TrackY + 32.0f, nullptr, 0.9f);
 }
 
 void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)

@@ -153,7 +153,13 @@ void FJumpRecorder::Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecor
 		ApplyRotation(Rotation.Finish(In.BodyQuat), Record);
 	}
 
-	const FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade);
+	FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade);
+	if (In.bHasLandingVerdict)
+	{
+		// Decision 6: the board's landing verdict owns the grade. The signature's GradeLanding is the
+		// record-only shortcut, kept for snapshots without a board.
+		Signature.Grade = TrickScoring::GradeFromVerdict(In.LastLandingGrade, Record.Outcome == EJumpOutcome::Crashed);
+	}
 	Record.TrickName = TrickNaming::Name(Signature);
 	Record.FamilyKey = TrickNaming::FamilyKey(Signature);
 	Record.Grade = Signature.Grade;

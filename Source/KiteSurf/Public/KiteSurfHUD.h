@@ -161,8 +161,10 @@ public:
 	 * "<Name>  <GRADE>  <N> pts" and "<g> g landing", e.g. "Kiteloop  CLEAN  41 pts\n3.2 g landing".
 	 * The points are what the session paid (Score.Total x RepeatFactor), rounded; a repeat paid less
 	 * than in full adds "  (repeat NN%)" to the first line.
-	 * A bad landing (graded sketchy or a crash) whose verdict named a cause adds a third line, the
-	 * cause's LandingCauseLine (T2.6): "Back roll  CRASH  0 pts\n5.1 g landing\nUnder-rotated: commit the roll earlier".
+	 * The grade is the board's landing verdict's (the record's Grade). A record whose verdict named a
+	 * cause adds a third line, the cause's LandingCauseLine (T2.6): "Back roll  CRASH  0 pts\n5.1 g
+	 * landing\nUnder-rotated: commit the roll earlier". The verdict names one only for a sketchy
+	 * landing or a crash, so a stomped or clean card has two lines.
 	 */
 	static FString FormatJumpCard(const FJumpRecord& Record);
 

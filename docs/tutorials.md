@@ -206,8 +206,11 @@ from `docs/tricks.md` as its gate.
 - **Each lesson is a short scene:** a set-up, one to three drills, and a pass test.
   - The set-up fixes the map, the wind, the gear, the start state and the assists.
   - Every lesson takes one to three minutes. Free riding is always one button away.
-- **The first-run tutorial** becomes lessons A1 to A3 plus a free "first jump" moment from B2.
-  This replaces today's four-step HUD onboarding.
+- **The first-run tutorial** is lessons A1 to A3 plus a "first jump" pointer to B2 (S7, done).
+  It replaced the old four-step HUD onboarding: PLAY on a first run starts A1, the result card's
+  Next goes on to A2 and A3, a line under the lesson panel says how to skip (SKIP TUTORIAL in the
+  pause menu, which sets `bSkipOnboarding`), and passing A3 sets `bOnboardingCompleted` and offers
+  the next lesson, B2 when it is unlocked (else where jumps start), or free ride.
 - **Stars:**
   - 1 star: pass.
   - 2 stars: pass with fewer assists or a higher bar (Clean becomes Stomped).
@@ -350,7 +353,7 @@ Each task ships with `KiteSurf.School.*` automation tests and follows the merge-
 | S4 | **Done** (#98). HUD lesson layer: prompt with glyph, objective progress, window-arc target zones, ghost kite, timing grades, result card with stars (`School/LessonHUD.h`, `School/LessonTiming.h`, `KiteSurf.HUD.Lesson*` tests) | `KiteSurf.HUD.Lesson*` text and state tests; seen in a `-game` run | M | S3 |
 | S5 | **Done** (#96). School menu from the main and pause menus: chapter map, tiles with stars and lock state, detail panel with best result and attempts, Start, Watch demo, wind and assists for reruns, Continue, overall progress, reset with confirm, Retry, Next and Lesson menu on the result card | Menu navigation tests like the gear screen's; a locked lesson cannot start; rerunning a passed lesson keeps the best stars; seen in a `-game` run | M | S2 |
 | S6 | Chapters A and B as data (A6 waits for toeside riding, B4 for grabs), text prompts only | A scripted ride passes each lesson's test | M | S3, S4 |
-| S7 | Replace today's four-step onboarding with A1 to A3 and a guided first jump; keep the skip option | First run starts lesson A1; "skip" goes to free ride | S | S6 |
+| S7 | **Done** (#100). Replace today's four-step onboarding with A1 to A3 and a guided first jump; keep the skip option (`School/SchoolOnboarding.h`: PLAY on a first run starts A1, SKIP TUTORIAL in the pause menu, passing A3 completes it and points to B2 or the School menu; `KiteSurf.School.Onboarding*` tests) | First run starts lesson A1; "skip" goes to free ride | S | S6 |
 | S8 | Slow motion at decision points | Time dilation on and off around the cue; the simulation stays deterministic in fixed steps | S | S3 |
 | S9 | Chapters C to F as data, as their trick features land | Per lesson, as S6 | M each | Tricks T1, T2.1, T3; phase 3 redirect; kickers |
 | S10 | Replay of the last attempt with event markers | Needs the backlog G2 recorder | L | G2 |

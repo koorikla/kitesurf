@@ -24,7 +24,7 @@ struct FTrickScoringSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
 	float LownessRefDeg = 60.0f;
 
-	/** Extra extremity, once, for any contra loop or S-loop. */
+	/** Extra extremity, once, for any contra loop, S-loop or snake loop. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
 	float ContraOrSLoopBonus = 0.3f;
 

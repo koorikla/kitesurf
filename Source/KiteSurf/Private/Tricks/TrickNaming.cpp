@@ -134,7 +134,9 @@ namespace
 
 	// ---------------------------------------------------------------------------------------
 	// Freestyle table (docs/tricks.md 3.3 and 3.4). The first matching row wins, so specific rows
-	// come before generic ones. T3.4 adds the GKA family and difficulty columns here.
+	// come before generic ones. The GKA family and difficulty columns are from docs/tricks/T3.md
+	// section 4 (difficulty is editorial, 1 to 5, an estimate); a toeside or blind take-off is
+	// the ToesideBlind family whatever the row says (FreestyleFamily).
 
 	enum class ELandingRule : uint8 { Heelside, Toeside, Blind, Any };
 	enum class EPassRule : uint8 { Any, NoPass, Required, AirOnly };
@@ -156,36 +158,42 @@ namespace
 		/** What a number goes after: "KGB" + " 5", "31" + "5". */
 		const TCHAR* Stem;
 		ENumberStyle Style;
+		EGkaFamily Family;
+		/** Difficulty at the base rotation (1 to 5)... */
+		float Difficulty;
+		/** ...and once the name is numbered past it (KGB 5, 315). */
+		float NumberedDifficulty;
 	};
 
 	using ETS = ETrickStance;
 	using ETM = ETrickMove;
 	using ESe = ETrickSense;
+	using EGF = EGkaFamily;
 
 	const FFreestyleNameRow GFreestyleNames[] = {
-		{ ETS::Heelside, ETM::BackRoll,  ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("KGB"),            TEXT("KGB"),  ENumberStyle::Suffix },
-		{ ETS::Heelside, ETM::BackRoll,  ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Mobe"),           TEXT("Mobe"), ENumberStyle::Suffix },
-		{ ETS::Heelside, ETM::BackRoll,  ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Back to blind"),  nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::FrontFlip, ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Slim chance"),    TEXT("Slim"), ENumberStyle::Suffix },
-		{ ETS::Heelside, ETM::FrontFlip, ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Front blind"),    nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::Raley,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("313"),            TEXT("31"),   ENumberStyle::Concat },
-		{ ETS::Heelside, ETM::Raley,     ESe::Backside,  1, ELandingRule::Blind,    EPassRule::AirOnly,  TEXT("Blind judge"),    nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::Raley,     ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Raley to blind"), nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::Raley,     ESe::Frontside, 1, ELandingRule::Toeside,  EPassRule::Any,      TEXT("Krypt"),          nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::SBend,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("S-mobe"),         nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::SBend,     ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Heart attack"),   nullptr,      ENumberStyle::None },
+		{ ETS::Heelside, ETM::BackRoll,  ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("KGB"),            TEXT("KGB"),  ENumberStyle::Suffix, EGF::KgbSlim,     4.0f, 4.5f },
+		{ ETS::Heelside, ETM::BackRoll,  ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Mobe"),           TEXT("Mobe"), ENumberStyle::Suffix, EGF::Mobes,       4.0f, 4.0f },
+		{ ETS::Heelside, ETM::BackRoll,  ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Back to blind"),  nullptr,      ENumberStyle::None, EGF::KgbSlim,     3.0f, 3.0f },
+		{ ETS::Heelside, ETM::FrontFlip, ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Slim chance"),    TEXT("Slim"), ENumberStyle::Suffix, EGF::KgbSlim,     4.5f, 4.5f },
+		{ ETS::Heelside, ETM::FrontFlip, ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Front blind"),    nullptr,      ENumberStyle::None, EGF::KgbSlim,     4.0f, 4.0f },
+		{ ETS::Heelside, ETM::Raley,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("313"),            TEXT("31"),   ENumberStyle::Concat, EGF::RaleyBased,  3.5f, 4.0f },
+		{ ETS::Heelside, ETM::Raley,     ESe::Backside,  1, ELandingRule::Blind,    EPassRule::AirOnly,  TEXT("Blind judge"),    nullptr,      ENumberStyle::None, EGF::RaleyBased,  3.0f, 3.0f },
+		{ ETS::Heelside, ETM::Raley,     ESe::Backside,  1, ELandingRule::Blind,    EPassRule::Any,      TEXT("Raley to blind"), nullptr,      ENumberStyle::None, EGF::RaleyBased,  2.5f, 2.5f },
+		{ ETS::Heelside, ETM::Raley,     ESe::Frontside, 1, ELandingRule::Toeside,  EPassRule::Any,      TEXT("Krypt"),          nullptr,      ENumberStyle::None, EGF::RaleyBased,  2.5f, 2.5f },
+		{ ETS::Heelside, ETM::SBend,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("S-mobe"),         nullptr,      ENumberStyle::None, EGF::HinterHeart, 4.5f, 4.5f },
+		{ ETS::Heelside, ETM::SBend,     ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Heart attack"),   nullptr,      ENumberStyle::None, EGF::HinterHeart, 4.5f, 4.5f },
 		// The S-bend's own overhead turn is body spin: backside is the S-bend, frontside the hinterberger (GKA meaning).
-		{ ETS::Heelside, ETM::SBend,     ESe::Backside,  2, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("S-bend"),         nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::SBend,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Hinterberger"),   nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::SBend,     ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("S-bend"),         nullptr,      ENumberStyle::None },
-		{ ETS::Toeside,  ETM::FrontRoll, ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Crow mobe"),      nullptr,      ENumberStyle::None },
-		{ ETS::Toeside,  ETM::FrontRoll, ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Dum dum"),        nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::BackFlip,  ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Moby dick"),      nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::BackFlip,  ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Tantrum"),        nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::Raley,     ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Raley"),          nullptr,      ENumberStyle::None },
-		{ ETS::Heelside, ETM::Pop,       ESe::Frontside, 1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Frontside"), ENumberStyle::Suffix },
-		{ ETS::Heelside, ETM::Pop,       ESe::Backside,  1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Backside"),  ENumberStyle::Suffix },
-		{ ETS::Heelside, ETM::Pop,       ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Unhooked pop"),   nullptr,      ENumberStyle::None },
+		{ ETS::Heelside, ETM::SBend,     ESe::Backside,  2, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("S-bend"),         nullptr,      ENumberStyle::None, EGF::HinterHeart, 3.0f, 3.0f },
+		{ ETS::Heelside, ETM::SBend,     ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Hinterberger"),   nullptr,      ENumberStyle::None, EGF::HinterHeart, 3.5f, 3.5f },
+		{ ETS::Heelside, ETM::SBend,     ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("S-bend"),         nullptr,      ENumberStyle::None, EGF::HinterHeart, 3.0f, 3.0f },
+		{ ETS::Toeside,  ETM::FrontRoll, ESe::Frontside, 2, ELandingRule::Heelside, EPassRule::Required, TEXT("Crow mobe"),      nullptr,      ENumberStyle::None, EGF::ToesideBlind, 4.0f, 4.0f },
+		{ ETS::Toeside,  ETM::FrontRoll, ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Dum dum"),        nullptr,      ENumberStyle::None, EGF::ToesideBlind, 4.0f, 4.0f },
+		{ ETS::Heelside, ETM::BackFlip,  ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Moby dick"),      nullptr,      ENumberStyle::None, EGF::Mobes,       4.5f, 4.5f },
+		{ ETS::Heelside, ETM::BackFlip,  ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Tantrum"),        nullptr,      ENumberStyle::None, EGF::KgbSlim,     3.0f, 3.0f },
+		{ ETS::Heelside, ETM::Raley,     ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Raley"),          nullptr,      ENumberStyle::None, EGF::RaleyBased,  2.0f, 2.0f },
+		{ ETS::Heelside, ETM::Pop,       ESe::Frontside, 1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Frontside"), ENumberStyle::Suffix, EGF::Combos,      3.0f, 3.0f },
+		{ ETS::Heelside, ETM::Pop,       ESe::Backside,  1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Backside"),  ENumberStyle::Suffix, EGF::Combos,      3.0f, 3.0f },
+		{ ETS::Heelside, ETM::Pop,       ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Unhooked pop"),   nullptr,      ENumberStyle::None, EGF::None,        1.0f, 1.0f },
 	};
 
 	/** The rotation the freestyle table matches: the passes summed, with the first pass's sense, or the body spin when there is no pass. */
@@ -239,14 +247,14 @@ namespace
 		}
 	}
 
-	/** The table name, or false when no row fits. Rows only cover one take-off move with nothing else going on. */
-	bool FreestyleTableName(const FTrickSignature& S, FString& OutName)
+	/** The first table row that fits, or nullptr. Rows only cover one take-off move with nothing else going on. */
+	const FFreestyleNameRow* FindFreestyleRow(const FTrickSignature& S, int32& OutHalfTurns)
 	{
 		const int32 MoveCount = S.Inversions.Num() + ((S.bRaley || S.bSBend) ? 1 : 0);
 		if (MoveCount > 1 || S.Loops.Num() > 0 || S.Grabs.Num() > 0 || S.bOneFooter
 			|| S.BoardOff != ETrickBoardOff::None || S.bSwitchTakeoff)
 		{
-			return false;
+			return nullptr;
 		}
 
 		const ETrickMove Move = FreestyleMove(S);
@@ -272,26 +280,59 @@ namespace
 			{
 				continue;
 			}
-
-			const bool bNumbered = Row.Style != ENumberStyle::None && (HalfTurns > Row.BaseHalfTurns || Row.Name == nullptr);
-			if (bNumbered)
-			{
-				const FString Number = PassNumber(HalfTurns * 180);
-				OutName = Row.Style == ENumberStyle::Concat
-					? FString(Row.Stem) + Number
-					: FString::Printf(TEXT("%s %s"), Row.Stem, *Number);
-			}
-			else
-			{
-				OutName = Row.Name;
-			}
-			if (Row.Landing == ELandingRule::Any)
-			{
-				OutName += LandingSuffix(S.LandingStance);
-			}
-			return true;
+			OutHalfTurns = HalfTurns;
+			return &Row;
 		}
-		return false;
+		return nullptr;
+	}
+
+	/** True when the row's name carries a number at this rotation: KGB 5, 315, Frontside 3. */
+	bool IsNumbered(const FFreestyleNameRow& Row, int32 HalfTurns)
+	{
+		return Row.Style != ENumberStyle::None && (HalfTurns > Row.BaseHalfTurns || Row.Name == nullptr);
+	}
+
+	/** The table name, or false when no row fits. */
+	bool FreestyleTableName(const FTrickSignature& S, FString& OutName)
+	{
+		int32 HalfTurns = 0;
+		const FFreestyleNameRow* Found = FindFreestyleRow(S, HalfTurns);
+		if (Found == nullptr)
+		{
+			return false;
+		}
+		const FFreestyleNameRow& Row = *Found;
+		if (IsNumbered(Row, HalfTurns))
+		{
+			const FString Number = PassNumber(HalfTurns * 180);
+			OutName = Row.Style == ENumberStyle::Concat
+				? FString(Row.Stem) + Number
+				: FString::Printf(TEXT("%s %s"), Row.Stem, *Number);
+		}
+		else
+		{
+			OutName = Row.Name;
+		}
+		if (Row.Landing == ELandingRule::Any)
+		{
+			OutName += LandingSuffix(S.LandingStance);
+		}
+		return true;
+	}
+
+	/** Difficulty for a trick no table row names, by family (docs/tricks.md 3.4: doubles, rewinds and blind take-offs are 5). Estimates. */
+	float UnnamedFamilyDifficulty(EGkaFamily Family)
+	{
+		switch (Family)
+		{
+		case EGkaFamily::InvertedDoubles:
+		case EGkaFamily::Rewinds:
+		case EGkaFamily::ToesideBlind:
+		case EGkaFamily::KiteLoopPasses:
+			return 5.0f;
+		default:
+			return 2.0f;
+		}
 	}
 
 	// ---------------------------------------------------------------------------------------
@@ -432,6 +473,57 @@ ETrickMove TrickNaming::FreestyleMove(const FTrickSignature& Signature)
 		}
 	}
 	return ETrickMove::Pop;
+}
+
+bool TrickNaming::FreestyleFamily(const FTrickSignature& Signature, EGkaFamily* OutFamily, float* OutDifficulty)
+{
+	EGkaFamily Family = EGkaFamily::None;
+	float Difficulty = 0.0f;
+
+	int32 HalfTurns = 0;
+	const FFreestyleNameRow* Row = IsFreestyle(Signature) ? FindFreestyleRow(Signature, HalfTurns) : nullptr;
+	if (Row != nullptr)
+	{
+		Family = Row->Family;
+		Difficulty = IsNumbered(*Row, HalfTurns) ? Row->NumberedDifficulty : Row->Difficulty;
+	}
+
+	// Families the table cannot name, in priority order: a loop with a pass, a toeside or blind
+	// take-off (which also overrides a row), then two or more inversions.
+	if (IsFreestyle(Signature))
+	{
+		EGkaFamily Override = EGkaFamily::None;
+		if (Signature.Loops.Num() > 0 && Signature.Passes.Num() > 0)
+		{
+			Override = EGkaFamily::KiteLoopPasses;
+		}
+		else if (Signature.TakeoffStance != ETrickStance::Heelside)
+		{
+			Override = EGkaFamily::ToesideBlind;
+		}
+		else if (Signature.Inversions.Num() >= 2)
+		{
+			Override = EGkaFamily::InvertedDoubles;
+		}
+		if (Override != EGkaFamily::None)
+		{
+			Family = Override;
+			if (Row == nullptr)
+			{
+				Difficulty = UnnamedFamilyDifficulty(Override);
+			}
+		}
+	}
+
+	if (OutFamily)
+	{
+		*OutFamily = Family;
+	}
+	if (OutDifficulty)
+	{
+		*OutDifficulty = Difficulty;
+	}
+	return Family != EGkaFamily::None;
 }
 
 FString TrickNaming::PassNumber(int32 Degrees)

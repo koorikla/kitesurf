@@ -65,7 +65,7 @@ FTrickScore TrickScoring::ScoreJump(const FJumpRecord& Record, const FTrickSigna
 	}
 	for (const FTrickLoop& Loop : Signature.Loops)
 	{
-		if (Loop.bContra || Loop.Kind == ETrickLoopKind::SLoop)
+		if (Loop.bContra || Loop.Kind == ETrickLoopKind::SLoop || Loop.Kind == ETrickLoopKind::SnakeLoop)
 		{
 			Score.Extremity += Settings.ContraOrSLoopBonus;
 			break;

@@ -420,7 +420,7 @@ bool FKiteSurfHUDJumpCardShowsAfterLanding::RunTest(const FString& Parameters)
 		TestEqual(TEXT("ShowJumpCard puts the card up"), HUD->GetJumpCardText(), FString(TEXT("Kiteloop  SKETCHY  20 pts\n9.0 g landing")));
 		TestEqual(TEXT("with its grade"), HUD->GetJumpCardGrade(), ELandingGrade::Sketchy);
 		TestTrue(TEXT("and no ticker"), HUD->GetTrickTickerText().IsEmpty());
-		HUD->UpdateJumpCard(nullptr, RideDeltaTime);
+		HUD->UpdateJumpCard(nullptr, TrickTrackerTestsLocal::RideDeltaTime);
 		TestTrue(TEXT("No rider, no card"), HUD->GetJumpCardText().IsEmpty());
 
 		// 2. Integration: the scripted send and pop with the HUD following.
@@ -446,12 +446,12 @@ bool FKiteSurfHUDJumpCardShowsAfterLanding::RunTest(const FString& Parameters)
 		{
 			for (int32 Step = 0; Step < 120; ++Step)
 			{
-				HUD->UpdateJumpCard(Other.Tracker, RideDeltaTime);
+				HUD->UpdateJumpCard(Other.Tracker, TrickTrackerTestsLocal::RideDeltaTime);
 			}
 			TestEqual(TEXT("Two seconds later the card is still up"), HUD->GetJumpCardText(), Jump.CardOnLanding);
 			for (int32 Step = 0; Step < 180; ++Step)
 			{
-				HUD->UpdateJumpCard(Other.Tracker, RideDeltaTime);
+				HUD->UpdateJumpCard(Other.Tracker, TrickTrackerTestsLocal::RideDeltaTime);
 			}
 			TestTrue(TEXT("and after five it has gone"), HUD->GetJumpCardText().IsEmpty());
 		}

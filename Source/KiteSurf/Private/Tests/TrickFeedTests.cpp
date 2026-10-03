@@ -309,7 +309,7 @@ bool FKiteSurfTrickJumpRecordMatchesTrajectory::RunTest(const FString& Parameter
 			Ride.Pawn->SetLoadHeld(false);
 			Ride.Pawn->SheetKite(1.0f);
 		}
-		if (!bLeftWater && Elapsed >= TimedReleaseSeconds + SendDeadTimeSeconds)
+		if (!bLeftWater && Elapsed >= TrickFeedTestsLocal::TimedReleaseSeconds + SendDeadTimeSeconds)
 		{
 			Ride.Board->SetWeightShift(-1.0f);
 			Ride.Pawn->SheetKite(1.0f);

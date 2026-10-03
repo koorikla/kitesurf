@@ -211,14 +211,13 @@ namespace CameraFramingTest
 	float KiteSide(const FFramingRide& Ride) { return Ride.Kite->GetClockDeg() >= 0.0f ? 1.0f : -1.0f; }
 }
 
-using namespace CameraFramingTest;
-
 // Parked low at the window edge, the kite is far out to the side near the water: the camera turns
 // towards it so it stays in frame as the rider rides on.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesKiteParkedLow, "KiteSurf.Camera.FramesKiteParkedLow", CameraFramingTest::Flags)
 
 bool FKiteSurfCameraFramesKiteParkedLow::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	FFramingRide Ride;
 	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
 	if (!Ride.IsValid())
@@ -240,6 +239,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesKiteAtZenith, "KiteSurf.Ca
 
 bool FKiteSurfCameraFramesKiteAtZenith::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	FFramingRide Ride;
 	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
 	if (!Ride.IsValid())
@@ -261,6 +261,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesKiteLoop, "KiteSurf.Camera
 
 bool FKiteSurfCameraFramesKiteLoop::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	for (const float StartClockDeg : { 45.0f, 0.0f })
 	{
 		FFramingRide Ride;
@@ -303,6 +304,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesBigJump, "KiteSurf.Camera.
 
 bool FKiteSurfCameraFramesBigJump::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	// The ride KiteSurf.Physics.StepRateIndependent jumps: 20 kn, a 9 m2 kite, 81 kg.
 	FFramingRide Ride(20.0f);
 	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
@@ -351,6 +353,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesKiteOverheadInAir, "KiteSu
 
 bool FKiteSurfCameraFramesKiteOverheadInAir::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	struct FCase
 	{
 		float ElevationDeg;
@@ -390,6 +393,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesTransition, "KiteSurf.Came
 
 bool FKiteSurfCameraFramesTransition::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	FFramingRide Ride;
 	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
 	if (!Ride.IsValid())
@@ -418,6 +422,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCameraFramesKiteInWater, "KiteSurf.Cam
 
 bool FKiteSurfCameraFramesKiteInWater::RunTest(const FString& Parameters)
 {
+	using namespace CameraFramingTest;
 	FFramingRide Ride;
 	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
 	if (!Ride.IsValid())

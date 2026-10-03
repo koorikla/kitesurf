@@ -188,8 +188,8 @@ bool FKiteSurfMovementUpwindAngle::RunTest(const FString& Parameters)
 			const float ForwardSpeed = BoardComp->GetForwardSpeed();
 			const float LateralSpeed = FMath::Abs(BoardComp->GetLateralSpeed());
 			const float UpwindSpeed = -BoardComp->Velocity.X;
-			UE_LOG(LogKiteSurf, Log, TEXT("UpwindAngle: Forward = %.1f cm/s, Lateral = %.1f cm/s, Upwind = %.1f cm/s, IsPlaning = %d"),
-				ForwardSpeed, LateralSpeed, UpwindSpeed, BoardComp->IsPlaning());
+			UE_LOG(LogKiteSurf, Log, TEXT("UpwindAngle: Forward = %.1f cm/s, Lateral = %.1f cm/s, Upwind = %.1f cm/s, IsPlaning = %d, %.1f deg upwind of the pull's beam"),
+				ForwardSpeed, LateralSpeed, UpwindSpeed, BoardComp->IsPlaning(), BoardComp->GetUpwindOfBeamDeg());
 			TestTrue(TEXT("Board maintains planing forward speed while pointing upwind"), ForwardSpeed >= BoardComp->PlaningThresholdCmS);
 			TestTrue(TEXT("Grip keeps lateral leeway smaller than forward speed"), LateralSpeed < ForwardSpeed);
 			TestTrue(TEXT("Board gains at least 1 m/s against the wind"), UpwindSpeed >= 100.0f);

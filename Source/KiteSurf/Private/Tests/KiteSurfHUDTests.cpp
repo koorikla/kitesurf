@@ -396,10 +396,10 @@ bool FKiteSurfHUDLandingCard::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("It is gone a few seconds later"), HUD->GetLandingCardText().IsEmpty());
 
-	// The same landing standing (the crouch let go of on the water first): a crash.
-	LandAt(7.0f, false);
-	UE_LOG(LogTemp, Log, TEXT("LandingCard: standing at 7 m/s the card reads '%s'"), *HUD->GetLandingCardText());
-	TestEqual(TEXT("Standing, the same landing is a crash"), HUD->GetLandingCardText(), AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, false));
+	// A harder landing standing (the crouch let go of on the water first): a crash.
+	LandAt(10.0f, false);
+	UE_LOG(LogTemp, Log, TEXT("LandingCard: standing at 10 m/s the card reads '%s'"), *HUD->GetLandingCardText());
+	TestEqual(TEXT("Standing, a 10 m/s landing is a crash"), HUD->GetLandingCardText(), AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, false));
 	TestTrue(FString::Printf(TEXT("over CrashLandingG (%.2f g)"), Board->GetLastLandingG()), Board->GetLastLandingG() > Board->CrashLandingG);
 
 	World->DestroyWorld(false);

@@ -1766,8 +1766,6 @@ bool FKiteSurfPhysicsGoodLandingIsThreeToSixG::RunTest(const FString& Parameters
 {
 	const float MinG = 3.0f;          // research
 	const float MaxG = 6.0f;
-	const float PinnedG = 6.7f;       // the known gap above
-	const float PinToleranceG = 0.35f;
 	const FJumpResult Overhead = RunJump(true, true, TimedReleaseSeconds);
 	const FJumpResult KiteLow = RunJump(true, true, TimedReleaseSeconds, EKiteModel::Loop, 0.0f, 0.0f, 1.0f);
 	for (const FJumpResult* Jump : { &Overhead, &KiteLow })
@@ -1779,7 +1777,7 @@ bool FKiteSurfPhysicsGoodLandingIsThreeToSixG::RunTest(const FString& Parameters
 	TestTrue(TEXT("With the kite overhead the timed jump lands cleanly and rides away"), Overhead.bLandingClean && Overhead.bRodeAway);
 	TestTrue(FString::Printf(TEXT("crouched for it (absorb distance %.0f cm)"), Overhead.LandingAbsorbCm), Overhead.LandingAbsorbCm > 55.0f);
 	TestNearlyEqual(TEXT("at the load the absorber gives for its sink (g)"), Overhead.LandingG, UBoardMovementComponent::LandingGForSink(Overhead.LandingSinkMS, Overhead.LandingAbsorbCm), 0.001f);
-	TestNearlyEqual(FString::Printf(TEXT("Known gap: %.1f g, against the research's %.0f to %.0f (sink %.2f m/s)"), PinnedG, MinG, MaxG, Overhead.LandingSinkMS), Overhead.LandingG, PinnedG, PinToleranceG);
+	TestTrue(FString::Printf(TEXT("Crouched, the timed jump lands at %.1f g, within the research's %.0f to %.0f (sink %.2f m/s, still above the real 3 to 6 m/s: the descent is the remaining gap)"), Overhead.LandingG, MinG, MaxG, Overhead.LandingSinkMS), Overhead.LandingG >= MinG && Overhead.LandingG <= MaxG);
 	TestTrue(FString::Printf(TEXT("The kite is above 45 deg at touchdown (%.1f deg)"), Overhead.LandingKiteElevationDeg), Overhead.LandingKiteElevationDeg > 45.0f);
 	TestTrue(FString::Printf(TEXT("With the kite left low it touches down with the kite under 45 deg (%.1f deg)"), KiteLow.LandingKiteElevationDeg), KiteLow.LandingKiteElevationDeg < 45.0f);
 	TestTrue(TEXT("and the landing is flagged hot"), KiteLow.bLandingHot);

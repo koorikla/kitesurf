@@ -257,8 +257,8 @@ bool FKiteSurfTrickJumpRecorderEdgeCases::RunTest(const FString& Parameters)
 			TestEqual(TEXT("Crash: index 0"), R.Index, 0);
 			TestEqual(TEXT("Crash: outcome"), R.Outcome, EJumpOutcome::Crashed);
 			TestNearlyEqual(TEXT("Crash: sink rate (cm/s)"), R.SinkRateCmS, 600.0f, 1e-4f);
-			TestNearlyEqual(TEXT("Crash: landing g"), R.LandingG, LandingMath::ComputeLandingG(600.0f, 30.0f), 1e-4f);
-			TestTrue(TEXT("Crash: g over 7"), R.LandingG > 7.0f);
+			TestNearlyEqual(TEXT("Crash: landing g"), R.LandingG, LandingMath::ComputeLandingG(600.0f, LandingMath::DefaultLandingAbsorbDistanceCm), 1e-4f);
+			TestTrue(TEXT("Crash: g over 5"), R.LandingG > 5.0f);
 			TestNearlyEqual(TEXT("Crash: landing yaw (deg)"), R.LandingYawDeg, 40.0f, 1e-4f);
 			TestEqual(TEXT("Crash: grade"), R.Grade, ELandingGrade::Crash);
 			TestNearlyEqual(TEXT("Crash: scores 0"), R.Score.Total, 0.0f, 1e-6f);
@@ -323,7 +323,7 @@ bool FKiteSurfTrickJumpRecorderEdgeCases::RunTest(const FString& Parameters)
 			TestNearlyEqual(TEXT("Loops: kite elevation at landing (deg)"), R.KiteElevationAtLandingDeg, 60.0f, 1e-4f);
 			TestNearlyEqual(TEXT("Loops: apex from the board (cm)"), R.ApexHeightCm, 1100.0f, 1e-3f);
 			TestNearlyEqual(TEXT("Loops: distance from the board (cm)"), R.DistanceCm, 1234.0f, 1e-3f);
-			TestNearlyEqual(TEXT("Loops: landing g"), R.LandingG, LandingMath::ComputeLandingG(300.0f, 30.0f), 1e-4f);
+			TestNearlyEqual(TEXT("Loops: landing g"), R.LandingG, LandingMath::ComputeLandingG(300.0f, LandingMath::DefaultLandingAbsorbDistanceCm), 1e-4f);
 			if (TestEqual(TEXT("Loops: the inside record and the open run"), R.Loops.Num(), 2))
 			{
 				TestEqual(TEXT("Loops: first is the inside record"), R.Loops[0].Loop.Index, 11);
@@ -503,7 +503,7 @@ bool FKiteSurfJumpLandingGIsAG::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("6 m/s sink over 30 cm (g)"), LandingMath::ComputeLandingG(600.0f, 30.0f), 7.12f, 0.02f);
 	TestNearlyEqual(TEXT("No sink is just the weight (g)"), LandingMath::ComputeLandingG(0.0f, 30.0f), 1.0f, 1e-6f);
 	TestNearlyEqual(TEXT("Rising at contact counts as no sink (g)"), LandingMath::ComputeLandingG(-100.0f, 30.0f), 1.0f, 1e-6f);
-	TestNearlyEqual(TEXT("Default absorb distance (cm)"), LandingMath::DefaultLandingAbsorbDistanceCm, 30.0f, 1e-6f);
+	TestNearlyEqual(TEXT("Default absorb distance (cm)"), LandingMath::DefaultLandingAbsorbDistanceCm, 45.0f, 1e-6f);
 	// The ratio of the squares: three times the sink is nine times the extra g.
 	const float Extra2 = LandingMath::ComputeLandingG(200.0f, 30.0f) - 1.0f;
 	const float Extra6 = LandingMath::ComputeLandingG(600.0f, 30.0f) - 1.0f;

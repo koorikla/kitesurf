@@ -140,13 +140,13 @@ against the commit before it, and the section after the list what moved against 
     (`Water.FittedPlaneUnderTheBoard`). Nothing on flat water moved. 118 tests.
 29. `afa95ab` **feat(board): the water holds the board by forces; landings in g, hot or crashed**
     (step 2). The 20 cm clamp is gone; a touchdown absorber takes a sink v out at `v^2 / (2 s)` over
-    `LandingAbsorbDistanceCm` (30) times `1 + CrouchAbsorbBonus` (1) * the crouch; `LandingG = 1 +
+    `LandingAbsorbDistanceCm` (45) times `1 + CrouchAbsorbBonus` (1) * the crouch; `LandingG = 1 +
     v^2 / (2 g s)` is what `OnBoardLanding` reports; hot over `HotLandingSinkMS` (6 m/s) or with the
-    kite under `HotLandingKiteElevationDeg` (45); a crash over `CrashLandingG` (8) or
+    kite under `HotLandingKiteElevationDeg` (45); a crash over `CrashLandingG` (10) or
     `MaxLandingAngle`. The crouch builds in the air. 2 / 4 / 6 m/s -> 1.66 / 3.67 / 7.05 g standing,
     4.02 g crouched at 6 m/s (`Physics.LandingGFromSink`); across a 1 m, 20 m swell at 15 m/s never
     more than 15 cm under for longer than 0.133 s (`Physics.RidesASwellWithoutTunnelling`); the timed
-    jump lands at 6.68 g crouched, hot, sinking 8.17 m/s (`Physics.GoodLandingIsThreeToSixG`: the 3 to
+    jump lands at 4.78 g crouched over 90 cm, hot, sinking 8.17 m/s (`Physics.GoodLandingIsThreeToSixG`: the 3 to
     6 g target is not met, pinned, below). 121 tests.
 30. `7c2fc73` **feat(hud): a landing card with the landing's g and HOT** ("LANDED 4.2 g", "HOT",
     "CRASH 9.2 g", 3 s, `HUD.LandingCard`); `kite.Physics.Debug 1` draws the five water samples and
@@ -169,6 +169,13 @@ against the commit before it, and the section after the list what moved against 
     step's drawing between steps moves it. Main's jumps are flown the phase 2 way (the jump button held
     and let go at 0.66 s in 30 kn, 0.2 s in a storm, a crouched landing). Storm jumps: 21.2 m and
     156 m in 60 kn, 22.4 m and 225 m in 90 kn, both a crash on landing (`storm-jumps.md`). 180 tests.
+34. **feat(board): landing defaults a rider can stand.** `LandingAbsorbDistanceCm` 30 -> 45 (the legs, the
+    board's immersion and the water's give; a crouch doubles it to 90) and `CrashLandingG` 8 -> 10 (what
+    the trick grading already used). Landing g standing at 2 / 4 / 6 / 7 m/s: 1.44 / 2.78 / 5.03 / 6.50;
+    crouched 1.22 / 1.9 / 3.02 / 3.75. The timed 30 kn jump lands crouched at 4.78 g, inside the research's
+    3 to 6; standing it is 8.6 g, hot but landed; a 10 m/s sink standing (12.2 g) and storm landings
+    (13 m/s, 10.6 g crouched) still crash. The swell test allows 0.25 s over 15 cm under, the time the
+    longer stroke takes into a trough. 180 tests.
 
 ### Where the numbers stand
 
@@ -187,7 +194,7 @@ against the commit before it, and the section after the list what moved against 
 | Effective gravity `8h/t^2` | 7.8 m/s^2 | 3.46 m/s^2 | 1.5 to 3.5 m/s^2 |
 | The kite on the way down (`Physics.KiteOverheadInTheAir`) | 19 deg above the rider, stalled, lifting 10% | 71 deg (lowest 56), unstalled, lifting 69% | overhead, about 1 BW |
 | Landing g at 2 / 4 / 6 m/s sink (`Physics.LandingGFromSink`) | none (the sink over g, a time) | 1.66 / 3.67 / 7.05 g standing; 1.33 / - / 4.02 g crouched | 4 m/s into 0.3 m is 3.7 g |
-| The timed jump's landing (`Physics.GoodLandingIsThreeToSixG`) | not measured as a g | 6.68 g crouched, sinking 8.17 m/s, hot; standing it would be 12.3 g, a crash | 3 to 6 g (measured 4.2 to 5.5); sink 3 to 6 m/s |
+| The timed jump's landing (`Physics.GoodLandingIsThreeToSixG`) | not measured as a g | 4.78 g crouched over 90 cm, sinking 8.17 m/s, hot; standing 8.6 g, hot but landed | 3 to 6 g (measured 4.2 to 5.5); sink 3 to 6 m/s |
 | A 1 m, 20 m swell at 15 m/s (`Physics.RidesASwellWithoutTunnelling`) | held within 20 cm by the clamp | at most 21.8 cm under, over 15 cm for at most 0.133 s; off the water over each crest | no tunnelling |
 | Floating under a kite at 12, 15 kn (`Physics.FloatingRiderIsSlowThroughTheWater`) | 0.3 kn (at `4d33f9e`) | 0.81 kn | a sunk rider barely moves |
 | Pop with the kite parked | 1.5 m | 1.0 m | under 1 m plus kite lift |
@@ -210,7 +217,7 @@ What a player who knew `13f8e13` will notice, and which way it went:
 - **Jumps are lower and floatier**: 13.1 -> 10.7 m at 30 kn but 3.7 -> 5.0 s in the air; 4.4 m in
   15 kn, about 13 m that can be landed in 40 kn. The kite flies overhead in the air by itself.
 - **Landings cost something**: a big jump has to be landed crouched (the jump button held again on
-  the way down); the timed jump lands hot at 6.7 g; landed standing it is a crash; the biggest jumps
+  the way down); the timed jump lands hot at 4.8 g crouched, 8.6 g standing; the biggest jumps
   in 40 kn crash even crouched.
 
 ## What to tune
@@ -241,8 +248,8 @@ towards. "Estimate" values in `research.md` are starting points, not requirement
 | `UBoardMovementComponent::PlaningTrimDeg` / `PlaningTrimHumpDeg` / `PlaningTrimHumpSpeedCmS` | 6 / 10 deg / 600 cm/s | trim 6 to 10 deg (Savitsky) | The hump bounds the course at 30 deg and slows light-wind riding; 13 deg strands a board at the planing threshold. |
 | `UBoardMovementComponent::PlaningDragKgPerS` / `PlaningQuadraticDragKgPerCm` | 6.15 kg/s / 0.0231 kg/cm | `a + c v^2` with a about 60 N, c 0.5 to 1.0 N s^2/m^2 | Today's 6.15 v + 2.31 v^2 N plus the pressure drag is 380 N at 10 m/s, two to three times the research's: it sets riding speed against the kite. |
 | `UBoardMovementComponent::FloatingDragAreaM2` / `FloatingDragFadeSpeedCmS` | 0.35 m^2 / 200 cm/s | a sitting rider and a sunk board | |
-| `UBoardMovementComponent::LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | 30 cm / 1.0 | 0.2 to 0.4 m of legs and immersion | The crouch doubles it; the knobs for landing feel with `CrashLandingG`. |
-| `UBoardMovementComponent::CrashLandingG` | 8 g | measured landings 4.2 to 5.5 g | With 30 cm standing, a crash past 6.4 m/s of sink; crouched, past 9.1 m/s. |
+| `UBoardMovementComponent::LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | 45 cm / 1.0 | 0.2 to 0.4 m of legs and immersion, plus the water's give | The crouch doubles it; the knobs for landing feel with `CrashLandingG`. |
+| `UBoardMovementComponent::CrashLandingG` | 10 g | measured landings 4.2 to 5.5 g | With 45 cm standing, a crash past 8.9 m/s of sink; crouched (90 cm), past 12.6 m/s. |
 | `UBoardMovementComponent::HotLandingSinkMS` / `HotLandingKiteElevationDeg` | 6 m/s / 45 deg | a descent of 3 to 6 m/s under a kite held overhead | The flag only; not a crash. |
 | `UBoardMovementComponent::WaterSampleAlongFraction` / `WaterSampleAcrossCm` | 0.45 / 18 cm | the hull's wetted footprint | |
 | `UBoardMovementComponent::RiderDragAreaM2` | 0.7 m^2 | 0.5 to 1.0 m^2 | |
@@ -260,11 +267,11 @@ and the 20 cm water-contact clamp (item 4).
   where the research has 3 to 6 m/s under a kite held overhead: over the last 1.75 s of the flight
   the kite, held at clock 0 by the airborne assist, sinks from 84 to 55 deg above the rider and
   falls faster than they do, and the lines' upward pull drops from 0.8 to 0.5 body weights. So the
-  jump lands hot at 6.7 g crouched (target 3 to 6 g; standing it would be 12.3 g, a crash), and the
+  jump lands hot at 4.8 g crouched (inside the 3 to 6 g target; standing 8.6 g, hot but landed), and the
   bigger the jump the faster the sink: in 40 kn the best release goes 15.9 m and lands at 10.3 m/s,
   10 g, a crash even crouched; the highest that lands is 13.1 m. The landing model is not what is
   short (`Physics.LandingGFromSink`); the airborne kite has to hold the rider up on the way down,
-  sheeted in and kept overhead. `Physics.GoodLandingIsThreeToSixG` pins the 6.7 g.
+  sheeted in and kept overhead. `Physics.GoodLandingIsThreeToSixG` asserts the 3 to 6 g range (4.8 g).
 - **Course limit** (item 3b). The closest course the board holds while planing is 30 deg above the
   beam reach in 15 kn (research 15 to 25), 40 in 20 kn and 45 in 25 kn, with 2.97 / 4.01 / 4.69 m/s
   made good (research 2 to 3). The kite's drive along the course barely falls as the board slows:

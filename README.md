@@ -103,7 +103,7 @@ times harder than a parked one.
 **Landing.** A landing's load is shown in g as you touch down (LANDED 4.2 g), from how fast you
 were sinking and how far your legs and the board took it out over; crouched, that distance is
 twice as long. It says HOT if you came down fast (over 6 m/s) or with the kite low (under 45 degrees
-up), and past 8 g it is a crash, as is landing with the board across your course. The big 30 kn
+up), and past 10 g it is a crash, as is landing with the board across your course. The big 30 kn
 jump lands hot at about 7 g crouched and is a crash standing; the biggest 40 kn jumps and the storm
 jumps crash either way. The card that names and scores the jump shows the same g.
 

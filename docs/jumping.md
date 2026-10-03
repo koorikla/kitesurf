@@ -52,14 +52,14 @@ Effective gravity $8h/t^2$ tells how much of the rider the kite carries: real ju
 
 ### Landing Evaluation & Crash Recovery
 Upon coming down to the water (sinking into it relative to its surface, which on a swell may be rising, and within 10 cm of it; `docs/physics/plan-2.md` item 4, `docs/physics/research.md` 3.4):
-- **The sink** $v$ (m/s, relative to the surface) is taken out by the touchdown absorber at a constant $v^2 / (2 s)$ over the absorb distance $s$: `LandingAbsorbDistanceCm` (30 cm, the legs and the board's immersion; research 0.2 to 0.4 m) times $1 + \text{CrouchAbsorbBonus} \cdot \text{crouch}$ (1: a full crouch doubles it). The board goes $s$ on into the water and comes back up on the buoyancy and the planing lift; nothing is snapped or zeroed.
+- **The sink** $v$ (m/s, relative to the surface) is taken out by the touchdown absorber at a constant $v^2 / (2 s)$ over the absorb distance $s$: `LandingAbsorbDistanceCm` (45 cm standing: the legs, the board's immersion and the water's give; research 0.2 to 0.4 m of legs and immersion) times $1 + \text{CrouchAbsorbBonus} \cdot \text{crouch}$ (1: a full crouch doubles it). The board goes $s$ on into the water and comes back up on the buoyancy and the planing lift; nothing is snapped or zeroed.
 - **Landing g**: $1 + v^2 / (2 g s)$, what `OnBoardLanding` reports, `GetLastLandingG()` holds (with `GetLastLandingSinkMS()` and `GetLastLandingAbsorbCm()`) and the HUD's landing card shows. Standing, 2 m/s is 1.7 g, 4 m/s 3.7 g and 6 m/s 7.1 g (the ratio of the squares); crouched 1.3 and 4.0 g; at 6 m/s the water's push on the board peaks at the landing's g and the board goes 31 cm on into the water (`KiteSurf.Physics.LandingGFromSink`).
 - **Hot** (`WasLastLandingHot()`): sinking faster than `HotLandingSinkMS` (6 m/s), or with the kite under `HotLandingKiteElevationDeg` (45 deg) above the rider. A flag, not a crash.
 - **Landing Angle**: between the horizontal velocity and the board's axis, either way round ($0..90^\circ$).
-- **Clean Landing** (Angle $\le$ `MaxLandingAngle` (30 deg) and the landing g at most `CrashLandingG` (8)):
+- **Clean Landing** (Angle $\le$ `MaxLandingAngle` (30 deg) and the landing g at most `CrashLandingG` (10)):
   - Rider retains 80% horizontal speed (`CleanLandingSpeedRetention = 0.80`).
   - The board is in the Landing state for 0.25 s while the absorber works, then planing or displacement.
-- **The timed jump at 30 kn** (crouched from the apex) touches down sinking 8.2 m/s with the kite 55 deg up: 6.7 g, hot, ridden away (`KiteSurf.Physics.GoodLandingIsThreeToSixG`). The target is 3 to 6 g (measured landings 4.2 to 5.5 g); the descent, not the landing model, is short (known gaps). Standing it would be 12.3 g, a crash: land big jumps crouched. Brought down to the side from the apex, the kite is 37 deg up at touchdown and the landing is hot by the kite too.
+- **The timed jump at 30 kn** (crouched from the apex) touches down sinking 8.2 m/s with the kite 55 deg up, over 90 cm: 4.8 g, hot (the sink is over 6 m/s), ridden away (`KiteSurf.Physics.GoodLandingIsThreeToSixG`). That is inside the measured 4.2 to 5.5 g; the sink itself is still above the real 3 to 6 m/s, because the kite loses height in the last two seconds (known gaps). Standing, the same landing is 8.6 g: hot, but landed. Past 10 g it is a crash: a 10 m/s sink standing (12.2 g), or 13 m/s crouched, which is where storm jumps come down.
 - **Crash Landing** (Angle $> 30^\circ$, or more than `CrashLandingG`):
   - Speed decelerates linearly to 0 over `CrashDecelDuration` (0.5 s).
   - Rider stays at crash location for `CrashRespawnDelay` (1.0 s), 1.5 s from the crash in all.
@@ -158,8 +158,8 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 | `AirWeightShiftPitchDeg` | `30` | Board pitch at full weight shift in the air (deg). |
 | `MaxJumpHeight` | `500000` | Maximum jump apex height clamp in cm (5 km, the cloud base). |
 | `MaxLandingAngle` | `30` | Maximum deviation angle in degrees between velocity and board heading for clean landing. |
-| `LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | `30` / `1.0` | The distance a touchdown's sink is taken out over (cm), and how much longer a full crouch makes it (fraction). |
-| `CrashLandingG` | `8` | A landing harder than this (g) is a crash. |
+| `LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | `45` / `1.0` | The distance a touchdown's sink is taken out over (cm), and how much longer a full crouch makes it (fraction). |
+| `CrashLandingG` | `10` | A landing harder than this (g) is a crash. |
 | `HotLandingSinkMS` / `HotLandingKiteElevationDeg` | `6` / `45` | A landing sinking faster than this (m/s), or with the kite lower than this (deg), is hot. |
 | `LoadRatePerSec` / `LoadReleaseRatePerSec` | `2.5` / `6.0` | How fast the crouch builds while the jump button is held, and lets go (1/s). |
 | `LoadPopBonus` | `0.6` | Extra pop from a full load, as a fraction. |

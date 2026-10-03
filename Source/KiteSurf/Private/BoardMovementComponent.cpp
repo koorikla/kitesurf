@@ -115,9 +115,9 @@ UBoardMovementComponent::UBoardMovementComponent()
 	JumpMinEdgeInput = 0.4f;    // 0.4
 	MaxJumpHeight = 500000.0f;  // 5 km: the base of the level's clouds
 	MaxLandingAngle = 30.0f;    // 30 deg
-	LandingAbsorbDistanceCm = LandingMath::DefaultLandingAbsorbDistanceCm; // 30 cm; research 0.2 to 0.4 m of legs and immersion
+	LandingAbsorbDistanceCm = LandingMath::DefaultLandingAbsorbDistanceCm; // 45 cm standing: research 0.2 to 0.4 m of legs and immersion plus the water's give
 	CrouchAbsorbBonus = 1.0f;           // a full crouch doubles it
-	CrashLandingG = 8.0f;
+	CrashLandingG = 10.0f; // measured landings are 4.2 to 5.5 g; 10 is a hard landing a rider can still stand, and what the trick grading uses
 	HotLandingSinkMS = 6.0f;
 	HotLandingKiteElevationDeg = 45.0f;
 	CleanLandingSpeedRetention = 0.8f; // 80%

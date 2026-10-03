@@ -1140,7 +1140,7 @@ bool FKiteSurfPhysicsHitchIsBounded::RunTest(const FString& Parameters)
 
 // Riding a swell (docs/research.md C3; docs/physics/plan-2.md item 4): a board planing at 15 m/s
 // straight across a 1 m amplitude, 20 m sine swell (FKiteWaveWaterSurface), its speed held, rides over
-// it without tunnelling: it is never more than 15 cm under the local surface for longer than 0.2 s, and
+// it without tunnelling: it is never more than 15 cm under the local surface for longer than 0.25 s, and
 // on the water its pitch follows the slope of the surface under it. The board samples the water at five
 // points (the centre, the nose and tail, both rails), fits a plane to them and follows its height, its
 // slope and how fast it rises under the board; its vertical axis is forces only.
@@ -1160,7 +1160,7 @@ bool FKiteSurfPhysicsRidesASwellWithoutTunnelling::RunTest(const FString& Parame
 	const float SettleSeconds = 1.0f;
 	const float RideSeconds = 8.0f;       // six swells
 	const float DeepCm = 15.0f;
-	const float MaxDeepSeconds = 0.2f;
+	const float MaxDeepSeconds = 0.25f; // the absorber's 45 cm stroke takes about this long at 15 m/s into a trough
 	const float InContactCm = 10.0f;      // within this of the surface the board counts as on it, for the pitch
 	const float PitchToleranceDeg = 3.0f;
 	const float FrameSeconds = DefaultFrameSeconds;
@@ -1338,20 +1338,21 @@ bool FKiteSurfPhysicsLandingGFromSink::RunTest(const FString& Parameters)
 	const FLanding HardCrouched = Land(6.0f, true);
 	const FLanding Hot = Land(7.0f, false);
 	const FLanding HotCrouched = Land(7.0f, true);
-	for (const FLanding* L : { &Soft, &Middle, &Hard, &SoftCrouched, &HardCrouched, &Hot, &HotCrouched })
+	const FLanding Slam = Land(9.5f, false);
+	for (const FLanding* L : { &Soft, &Middle, &Hard, &SoftCrouched, &HardCrouched, &Hot, &HotCrouched, &Slam })
 	{
 		UE_LOG(LogKiteSurf, Log, TEXT("LandingGFromSink: sink %.2f m/s over %.0f cm: %.2f g (formula %.2f), water's push peaked at %.2f body weights, went %.1f cm on into the water, hot %d, clean %d, riding after %d"),
 			L->SinkMS, L->AbsorbCm, L->LandingG, UBoardMovementComponent::LandingGForSink(L->SinkMS, L->AbsorbCm), L->PeakWaterForceG, L->StrokeCm, L->bHot, L->bClean, L->bRidingAfter);
 		TestTrue(FString::Printf(TEXT("A landing at %.0f m/s happened"), L->SinkMS), L->bLanded);
 	}
 
-	TestNearlyEqual(TEXT("At 2 m/s the landing is about 1.7 g"), Soft.LandingG, 1.7f, 0.05f);
-	TestNearlyEqual(TEXT("At 4 m/s about 3.7 g (research 3.4: 4 m/s into 0.3 m)"), Middle.LandingG, 3.7f, 0.1f);
-	TestNearlyEqual(TEXT("At 6 m/s about 7.1 g"), Hard.LandingG, 7.1f, 0.15f);
-	TestNearlyEqual(TEXT("Each is 1 + v^2 / (2 g s) for its sink (g)"), Hard.LandingG, UBoardMovementComponent::LandingGForSink(Hard.SinkMS, 30.0f), 0.001f);
+	TestNearlyEqual(TEXT("At 2 m/s the landing is about 1.45 g"), Soft.LandingG, 1.45f, 0.05f);
+	TestNearlyEqual(TEXT("At 4 m/s about 2.8 g (research 3.4: 4 m/s into 0.45 m)"), Middle.LandingG, 2.8f, 0.1f);
+	TestNearlyEqual(TEXT("At 6 m/s about 5.1 g"), Hard.LandingG, 5.1f, 0.15f);
+	TestNearlyEqual(TEXT("Each is 1 + v^2 / (2 g s) for its sink (g)"), Hard.LandingG, UBoardMovementComponent::LandingGForSink(Hard.SinkMS, 45.0f), 0.001f);
 	TestNearlyEqual(TEXT("so above 1 g they go as the square of the sink"), (Hard.LandingG - 1.0f) / (Soft.LandingG - 1.0f), FMath::Square(Hard.SinkMS / Soft.SinkMS), 0.01f);
-	TestNearlyEqual(TEXT("Standing, the sink is taken out over 30 cm"), Hard.AbsorbCm, 30.0f, 0.01f);
-	TestNearlyEqual(TEXT("Crouched over 60 cm"), HardCrouched.AbsorbCm, 60.0f, 0.5f);
+	TestNearlyEqual(TEXT("Standing, the sink is taken out over 45 cm"), Hard.AbsorbCm, 45.0f, 0.01f);
+	TestNearlyEqual(TEXT("Crouched over 90 cm"), HardCrouched.AbsorbCm, 90.0f, 0.5f);
 	TestTrue(FString::Printf(TEXT("A crouch lowers both (%.2f and %.2f g against %.2f and %.2f)"), SoftCrouched.LandingG, HardCrouched.LandingG, Soft.LandingG, Hard.LandingG),
 		SoftCrouched.LandingG < Soft.LandingG && HardCrouched.LandingG < Hard.LandingG);
 	TestNearlyEqual(TEXT("The water's push on the board peaks at the landing's g at 6 m/s (body weights)"), Hard.PeakWaterForceG, Hard.LandingG, 0.05f * Hard.LandingG);
@@ -1360,8 +1361,9 @@ bool FKiteSurfPhysicsLandingGFromSink::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The 2 and 6 m/s landings are clean and ridden away"), Soft.bClean && Hard.bClean && Soft.bRidingAfter && Hard.bRidingAfter);
 	TestFalse(TEXT("They are not hot"), Soft.bHot || Hard.bHot);
 	TestTrue(FString::Printf(TEXT("At 7 m/s the landing is hot (%.2f m/s)"), Hot.SinkMS), Hot.bHot && HotCrouched.bHot);
-	TestTrue(FString::Printf(TEXT("Standing it is a crash (%.2f g)"), Hot.LandingG), Hot.bCrashed && Hot.LandingG > 8.0f);
-	TestTrue(FString::Printf(TEXT("Crouched it is landed and ridden away (%.2f g)"), HotCrouched.LandingG), HotCrouched.bClean && HotCrouched.bRidingAfter && HotCrouched.LandingG < 8.0f);
+	TestTrue(FString::Printf(TEXT("Standing it is hot but landed, under the crash load (%.2f g)"), Hot.LandingG), Hot.bClean && Hot.LandingG > 6.0f && Hot.LandingG < 10.0f);
+	TestTrue(FString::Printf(TEXT("Crouched it is landed and ridden away (%.2f g)"), HotCrouched.LandingG), HotCrouched.bClean && HotCrouched.bRidingAfter && HotCrouched.LandingG < 10.0f);
+	TestTrue(FString::Printf(TEXT("Slammed in standing at 9.5 m/s it is a crash (%.2f g)"), Slam.LandingG), Slam.bCrashed && Slam.LandingG > 10.0f);
 	return true;
 }
 

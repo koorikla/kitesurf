@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "Tricks/TrickBook.h"
+#include "School/LessonProgress.h"
 #include "KiteSurfSaveGame.generated.h"
 
 UCLASS()
@@ -88,6 +89,14 @@ public:
 	 */
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
 	TMap<int32, float> BestSessionTotalBySeconds;
+
+	/**
+	 * Kite school results per lesson (S2), owned at run time by ULessonSubsystem. Saves made before
+	 * the kite school have no such property and load with it empty. Separate from the trick book:
+	 * resetting lesson progress never touches TrickBook.
+	 */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
+	FLessonProgressBook LessonProgress;
 
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;

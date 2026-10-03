@@ -1105,6 +1105,8 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RigInput.Facing = Facing;
 	RigInput.BodyUp = BodyUp.GetSafeNormal();
 	RigInput.Crouch = Load;
+	// RigInput.BodyQuat stays unset: on the water the rig solves from the level Facing and BodyUp.
+	// The rider attitude (URiderAttitudeComponent, T1.2) will set it in the air.
 	RiderPose = RiderRig::SolveBody(RigInput);
 
 

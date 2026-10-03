@@ -38,14 +38,39 @@ FTransform RiderRig::SegmentTransform(const FVector& Start, const FVector& End, 
 	return FTransform(FRotationMatrix::MakeFromXZ(Along, Pole).ToQuat(), Start);
 }
 
+FQuat RiderRig::MakeBodyQuat(const FVector& Facing, const FVector& BodyUp)
+{
+	const FVector LevelFacing = Facing.GetSafeNormal2D().IsNearlyZero() ? FVector::ForwardVector : Facing.GetSafeNormal2D();
+	const FVector Up = BodyUp.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : BodyUp.GetSafeNormal();
+	return FRotationMatrix::MakeFromXZ(LevelFacing, Up).ToQuat();
+}
+
 FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 {
 	FRiderRigPose Pose;
 
-	const FVector Facing = Input.Facing.GetSafeNormal2D().IsNearlyZero() ? FVector::ForwardVector : Input.Facing.GetSafeNormal2D();
-	const FVector BodyUp = Input.BodyUp.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : Input.BodyUp.GetSafeNormal();
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Facing);
-	Pose.Torso = FRotationMatrix::MakeFromXZ(Facing, BodyUp).ToQuat();
+	// The body's frame. Facing is where the knees point, Right the side the right foot is on and
+	// the knees spread towards, BodyUp the line the pelvis sits on above the feet.
+	FVector Facing;
+	FVector BodyUp;
+	FVector Right;
+	if (Input.BodyQuat.IsSet())
+	{
+		// Any orientation: everything comes from the body itself, so upside down the pelvis is
+		// still above the feet in the body's terms and the knees still bend towards the chest.
+		Pose.Torso = Input.BodyQuat.GetValue().GetNormalized();
+		Facing = Pose.Torso.GetAxisX();
+		Right = Pose.Torso.GetAxisY();
+		BodyUp = Pose.Torso.GetAxisZ();
+	}
+	else
+	{
+		// Standing on the water: the facing is level and the knees point along it.
+		Facing = Input.Facing.GetSafeNormal2D().IsNearlyZero() ? FVector::ForwardVector : Input.Facing.GetSafeNormal2D();
+		BodyUp = Input.BodyUp.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : Input.BodyUp.GetSafeNormal();
+		Right = FVector::CrossProduct(FVector::UpVector, Facing);
+		Pose.Torso = FRotationMatrix::MakeFromXZ(Facing, BodyUp).ToQuat();
+	}
 
 	// The feet are in the straps, one each side of the middle of the board along its length. The
 	// rider stands across the board, so which strap is under their right foot depends on which
@@ -59,6 +84,11 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 	{
 		const float SideSign = Side == 0 ? -1.0f : 1.0f;
 		Ankles[Side] = BoardCentre + BoardAlong * (StrapHalfSpacingCm * SideSign * RightStrapSign) + BoardUp * AnkleHeightCm;
+		// A foot out of its strap goes where it is told instead.
+		if (Input.Feet[Side].AnkleTarget.IsSet())
+		{
+			Ankles[Side] = Input.Feet[Side].AnkleTarget.GetValue();
+		}
 	}
 
 	// The pelvis is over the feet along the body's line, lower in a crouch, and never further

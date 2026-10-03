@@ -267,6 +267,18 @@ def splash(seconds, seed, thump_hz, brightness_hz, attack=0.004, bubbles=0):
     return normalise(fade_out(out), 0.9)
 
 
+def stomp():
+    """A trick stomped clean: a bigger, brighter splash than an ordinary landing, with a quick
+    slap on top to sell the impact (review batch D: the feedback for a landed trick)."""
+    count = int(0.55 * RATE)
+    out = splash(0.55, 91, 85.0, 7000.0, attack=0.003, bubbles=6)
+    slap = bandpass(noise(count, 92), 1200.0, 6000.0)
+    for index in range(count):
+        t = index / RATE
+        out[index] += slap[index] * math.exp(-60.0 * t) * min(t / 0.004, 1.0) * 0.5
+    return normalise(fade_out(out), 0.95)
+
+
 def pop():
     """The board letting go of the water: a tight thwack and a short kick of spray."""
     count = int(0.32 * RATE)
@@ -352,6 +364,7 @@ SOUNDS = {
     "SW_Pop": pop,
     "SW_Landing": lambda: splash(0.85, 42, 90.0, 5200.0),
     "SW_Crash": lambda: splash(1.8, 43, 60.0, 4200.0, attack=0.008, bubbles=14),
+    "SW_Stomp": stomp,
     "SW_KiteCrash": kite_crash,
     "SW_Relaunch": relaunch,
     "SW_Aground": aground,

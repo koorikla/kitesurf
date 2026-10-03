@@ -310,6 +310,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	LandingSound = FindSound(TEXT("/Game/Audio/SW_Landing"));
 	CrashSound = FindSound(TEXT("/Game/Audio/SW_Crash"));
 	ResetSound = FindSound(TEXT("/Game/Audio/SW_ResetCue"));
+	StompSound = FindSound(TEXT("/Game/Audio/SW_Stomp"));
 	KiteCrashSound = FindSound(TEXT("/Game/Audio/SW_KiteCrash"));
 	RelaunchSound = FindSound(TEXT("/Game/Audio/SW_Relaunch"));
 	AgroundSound = FindSound(TEXT("/Game/Audio/SW_Aground"));
@@ -391,6 +392,7 @@ void AKiteRiderPawn::BeginPlay()
 		BoardMovement->OnBoardCrash.AddDynamic(this, &AKiteRiderPawn::HandleBoardCrash);
 		BoardMovement->OnBoardReset.AddDynamic(this, &AKiteRiderPawn::HandleBoardReset);
 		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
+		BoardMovement->OnBoardLandingVerdict.AddDynamic(this, &AKiteRiderPawn::HandleBoardLandingVerdict);
 	}
 	if (Kite)
 	{
@@ -2986,11 +2988,15 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 	CameraCurrentFOVDeg = FMath::Clamp(FMath::Max(CameraCurrentFOVDeg, FovFromTanHalf(RequiredTan)), 1.0f, HardMaxFovDeg);
 	CameraCurrentBoomPitchDeg = BoomPitchFor(CameraCurrentArmCm);
 
+	// The camera kick (a Stomped landing's punch): eased back to 0, never a new resting state, and
+	// added to the look pitch only, so the horizon stays level through it.
+	CameraKickDeg = FMath::FInterpTo(CameraKickDeg, 0.0f, DeltaTime, CameraKickDecaySpeed);
+
 	// The boom keeps the camera above the water; the camera itself tilts to look up at the kite.
 	// Neither ever rolls, so the horizon stays level.
 	CameraBoom->TargetArmLength = CameraCurrentArmCm;
 	CameraBoom->SetWorldRotation(FRotator(CameraCurrentBoomPitchDeg, CameraYawDeg, 0.0f));
-	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraCurrentBoomPitchDeg, 0.0f, 0.0f));
+	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraCurrentBoomPitchDeg + CameraKickDeg, 0.0f, 0.0f));
 	FollowCamera->SetFieldOfView(CameraCurrentFOVDeg);
 }
 
@@ -3040,6 +3046,34 @@ void AKiteRiderPawn::HandleBoardLanding(float LandingG)
 	float HapticDuration = 0.0f;
 	GetLandingHaptic(LandingG, HapticIntensity, HapticDuration);
 	PlayHaptic(HapticIntensity, HapticDuration, true);
+}
+
+void AKiteRiderPawn::HandleBoardLandingVerdict(const FLandingVerdict& Verdict)
+{
+	// On top of HandleBoardLanding's g-scaled splash and buzz (every non-crash landing) and
+	// HandleBoardCrash's own thump (a crash, bound to OnBoardCrash, broadcast right after this):
+	// Stomped sells the result landing well, Sketchy warns something was off. Clean and Crash add
+	// nothing here (review batch D, docs/tricks/review.md section 4).
+	switch (Verdict.Grade)
+	{
+	case ELandingGrade::Stomped:
+		PlayHaptic(1.0f, 0.3f, true);
+		KickCamera(StompCameraKickDeg);
+		PlayOneShot(StompSound, 0.9f);
+		break;
+	case ELandingGrade::Sketchy:
+		PlayHaptic(0.3f, 0.18f, false);
+		break;
+	case ELandingGrade::Clean:
+	case ELandingGrade::Crash:
+	default:
+		break;
+	}
+}
+
+void AKiteRiderPawn::KickCamera(float AmountDeg)
+{
+	CameraKickDeg = FMath::Clamp(CameraKickDeg + AmountDeg, 0.0f, CameraKickMaxDeg);
 }
 
 FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)

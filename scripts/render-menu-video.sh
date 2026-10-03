@@ -112,9 +112,9 @@ check_take() {
     fi
 }
 
-# Films a take, and once more if it comes back short: a run started straight after another can
-# fail to get GPU memory at its first frame (Vulkan "Out Of Memory" in the log) before the last
-# one has let go of it.
+# Films a take, and once more if it comes back short: a run can still fail to get GPU memory at
+# its first frame (Vulkan "Out Of Memory" in the log), e.g. next to a GPU program that does not
+# take the lock.
 film_take() {
     local name="$1" frames="$2"
     shift 2

@@ -10,6 +10,7 @@
 class AKiteRiderPawn;
 class UTrickTrackerComponent;
 class FBestThreeSession;
+class FFreestyleHeat;
 class ALessonDirector;
 class UInputComponent;
 struct FJumpRecord;
@@ -241,6 +242,43 @@ public:
 	 */
 	TArray<FString> GetSessionLines() const;
 
+	// --- Freestyle heat (T3.6): UFreestyleHeatSubsystem. ---
+
+	/**
+	 * The heat row at the top centre while a heat runs: "FREESTYLE HEAT", "Trick 3/7", the trick
+	 * countdown ("1:12", only when it is on) and the running total with the variety bonus,
+	 * "TOTAL 27.5 (+4 variety)" ("TOTAL 0.0" with no bonus yet).
+	 */
+	static TArray<FString> FormatHeatRow(const FFreestyleHeat& Heat);
+
+	/**
+	 * The counting list beside the row: "COUNTING", then one line per counting slot (four): "1  KGB
+	 * 8.0  [KGB/Slim]" (name, score to 1 dp, short family) best first, or "2  --" while empty.
+	 */
+	static TArray<FString> FormatHeatList(const FFreestyleHeat& Heat);
+
+	/**
+	 * The results card: "FREESTYLE HEAT OVER  (7 tricks)" ("(1 trick)" for one), "TOTAL  <total to 1 dp>", "NEW BEST" when
+	 * it beat the local best, one line per counting trick ("1  <Name>  <score> pts  <family>") or
+	 * "No tricks counted", "Families  <n>: <labels>" (or "Families  0"), "Variety bonus  +<bonus>",
+	 * then the local best: "Local best  <best>", "Previous best  <best>" when beaten, or
+	 * "First <N>-trick heat" when there was none.
+	 */
+	static TArray<FString> FormatHeatResults(const FFreestyleHeat& Heat, float PreviousBest, bool bHadPreviousBest, bool bNewBest);
+
+	/**
+	 * What the heat part of the HUD shows now, from the world's UFreestyleHeatSubsystem: the row then
+	 * the counting list while a heat runs, the results card while it is up, otherwise nothing.
+	 * DrawHUD draws these lines; tests read them with no Canvas.
+	 */
+	TArray<FString> GetHeatLines() const;
+
+	/**
+	 * Shows the heat's newest notice ("Unhook for freestyle", a refusal, a lost attempt) on the notice
+	 * line when the subsystem has posted one since the last call. DrawHUD calls it; tests can too.
+	 */
+	void UpdateHeatNotice();
+
 	// --- Kite school lesson layer (docs/tutorials.md S4). ---
 
 	/** The running lesson director in this HUD's world, or null. */
@@ -301,6 +339,12 @@ protected:
 
 	/** Draws GetSessionLines: the panel as one row at the top centre, above the jump readout and trick card; the results card in the middle. */
 	void DrawSession(float ScreenW, float ScreenH);
+
+	/** Draws GetHeatLines: the row at the top centre (where the session's row goes; they never run together), the counting list at the right under the wind flag, the results card in the middle. */
+	void DrawHeat(float ScreenW, float ScreenH);
+
+	/** The heat notice serial last shown (UpdateHeatNotice). */
+	int32 SeenHeatNoticeSerial = 0;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	FString JumpRejectionText;

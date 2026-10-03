@@ -50,6 +50,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnSessionClicked();
 
+	/**
+	 * FREESTYLE HEAT (7 tricks), free ride only, after SCHOOL: starts a 7-attempt freestyle heat
+	 * (UFreestyleHeatSubsystem, T3.6) for the rider and resumes the ride. Refused with a notice while
+	 * a best-three session runs.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnHeatClicked();
+
+	/** The heat item's label: "FREESTYLE HEAT (7 tricks)". */
+	static FString GetHeatLabel();
+
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnRestartClicked();
 
@@ -136,6 +147,7 @@ private:
 	TSharedPtr<SButton> SlateRestartButton;
 	TSharedPtr<SButton> SlateGearButton;
 	TSharedPtr<SButton> SlateSchoolButton;
+	TSharedPtr<SButton> SlateHeatButton;
 	TSharedPtr<SButton> SlateRetryLessonButton;
 	TSharedPtr<SButton> SlateLessonMenuButton;
 	TSharedPtr<SButton> SlateFreeRideButton;

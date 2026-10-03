@@ -613,12 +613,12 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         }
     }
 
-    // Pause menu in free ride: RESUME, RESTART, GEAR, BEST-THREE SESSION, SCHOOL, SETTINGS, MAIN MENU, QUIT.
+    // Pause menu in free ride: RESUME, RESTART, GEAR, BEST-THREE SESSION, SCHOOL, FREESTYLE HEAT, SETTINGS, MAIN MENU, QUIT.
     UKiteSurfPauseMenuWidget* PauseMenu = CreateWidget<UKiteSurfPauseMenuWidget>(World, UKiteSurfPauseMenuWidget::StaticClass());
     if (PauseMenu)
     {
         FKiteMenuNavigator& Navigator = PauseMenu->GetNavigator();
-        TestEqual(TEXT("The pause menu has eight items"), Navigator.Num(), 8);
+        TestEqual(TEXT("The pause menu has nine items"), Navigator.Num(), 9);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);

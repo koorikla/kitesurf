@@ -8,6 +8,7 @@
 #include "School/LessonDirector.h"
 #include "School/SchoolOnboarding.h"
 #include "EngineUtils.h"
+#include "Tricks/FreestyleHeatSubsystem.h"
 #include "Tricks/TrickSessionSubsystem.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
@@ -205,6 +206,13 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				[
 					MakeItemButton(SlateSchoolButton, FText::FromString(TEXT("SCHOOL")), [this]() { OnSchoolClicked(); }, false)
 				]
+				// Freestyle heat (free ride only), after SCHOOL so the items above keep their places.
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					MakeItemButton(SlateHeatButton, FText::FromString(GetHeatLabel()), [this]() { OnHeatClicked(); }, false)
+				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(25.0f, 6.0f)
@@ -328,6 +336,24 @@ void UKiteSurfPauseMenuWidget::OnSessionClicked()
 		if (UTrickSessionSubsystem* Sessions = World->GetSubsystem<UTrickSessionSubsystem>())
 		{
 			Sessions->StartSession(UTrickSessionSubsystem::DefaultSessionSeconds);
+		}
+	}
+	OnResumeClicked();
+}
+
+FString UKiteSurfPauseMenuWidget::GetHeatLabel()
+{
+	return FString::Printf(TEXT("FREESTYLE HEAT (%d tricks)"), FFreestyleHeat::DefaultAttempts);
+}
+
+void UKiteSurfPauseMenuWidget::OnHeatClicked()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UFreestyleHeatSubsystem* Heats = World->GetSubsystem<UFreestyleHeatSubsystem>())
+		{
+			// Refused with a notice while a session or a lesson runs.
+			Heats->StartHeat(FFreestyleHeat::DefaultAttempts);
 		}
 	}
 	OnResumeClicked();
@@ -579,6 +605,8 @@ void UKiteSurfPauseMenuWidget::BuildNavigation()
 	else
 	{
 		Navigator.AddButton(SlateSchoolButton, [this]() { OnSchoolClicked(); });
+		// The freestyle heat after SCHOOL: free ride only, since a heat cannot start in a lesson.
+		Navigator.AddButton(SlateHeatButton, [this]() { OnHeatClicked(); });
 	}
 	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
 	Navigator.AddButton(SlateMainMenuButton, [this]() { OnMainMenuClicked(); });

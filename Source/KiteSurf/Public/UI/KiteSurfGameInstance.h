@@ -144,14 +144,14 @@ public:
 	void SaveSettingsToDisk();
 
 	/**
-	 * Takes the settings, the trick book and the session bests from a loaded save, and hands the
+	 * Takes the settings, the trick book and the session and heat bests from a loaded save, and hands the
 	 * lesson progress to ULessonSubsystem when it exists (it does once Init has run): what
 	 * LoadSettingsFromDisk does with the Settings slot.
 	 */
 	void ApplySaveGame(const UKiteSurfSaveGame& SaveGame);
 
 	/**
-	 * Writes the settings, the trick book and the session bests into a save, and the lesson
+	 * Writes the settings, the trick book and the session and heat bests into a save, and the lesson
 	 * progress from ULessonSubsystem when it exists (otherwise the save's progress is left as it
 	 * was): what SaveSettingsToDisk does before writing the Settings slot.
 	 */
@@ -183,6 +183,22 @@ public:
 	/** The local bests per session length, loaded from and saved to the Settings slot with the settings. */
 	const TMap<int32, float>& GetBestSessionTotals() const { return BestSessionTotalBySeconds; }
 
+	/** Whether a freestyle heat of this many attempts has a local best. */
+	bool HasBestHeatTotal(int32 Attempts) const { return BestFreestyleHeatTotalByAttempts.Contains(Attempts); }
+
+	/** The local best freestyle heat total for this many attempts; 0 when there is none. */
+	float GetBestHeatTotal(int32 Attempts) const;
+
+	/**
+	 * Offers a finished freestyle heat's total (T3.6). True when it is a new local best for its
+	 * attempt count (the first heat of that count scoring above 0, or beating the best), which is
+	 * then kept. Does not write to disk: the caller saves through SaveSettingsToDisk.
+	 */
+	bool RecordHeatTotal(int32 Attempts, float Total);
+
+	/** The local bests per heat attempt count, loaded from and saved to the Settings slot with the settings. */
+	const TMap<int32, float>& GetBestHeatTotals() const { return BestFreestyleHeatTotalByAttempts; }
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetPendingWindKnots(float InKnots);
 
@@ -199,4 +215,6 @@ private:
 	FTrickBook TrickBook;
 
 	TMap<int32, float> BestSessionTotalBySeconds;
+
+	TMap<int32, float> BestFreestyleHeatTotalByAttempts;
 };

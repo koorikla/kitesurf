@@ -10,6 +10,7 @@
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "Tricks/TrickTrackerComponent.h"
+#include "Tricks/FreestyleHeatSubsystem.h"
 #include "Tricks/TrickSessionSubsystem.h"
 #include "WindComponent.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -466,6 +467,37 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Heat"),
+			TEXT("Starts a freestyle heat for the player's rider (T3.6): unhooked tricks of more than 0.4 s airtime and crashes are attempts, the best per GKA family counts, four count within the group limits, plus the variety bonus. Usage: kitesurf.Heat freestyle [attempts, default 7] [trick countdown s, default 90, 0 off] | kitesurf.Heat stop"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const FString Mode = Args.IsValidIndex(0) ? Args[0] : FString(TEXT("freestyle"));
+				AKiteRiderPawn* Rider = FindPlayerRider();
+				UWorld* World = Rider ? Rider->GetWorld() : nullptr;
+				UFreestyleHeatSubsystem* Heats = World ? World->GetSubsystem<UFreestyleHeatSubsystem>() : nullptr;
+				if (!Heats)
+				{
+					UE_LOG(LogKiteSurf, Warning, TEXT("kitesurf.Heat: no rider to start a heat for"));
+					return;
+				}
+				if (Mode.Equals(TEXT("stop"), ESearchCase::IgnoreCase))
+				{
+					Heats->CancelHeat(TEXT("Freestyle heat stopped"));
+					return;
+				}
+				if (!Mode.Equals(TEXT("freestyle"), ESearchCase::IgnoreCase))
+				{
+					UE_LOG(LogKiteSurf, Warning, TEXT("kitesurf.Heat: unknown heat '%s'; only 'freestyle' (or 'stop')"), *Mode);
+					return;
+				}
+				const int32 Attempts = Args.IsValidIndex(1) ? FCString::Atoi(*Args[1]) : FFreestyleHeat::DefaultAttempts;
+				const float Countdown = Args.IsValidIndex(2) ? FMath::Max(FCString::Atof(*Args[2]), 0.0f) : -1.0f;
+				const EHeatStartResult Result = Heats->StartHeat(Attempts > 0 ? Attempts : FFreestyleHeat::DefaultAttempts, Rider->GetTrickTracker(), Countdown);
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Heat: %s"), *UEnum::GetDisplayValueAsText(Result).ToString());
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.MenuKey"),
 			TEXT("Sends a key press through the UI, as the keyboard or gamepad would. Usage: kitesurf.MenuKey <Up|Down|Left|Right|Enter|Gamepad_DPad_Down|...>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -547,6 +579,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jumps"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Session"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Heat"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.State"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HoldKite"));

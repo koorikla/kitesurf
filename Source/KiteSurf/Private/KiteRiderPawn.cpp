@@ -292,6 +292,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	SprayLoopComponent = MakeLoop(TEXT("SprayLoopComponent"), TEXT("/Game/Audio/SW_SprayLoop"));
 	KiteLoopComponent = MakeLoop(TEXT("KiteLoopComponent"), TEXT("/Game/Audio/SW_KiteLoop"));
 	FlutterLoopComponent = MakeLoop(TEXT("FlutterLoopComponent"), TEXT("/Game/Audio/SW_FlutterLoop"));
+	RotationLoopComponent = MakeLoop(TEXT("RotationLoopComponent"), TEXT("/Game/Audio/SW_RotationWhoosh"));
 
 	// Music: plays through a pause, and is not part of the world's sound.
 	MusicBaseComponent = MakeLoop(TEXT("MusicBaseComponent"), TEXT("/Game/Audio/MU_RideBase"));
@@ -401,7 +402,7 @@ void AKiteRiderPawn::BeginPlay()
 	}
 
 	// The two music loops start on the same frame so that they stay in step.
-	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get(), SprayLoopComponent.Get(), KiteLoopComponent.Get(), FlutterLoopComponent.Get(), MusicBaseComponent.Get(), MusicAirComponent.Get() })
+	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get(), SprayLoopComponent.Get(), KiteLoopComponent.Get(), FlutterLoopComponent.Get(), RotationLoopComponent.Get(), MusicBaseComponent.Get(), MusicAirComponent.Get() })
 	{
 		if (Loop && Loop->GetSound())
 		{
@@ -3117,6 +3118,13 @@ FRideAudioMix AKiteRiderPawn::ComputeAudioMix(const FRideAudioState& State)
 	// A canopy with no load in it flaps, as long as there is wind to flap it.
 	Mix.FlutterVolume = 0.5f * FMath::Clamp(State.KiteLuff, 0.0f, 1.0f) * FMath::Clamp(State.ApparentWindKnots / 12.0f, 0.0f, 1.0f);
 
+	// A rotation in the air: a whoosh that rises with the spin rate (tricks.md 6.9), quiet for a
+	// gentle wobble, full for a fast spin. 7 rad/s (~400 deg/s) is a little past
+	// RiderAttitudeComponent's PreWindSpinRateDegS (360 deg/s), a fast spin's nominal rate.
+	const float SpinAmount = FMath::Clamp(State.SpinRadS / 7.0f, 0.0f, 1.0f);
+	Mix.RotationVolume = State.bAirborne ? 0.75f * SpinAmount : 0.0f;
+	Mix.RotationPitch = 0.8f + 0.6f * SpinAmount;
+
 	// The music lifts while the rider is in the air.
 	Mix.AirMusic = State.bAirborne ? 1.0f : 0.0f;
 	return Mix;
@@ -3159,6 +3167,11 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 			}
 		}
 	}
+	// The rider's rotation (T1.2): the attitude only simulates in the air, so this is 0 on the water.
+	if (RiderAttitude && RiderAttitude->IsSimulating())
+	{
+		State.SpinRadS = RiderAttitude->GetAngularVelocity().Size();
+	}
 	const FRideAudioMix Target = ComputeAudioMix(State);
 
 	// Eased so that a gust or the board leaving the water is heard as a swell, not a switch.
@@ -3173,6 +3186,9 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	AudioMix.KiteVolume = FMath::FInterpTo(AudioMix.KiteVolume, Target.KiteVolume, DeltaTime, Ease);
 	AudioMix.KitePitch = FMath::FInterpTo(AudioMix.KitePitch, Target.KitePitch, DeltaTime, Ease);
 	AudioMix.FlutterVolume = FMath::FInterpTo(AudioMix.FlutterVolume, Target.FlutterVolume, DeltaTime, Ease);
+	// A rotation starts and stops quickly, so it is eased faster than the wind and the kite.
+	AudioMix.RotationVolume = FMath::FInterpTo(AudioMix.RotationVolume, Target.RotationVolume, DeltaTime, 2.0f * Ease);
+	AudioMix.RotationPitch = FMath::FInterpTo(AudioMix.RotationPitch, Target.RotationPitch, DeltaTime, 2.0f * Ease);
 	// The air layer comes in quickly on take-off and lingers for a couple of seconds after landing.
 	AudioMix.AirMusic = FMath::FInterpConstantTo(AudioMix.AirMusic, Target.AirMusic, DeltaTime, Target.AirMusic > AudioMix.AirMusic ? 2.5f : 0.45f);
 
@@ -3191,6 +3207,7 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	Apply(SprayLoopComponent, AudioMix.SprayVolume, 1.0f);
 	Apply(KiteLoopComponent, AudioMix.KiteVolume, AudioMix.KitePitch);
 	Apply(FlutterLoopComponent, AudioMix.FlutterVolume, 1.0f);
+	Apply(RotationLoopComponent, AudioMix.RotationVolume, AudioMix.RotationPitch);
 
 	// Music sits under the sound of the ride. Its pitch never moves, or the layers would drift apart.
 	if (MusicBaseComponent)

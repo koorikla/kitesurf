@@ -141,4 +141,44 @@ bool FKiteSurfTrickCrashLandingThuds::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickRotationWhooshFollowsSpin, "KiteSurf.Trick.RotationWhooshFollowsSpin", TrickFeedbackTest::Flags)
+
+bool FKiteSurfTrickRotationWhooshFollowsSpin::RunTest(const FString& Parameters)
+{
+	// Pure math, as KiteSurf.Audio.MixFollowsTheRide checks the other loops: ComputeAudioMix needs
+	// no world or pawn. A rotation whoosh whose pitch follows the spin rate (tricks.md 6.9).
+	FRideAudioState Grounded;
+	Grounded.bAirborne = false;
+	Grounded.bOnWater = true;
+	Grounded.SpinRadS = 5.0f; // the attitude only simulates in the air; this should not happen, but silence proves the gate.
+	TestEqual(TEXT("No rotation whoosh on the water, however SpinRadS reads"), AKiteRiderPawn::ComputeAudioMix(Grounded).RotationVolume, 0.0f);
+
+	FRideAudioState Still;
+	Still.bAirborne = true;
+	Still.bOnWater = false;
+	Still.SpinRadS = 0.0f;
+	const FRideAudioMix NoSpin = AKiteRiderPawn::ComputeAudioMix(Still);
+	TestEqual(TEXT("Airborne with no rotation: silent"), NoSpin.RotationVolume, 0.0f);
+
+	FRideAudioState Gentle = Still;
+	Gentle.SpinRadS = 1.5f; // a slow wobble
+	const FRideAudioMix GentleMix = AKiteRiderPawn::ComputeAudioMix(Gentle);
+	TestTrue(FString::Printf(TEXT("A gentle spin is quiet but audible (%.2f)"), GentleMix.RotationVolume), GentleMix.RotationVolume > 0.0f && GentleMix.RotationVolume < 0.3f);
+	TestTrue(FString::Printf(TEXT("and a little higher than resting pitch (%.2f)"), GentleMix.RotationPitch), GentleMix.RotationPitch > NoSpin.RotationPitch);
+
+	FRideAudioState Fast = Still;
+	Fast.SpinRadS = 4.0f; // a committed roll (RiderAttitudeComponent's PreWindRollRateDegS 250 deg/s ~= 4.4 rad/s)
+	const FRideAudioMix FastMix = AKiteRiderPawn::ComputeAudioMix(Fast);
+	TestTrue(FString::Printf(TEXT("A fast spin is louder and higher than a gentle one (vol %.2f > %.2f, pitch %.2f > %.2f)"),
+		FastMix.RotationVolume, GentleMix.RotationVolume, FastMix.RotationPitch, GentleMix.RotationPitch),
+		FastMix.RotationVolume > GentleMix.RotationVolume && FastMix.RotationPitch > GentleMix.RotationPitch);
+
+	FRideAudioState Fastest = Still;
+	Fastest.SpinRadS = 20.0f; // far past any rate the game ever commands
+	const FRideAudioMix FastestMix = AKiteRiderPawn::ComputeAudioMix(Fastest);
+	TestTrue(TEXT("Nothing is louder than full volume, however fast the spin reads"), FastestMix.RotationVolume <= 0.75f + 1e-4f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

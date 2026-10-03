@@ -43,6 +43,8 @@ struct FRideAudioState
 	/** How hard the edge is driven: carving or a loaded crouch. 0..1. */
 	float EdgeEffort = 0.0f;
 	bool bAirborne = false;
+	/** The rider's total angular speed in the air, |omega| (rad/s): 0 unless a rotation is under way (URiderAttitudeComponent::IsSimulating). */
+	float SpinRadS = 0.0f;
 };
 
 /** Volume and pitch for each sound loop, and how much of the music's second layer to play. */
@@ -61,6 +63,9 @@ struct FRideAudioMix
 	float KitePitch = 1.0f;
 	/** A luffing canopy flapping. */
 	float FlutterVolume = 0.0f;
+	/** A rotation in the air: rises with the spin rate (review batch D, tricks.md 6.9). */
+	float RotationVolume = 0.0f;
+	float RotationPitch = 1.0f;
 	/** The music's in-the-air layer, 0..1 of the music volume. */
 	float AirMusic = 0.0f;
 };
@@ -731,6 +736,7 @@ public:
 	USoundBase* GetCrashSound() const { return CrashSound.Get(); }
 	USoundBase* GetResetSound() const { return ResetSound.Get(); }
 	USoundBase* GetStompSound() const { return StompSound.Get(); }
+	UAudioComponent* GetRotationLoop() const { return RotationLoopComponent.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSteerInput() const { return CurrentSteerInput; }
@@ -1026,6 +1032,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> FlutterLoopComponent;
+
+	/** A rotation in the air: pitch and volume follow the spin rate (review batch D, tricks.md 6.9). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> RotationLoopComponent;
 
 	/** The ride's music: two loops of the same length played in step. The second comes in while the rider is in the air. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")

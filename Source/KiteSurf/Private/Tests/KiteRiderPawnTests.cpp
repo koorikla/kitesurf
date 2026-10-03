@@ -73,6 +73,7 @@ bool FKiteSurfAudioSoundsAreReal::RunTest(const FString& Parameters)
 		{ TEXT("/Game/Audio/SW_SprayLoop"), true, 2.0f },
 		{ TEXT("/Game/Audio/SW_KiteLoop"), true, 2.0f },
 		{ TEXT("/Game/Audio/SW_FlutterLoop"), true, 1.5f },
+		{ TEXT("/Game/Audio/SW_RotationWhoosh"), true, 1.0f },
 		{ TEXT("/Game/Audio/SW_KiteCrash"), false, 0.5f },
 		{ TEXT("/Game/Audio/SW_Relaunch"), false, 0.5f },
 		{ TEXT("/Game/Audio/SW_Aground"), false, 0.5f },
@@ -128,6 +129,7 @@ bool FKiteSurfAudioSoundsAreReal::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Reset sound"), Pawn->GetResetSound());
 		TestNotNull(TEXT("Stomp sound"), Pawn->GetStompSound());
 		TestTrue(TEXT("The spray, kite and flutter loops have their sounds"), Pawn->GetSprayLoop() && Pawn->GetSprayLoop()->GetSound() && Pawn->GetKiteLoop() && Pawn->GetKiteLoop()->GetSound() && Pawn->GetFlutterLoop() && Pawn->GetFlutterLoop()->GetSound());
+		TestTrue(TEXT("The rotation loop has its sound"), Pawn->GetRotationLoop() && Pawn->GetRotationLoop()->GetSound());
 		TestTrue(TEXT("The ride has its two music loops"), Pawn->GetMusicBase() && Pawn->GetMusicBase()->GetSound() && Pawn->GetMusicAir() && Pawn->GetMusicAir()->GetSound());
 		TestTrue(TEXT("and the music plays through a pause"), Pawn->GetMusicBase() && Pawn->GetMusicBase()->bIsUISound && Pawn->GetMusicAir()->bIsUISound);
 	}

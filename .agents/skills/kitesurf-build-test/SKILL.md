@@ -1,6 +1,6 @@
 ---
 name: kitesurf-build-test
-description: Build, test, run and package the KiteSurf Unreal project on Linux.
+description: Build, test, run and package the KiteSurf Unreal project on Linux or a macOS host.
 version: 0.1.0
 metadata:
   hermes:
@@ -25,14 +25,15 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
 ## Procedure
 
 1. **Engine location.** `scripts/common.sh` resolves the engine from `$UE_ROOT`, then a
-   `.engine-path` file in the repo root, then `/opt/unreal-engine`. The project targets
-   Unreal Engine 5.8 on Linux with Vulkan SM6.
+   `.engine-path` file in the repo root, then the default install for the host:
+   `/opt/unreal-engine` on Linux, `/Users/Shared/Epic Games/UE_5.8` (the Epic launcher's) on
+   macOS. The project targets Unreal Engine 5.8; CI runs on Linux with Vulkan SM6.
 2. **Build the editor target.**
    ```bash
    scripts/build.sh Development
    ```
-   This builds `KiteSurfEditor Linux Development`. Extra arguments are passed to the
-   engine's `Build.sh`.
+   This builds `KiteSurfEditor Linux Development` (`Mac` on a macOS host). Extra arguments
+   are passed to the engine's `Build.sh`.
 3. **Run the automation tests headless.**
    ```bash
    scripts/run-tests.sh -nullrhi
@@ -84,6 +85,15 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    untracked file, so `gpu-smoke` reuses the editor that `build-and-test` just built.
 
 ## Pitfalls
+
+- **macOS host.** The scripts keep to bash 3.2, the bash macOS ships: no `${var,,}`, no
+  `mapfile`, and an array that may be empty is expanded as `${a[@]+"${a[@]}"}`, or `set -u`
+  fails on it. macOS has no `flock`, so `with_gpu_lock` runs the command directly there. The
+  Mac editor logs to `~/Library/Logs/Unreal Engine/KiteSurfEditor/` unless given `-stdout`,
+  which `run-tests.sh` adds. Any running `UnrealEditor`, even the launcher's with no project
+  open, makes UBT write hot-reload copies (`libUnrealEditor-KiteSurf-0001.dylib`) and point
+  `Binaries/Mac/UnrealEditor.modules` at them. Floating-point results can differ from x86 by
+  ~1e-5, since arm64 fuses multiply-adds; tests compare angles to 1e-4 rad, not tighter.
 
 - **One GPU, one run at a time.** Agents, worktrees and the CI runner share one 8 GB GPU,
   and two Vulkan runs at once can crash with `VulkanMemory.cpp ... Out of memory`. The

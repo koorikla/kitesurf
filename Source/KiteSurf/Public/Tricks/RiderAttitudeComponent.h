@@ -77,6 +77,8 @@ struct FAttitudeDebug
 	FVector LineTorqueNm = FVector::ZeroVector;
 	FVector ControlTorqueNm = FVector::ZeroVector;
 	FVector AssistTorqueNm = FVector::ZeroVector;
+	/** The travel-align torque about world up (N*m): the rider keeping the board pointed along the flight when no trick is going on. */
+	FVector TravelAlignTorqueNm = FVector::ZeroVector;
 	/** Posture damping's torque (its angular impulse over the step). */
 	FVector PostureTorqueNm = FVector::ZeroVector;
 	/** The committed rotation axis (world, unit), zero when none. */
@@ -102,7 +104,8 @@ struct FAttitudeDebug
  * is exact for a symmetric top and conserves |L| and, to rounding, the energy).
  *
  * On the water the attitude is slaved to the kinematic pose. The pawn steps it (it does not tick);
- * Step is pure and touches no world, so tests drive a bare NewObject. Not yet stepped by the pawn.
+ * Step is pure and touches no world, so tests drive a bare NewObject. AKiteRiderPawn::StepSimulation
+ * steps it after the line force and before the board, and hands the board GetBoardQuat in the air.
  *
  * SI inside (kg*m^2, N*m, rad/s); Unreal units (cm, kg*cm/s^2) only at the boundary.
  */
@@ -181,6 +184,12 @@ public:
 	 * landing error, ErrorAlongSpin, bAssistActive and AssistTorqueNm of OutDebug.
 	 */
 	FVector ComputeAssistTorque(const FAttitudeInputs& In, FAttitudeDebug& OutDebug) const;
+
+	/**
+	 * The travel-align torque (N*m, world, about world up) for these inputs at the current state: zero
+	 * with rotation input, with a rotation committed, or when the board or the flight has no heading.
+	 */
+	FVector ComputeTravelAlignTorque(const FAttitudeInputs& In) const;
 
 	/** Time to contact (s): the smallest positive root of h + v t + a t^2 / 2 = 0, else h / max(-v, 1 cm/s). */
 	static float ComputeTimeToContact(float HeightCm, float VerticalSpeedCmS, float VerticalAccelCmS2);
@@ -294,6 +303,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
 	float AssistMaxTorqueNm;
 
+	/**
+	 * Natural frequency of the travel align (Hz); 0 turns it off. With no rotation input, no rotation
+	 * committed (no pre-wind, no stick held this jump) and the landing assist not acting, a rider keeps
+	 * the board pointed along the flight, either end first, as the kinematic auto-align did before the
+	 * attitude: a PD torque about world up, so the kite dragging the flight round does not leave the
+	 * board crossways for the landing. It comes in over StrapSettleSeconds after the take-off. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float TravelAlignNaturalFreqHz;
+
+	/** Damping ratio of the travel align. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float TravelAlignDampingRatio;
+
+	/** Cap on the travel align torque (N*m). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float TravelAlignMaxTorqueNm;
+
+	/** Slower than this along the water (cm/s) the flight has no direction to align with. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float TravelAlignMinSpeedCmS;
+
 	/** Time constant of the board easing from its take-off heel and pitch to flat under the feet (s). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.01"))
 	float StrapSettleSeconds;
@@ -331,6 +362,8 @@ private:
 	FVector CommittedAxisBody = FVector::ZeroVector;
 	float TuckNow = 0.0f;
 	float TuckVel = 0.0f;
+	/** Time since the take-off (s); SetState leaves it where it is. */
+	float AirSeconds = 0.0f;
 	bool bActive = false;
 	bool bWasAirborne = false;
 	bool bControlWasFlip = false;

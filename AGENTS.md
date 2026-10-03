@@ -14,6 +14,7 @@ air game: very high jumps, kite loops, tricks and scoring.
 | `docs/ARCHITECTURE.md` | Units, public APIs and tick order |
 | `docs/TASKS.md` | Roadmap and current phase |
 | `docs/research.md` | Big air research and the candidate backlog with acceptance criteria |
+| `docs/tutorials.md` | Interactive kite school: lesson progression, design and plan |
 | `docs/tricks.md` | Trick catalogue (big air, freestyle, strapless) and the trick implementation plan |
 | `.agents/skills/` | Skills for working in this repository (index below) |
 
@@ -64,6 +65,7 @@ Project-specific:
 | `kitesurf-editor-python` | Creating or changing levels, input assets or any `.uasset` |
 | `kitesurf-big-air-sim` | Changing kite, board, wind, jump or landing physics |
 | `unreal-water-queries` | Reading wave height and normals from the Water plugin |
+| `tmux-agent-comms` | Messaging other agents running in tmux panes: coordinate files, hand off, ask |
 
 Unreal Engine:
 

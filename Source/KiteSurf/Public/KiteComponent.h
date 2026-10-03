@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "KiteGear.h"
+#include "Tricks/KiteLoopTracker.h"
 #include "KiteComponent.generated.h"
 
 class UWindComponent;
@@ -210,6 +211,41 @@ public:
 	/** Degrees the kite has turned under the current steering input; 360 is one loop. Positive to the right. */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	float GetTurnDeg() const { return TurnDeg; }
+
+	/**
+	 * The kite's own heading turn in its last fixed step (deg, + to the right, the sign of GetTurnDeg),
+	 * looping or not: the steering, weathercock and gravity turn of the nose, not a difference of
+	 * headings. 0 with slack lines and on the water. This is what the loop records are built from.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Kite|Loops")
+	float GetLastStepTurnDeg() const { return LastStepTurnDeg; }
+
+	/** The side the loop in progress is flown to: +1 right, -1 left (the sign of GetTurnDeg); 0 when not looping. */
+	UFUNCTION(BlueprintPure, Category = "Kite|Loops")
+	float GetLoopSide() const { return bLooping ? LoopSide : 0.0f; }
+
+	/**
+	 * The kite's loop records, oldest first (docs/tricks/T0.md section 3): every whole loop and every
+	 * unfinished one of at least half a turn, built from GetLastStepTurnDeg each fixed step by an
+	 * FKiteLoopTracker, so they do not depend on IsLooping. Times are on the kite's clock
+	 * (GetSimTimeSeconds). Placing the kite (a reset, a relaunch) drops the open run, not the records.
+	 */
+	const TArray<FKiteLoopRecord>& GetLoopRecords() const { return LoopTracker.GetRecords(); }
+
+	/** Loop records made so far, including any no longer kept: goes up by one per record. */
+	UFUNCTION(BlueprintPure, Category = "Kite|Loops")
+	int32 GetLoopRecordCount() const { return LoopTracker.GetTotalRecorded(); }
+
+	/** The loop being flown now as a provisional, incomplete record (turn since its last whole loop); false when no run is open. */
+	UFUNCTION(BlueprintPure, Category = "Kite|Loops")
+	bool GetOpenLoop(FKiteLoopRecord& OutLoop) const { return LoopTracker.GetOpenRun(OutLoop); }
+
+	/** Direction of the open loop run: +1 right, -1 left, 0 when none is open. */
+	UFUNCTION(BlueprintPure, Category = "Kite|Loops")
+	int32 GetLoopDirection() const { return LoopTracker.GetRunDirection(); }
+
+	/** The loop tracker the kite steps, for its settings and the open run's total turn. */
+	const FKiteLoopTracker& GetLoopTracker() const { return LoopTracker; }
 
 	/** Place the kite parked at this azimuth (keeps elevation). */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
@@ -593,6 +629,15 @@ protected:
 
 	void Crash();
 	void Relaunch();
+
+	/** Feeds the loop tracker this step: LastStepTurnDeg, the elevation, tension and the rider, and whether the kite is on the water. */
+	void StepLoopTracker(const FVector& RiderPos, const FVector& RiderVelocity);
+
+	/** Loop records from the kite's own per-step turn (T0.3). */
+	FKiteLoopTracker LoopTracker;
+
+	/** Heading turn in the last fixed step (deg, + right), set in StepFlight whether or not the kite is looping. */
+	float LastStepTurnDeg = 0.0f;
 
 	/** Unit vector from the rider to the kite. */
 	FVector KiteDir;

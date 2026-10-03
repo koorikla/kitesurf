@@ -539,8 +539,12 @@ bool FKiteSurfJumpCleanLanding::RunTest(const FString& Parameters)
 					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 				}
 				UE_LOG(LogKiteSurf, Log, TEXT("CleanLanding: PostLandSpeed = %.1f, Expected ≈ %.1f; landing %.2f g at %.2f m/s, sinking %.1f cm/s a frame later and %.1f cm/s 0.5 s later at %.1f cm"),
-					PostLandSpeed, PreLandSpeed * 0.8f, BoardComp->GetLastLandingG(), BoardComp->GetLastLandingSinkMS(), SinkAfterFrameCmS, -BoardComp->Velocity.Z, Pawn->GetActorLocation().Z);
-				TestNearlyEqual(TEXT("Speed retained ~80% on clean landing"), PostLandSpeed, PreLandSpeed * 0.8f, 25.0f);
+					PostLandSpeed, PreLandSpeed * BoardComp->GetLastLandingVerdict().SpeedRetention, BoardComp->GetLastLandingG(), BoardComp->GetLastLandingSinkMS(), SinkAfterFrameCmS, -BoardComp->Velocity.Z, Pawn->GetActorLocation().Z);
+				// The landing evaluator grades it (T1.5): straight, soft and with the kite up it is stomped
+				// and keeps 85% (the old single clean grade kept 80%).
+				const FLandingVerdict Verdict = BoardComp->GetLastLandingVerdict();
+				TestTrue(TEXT("Graded stomped or clean"), Verdict.Grade == ELandingGrade::Stomped || Verdict.Grade == ELandingGrade::Clean);
+				TestNearlyEqual(TEXT("Speed retained as the grade says"), PostLandSpeed, PreLandSpeed * Verdict.SpeedRetention, 25.0f);
 				TestTrue(FString::Printf(TEXT("A frame after touchdown the water is taking the sink out (%.1f cm/s, touched down at 50)"), SinkAfterFrameCmS), SinkAfterFrameCmS < 50.0f);
 				TestNearlyEqual(TEXT("The landing's load is 1 + v^2 / (2 g s) for its sink (g)"), BoardComp->GetLastLandingG(), UBoardMovementComponent::LandingGForSink(BoardComp->GetLastLandingSinkMS(), BoardComp->LandingAbsorbDistanceCm), 0.001f);
 				TestNearlyEqual(TEXT("Half a second later the board rides the surface (cm/s)"), (float)BoardComp->Velocity.Z, 0.0f, 10.0f);
@@ -584,7 +588,7 @@ bool FKiteSurfJumpCrashRecovery::RunTest(const FString& Parameters)
 				BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
 
 				TestFalse(TEXT("Last landing was not clean"), BoardComp->WasLastLandingClean());
-				TestTrue(TEXT("Crash triggered when landing angle > 30 deg"), BoardComp->IsCrashing());
+				TestTrue(TEXT("Crash triggered when the landing yaw is past the sketchy limit (90 > 75 deg)"), BoardComp->IsCrashing());
 				TestEqual(TEXT("Board enters Landing state"), BoardComp->GetBoardState(), EBoardState::Landing);
 
 				// Simulate crash deceleration and respawn (recovers within 2.0 seconds)

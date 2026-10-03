@@ -127,13 +127,11 @@ UBoardMovementComponent::UBoardMovementComponent()
 	JumpMinSpeedKnots = 8.0f;   // 8 kn
 	JumpMinEdgeInput = 0.4f;    // 0.4
 	MaxJumpHeight = 500000.0f;  // 5 km: the base of the level's clouds
-	MaxLandingAngle = 30.0f;    // 30 deg
 	LandingAbsorbDistanceCm = LandingMath::DefaultLandingAbsorbDistanceCm; // 45 cm standing: research 0.2 to 0.4 m of legs and immersion plus the water's give
 	CrouchAbsorbBonus = 1.0f;           // a full crouch doubles it
 	CrashLandingG = 10.0f; // measured landings are 4.2 to 5.5 g; 10 is a hard landing a rider can still stand, and what the trick grading uses
 	HotLandingSinkMS = 6.0f;
 	HotLandingKiteElevationDeg = 45.0f;
-	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
 	CrashRespawnDelay = 1.0f;   // 1.0 s (total crash-to-reset: 1.5 s)
 	MaxStepSeconds = 1.0f / 240.0f;
@@ -309,7 +307,7 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 
 	Velocity.Z = FMath::Max(Velocity.Z + VerticalDeltaV, VerticalDeltaV);
 
-	BeginAirborne();
+	BeginAirborne(true);
 
 	UE_LOG(LogKiteSurf, Log, TEXT("Board Jump initiated: Speed=%.1f kn, Edge=%.2f, KiteLiftZ=%.1f, Impulse=%.1f, VZ=%.1f cm/s"),
 		SpeedKnots, CurrentEdgeInput, UpwardKiteForce, Impulse, Velocity.Z);
@@ -317,9 +315,9 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 	return EJumpRejectReason::None;
 }
 
-void UBoardMovementComponent::BeginAirborne()
+void UBoardMovementComponent::BeginAirborne(bool bPopped)
 {
-	bLiftedByKite = false;
+	bLiftedByKite = !bPopped;
 	CurrentBoardState = EBoardState::Airborne;
 	CurrentJumpAirtime = 0.0f;
 	CurrentJumpHeight = 0.0f;
@@ -327,6 +325,22 @@ void UBoardMovementComponent::BeginAirborne()
 	CurrentJumpDistance = 0.0f;
 	JumpStartLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	LandingStateTimer = 0.0f;
+
+	// The take-off, for the trick tracker and anything bound. A pop comes between steps and a kite
+	// lift-off inside one; either way the jump's airtime counts from here, so the landing comes
+	// LastJumpAirtime after LastTakeoffTimeSeconds.
+	++TakeoffCount;
+	bLastTakeoffPopped = bPopped;
+	LastTakeoffTimeSeconds = SimTimeSeconds;
+	CurrentJumpApexTimeSeconds = SimTimeSeconds;
+	bJumpRising = false; // a lift-off can start level: the apex waits for the board to rise first
+	LastApexEventHeightCm = -1.0f;
+	OnBoardTakeoff.Broadcast(bPopped);
+}
+
+void UBoardMovementComponent::NoteJumpEnd(float LandingAngleDeg)
+{
+	LastLandingAngleDeg = LandingAngleDeg;
 }
 
 void UBoardMovementComponent::SetBoardSize(EBoardSize InSize)
@@ -529,6 +543,8 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			if (CurrentJumpHeight > CurrentJumpApexHeight)
 			{
 				CurrentJumpApexHeight = CurrentJumpHeight;
+				// The height is where the last step left the board, at the start of this one.
+				CurrentJumpApexTimeSeconds = SimTimeSeconds - FMath::Max(DeltaTime, 0.0f);
 			}
 			CurrentJumpDistance = FVector::Dist2D(Location, JumpStartLocation);
 
@@ -539,6 +555,23 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				ClampedLocation.Z = WaterHeight + MaxJumpHeight;
 				UpdatedComponent->SetWorldLocation(ClampedLocation);
 				Velocity.Z = FMath::Min(Velocity.Z, 0.0f);
+			}
+
+			// Apex: the first step that is no longer rising after rising, at a new highest point
+			// (a kite yank after the rider started down can make a second, higher one).
+			if (Velocity.Z > 0.0f)
+			{
+				bJumpRising = true;
+			}
+			else if (bJumpRising)
+			{
+				bJumpRising = false;
+				if (CurrentJumpApexHeight > LastApexEventHeightCm)
+				{
+					LastApexEventHeightCm = CurrentJumpApexHeight;
+					++ApexCount;
+					OnBoardApex.Broadcast(CurrentJumpApexHeight);
+				}
 			}
 		}
 
@@ -572,8 +605,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const float LiftoffFactor = 1.0f + LoadHoldBonus * LoadAmount;
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffFactor - 1.0f))
 		{
-			BeginAirborne();
-			bLiftedByKite = true;
+			BeginAirborne(false);
 			bIsAirborne = true;
 			Velocity.Z = FMath::Max(Velocity.Z, 0.0f);
 			UE_LOG(LogKiteSurf, Log, TEXT("Board lifted off by the kite: upward force %.0f N against %.0f N of weight"), KiteUnits::UnrealForceToN(TotalForce.Z - GravityForceZ), KiteUnits::UnrealForceToN(-GravityForceZ));
@@ -736,17 +768,33 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		// The harness (docs/physics/plan-3.md item 3): standing on the board on the water with the lines
 		// taut and pulling across the water, the heading is held within MaxUpwindHeadingDeg upwind of
 		// the beam reach of the pull. The pull's direction is the line force's, the board's only
-		// external force.
+		// external force. Never in the air, where the rider attitude or the kinematic spin owns the
+		// heading.
 		const UKiteComponent* HarnessKite = GetOwner() ? GetOwner()->FindComponentByClass<UKiteComponent>() : nullptr;
 		const bool bHarnessActive = bHarnessLimit && !bIsAirborne && !bHydrodynamicsDisabled && !IsFloating() && HarnessKite && HarnessKite->AreLinesTaut()
 			&& ExternalForce2D.SizeSquared() > FMath::Square(KiteUnits::NToUnrealForce(HarnessMinHorizontalPullN));
 		const float PullYawDeg = bHarnessActive ? FMath::RadiansToDegrees(FMath::Atan2(ExternalForce2D.Y, ExternalForce2D.X)) : 0.0f;
 		bool bTurnedByCarve = false;
 		bool bSwitchedEnds = false;
-		if (bIsAirborne)
+		bAirBoardQuatInUse = false;
+		if (bIsAirborne && bAirAttitudeActive)
 		{
-			// In the air the carve input spins the board. Left alone, the rider brings it back in
-			// line with the direction of travel (either way round) for the landing.
+			// The rider's attitude turns the strapped board (T1.2): it is drawn and landed with its full
+			// orientation, and the physics root keeps only its heading for the water and the landing's
+			// course. A board pointing nearly straight up or down has no heading to speak of: the last
+			// one is held.
+			AirBoardQuat = AirAttitudeBoardQuat.GetNormalized();
+			bAirBoardQuatInUse = true;
+			const FVector Nose = AirBoardQuat.GetAxisX();
+			const FVector Nose2D(Nose.X, Nose.Y, 0.0f);
+			constexpr float MinHeadingNoseLength = 0.2f;
+			const float HeadingYaw = Nose2D.Size() >= MinHeadingNoseLength ? FMath::RadiansToDegrees(FMath::Atan2(Nose2D.Y, Nose2D.X)) : Rotation.Yaw;
+			TargetRotation = FRotator(0.0f, HeadingYaw, 0.0f);
+		}
+		else if (bIsAirborne)
+		{
+			// Without the rider attitude: in the air the carve input spins the board. Left alone, the
+			// rider brings it back in line with the direction of travel (either way round) for the landing.
 			if (FMath::Abs(CurrentEdgeInput) > 0.05f)
 			{
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + CurrentEdgeInput * AirSpinRate * DeltaTime);
@@ -880,15 +928,6 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			const bool bReenteringWater = (SinkCmS >= 0.0f) && (PostMoveLocation.Z <= WaterHeight + WaterContactHeightCm);
 			if (bReenteringWater && CurrentJumpAirtime > 0.05f)
 			{
-				const FVector Velocity2D = Velocity.GetSafeNormal2D();
-				const FVector Forward2D = UpdatedComponent->GetForwardVector().GetSafeNormal2D();
-				float LandingAngleDeg = 0.0f;
-				if (!Velocity2D.IsNearlyZero() && !Forward2D.IsNearlyZero())
-				{
-					// A twin-tip lands either way round, so only the angle to the board's axis matters.
-					const float Dot = FMath::Clamp(FMath::Abs(FVector::DotProduct(Forward2D, Velocity2D)), 0.0f, 1.0f);
-					LandingAngleDeg = FMath::RadiansToDegrees(FMath::Acos(Dot));
-				}
 				bWasInWaterContact = true;
 
 				// A skip off the surface is not a jump: carry on riding with nothing lost or scored.
@@ -907,6 +946,14 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				LastJumpApexHeight = CurrentJumpApexHeight;
 				LastJumpAirtime = CurrentJumpAirtime;
 				LastJumpDistance = CurrentJumpDistance;
+				// The landing's geometry: the board's tilt from the water and its yaw off the course (either
+				// end: a switch landing is fine), and the rider's up. With the rider attitude the board is its
+				// full orientation and the rider's own; without it, the root's orientation and an upright rider.
+				const FQuat LandingBoardQuat = bAirBoardQuatInUse ? AirBoardQuat : UpdatedComponent->GetComponentQuat();
+				const FQuat LandingBodyQuat = bAirBoardQuatInUse ? AirAttitudeBodyQuat : FQuat::Identity;
+				const FVector LandingAngularVelocity = bAirBoardQuatInUse ? AirAttitudeAngularVelocity : FVector::ZeroVector;
+				const FLandingGeometry LandingGeometry = LandingEvaluator::ComputeGeometry(LandingBoardQuat, WaterNormal, Velocity, LandingBodyQuat, LandingAngularVelocity);
+				NoteJumpEnd(LandingGeometry.YawOffVelocityDeg);
 				++JumpCount;
 				if (CurrentJumpApexHeight > BestJumpHeight)
 				{
@@ -931,30 +978,57 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				}
 				bLastLandingHot = LastLandingSinkMS > HotLandingSinkMS || KiteElevationDeg < HotLandingKiteElevationDeg;
 
-				if (LandingAngleDeg <= MaxLandingAngle && LastLandingG <= CrashLandingG)
+				// The grade (docs/tricks.md 6.7): the geometry above, the sink, the g and the kite.
+				FLandingInputs LandingInputs;
+				LandingEvaluator::ApplyGeometry(LandingGeometry, LandingInputs);
+				LandingInputs.SinkMS = LastLandingSinkMS;
+				LandingInputs.LandingG = LastLandingG;
+				LandingInputs.KiteElevationDeg = KiteElevationDeg;
+				LandingInputs.bHotLanding = bLastLandingHot;
+				FLandingThresholds Thresholds = LandingThresholds;
+				Thresholds.CrashLandingG = CrashLandingG;
+				Thresholds.HotLandingSinkMS = HotLandingSinkMS;
+				Thresholds.HotLandingKiteElevationDeg = HotLandingKiteElevationDeg;
+				LastLandingInputs = LandingInputs;
+				LastLandingVerdict = LandingEvaluator::Evaluate(LandingInputs, Thresholds);
+
+				// The rider is back on the water: the attitude's hold on the board ends here.
+				bAirAttitudeActive = false;
+				bAirBoardQuatInUse = false;
+
+				const UEnum* GradeEnum = StaticEnum<ELandingGrade>();
+				const UEnum* CauseEnum = StaticEnum<ELandingCause>();
+				const FString GradeName = GradeEnum ? GradeEnum->GetNameStringByValue(static_cast<int64>(LastLandingVerdict.Grade)) : FString();
+				const FString CauseName = CauseEnum ? CauseEnum->GetNameStringByValue(static_cast<int64>(LastLandingVerdict.Cause)) : FString();
+				if (LastLandingVerdict.Grade != ELandingGrade::Crash)
 				{
-					// Clean landing: the absorber takes the sink out, and the rider keeps CleanLandingSpeedRetention of their speed.
+					// Landed: the absorber takes the sink out, and the rider keeps the grade's share of their speed.
 					bLastLandingClean = true;
 					bIsCrashing = false;
-					Velocity.X *= CleanLandingSpeedRetention;
-					Velocity.Y *= CleanLandingSpeedRetention;
+					Velocity.X *= LastLandingVerdict.SpeedRetention;
+					Velocity.Y *= LastLandingVerdict.SpeedRetention;
 					BeginTouchdownAbsorb(SinkCmS);
 
 					CurrentBoardState = EBoardState::Landing;
 					LandingStateTimer = 0.25f;
 
+					OnBoardLandingVerdict.Broadcast(LastLandingVerdict);
 					OnBoardLanding.Broadcast(LastLandingG);
 
-					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn, LandingG: %.2f (sink %.2f m/s over %.0f cm, kite %.0f deg up%s)"),
-						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, KiteUnits::CmSToKnots(Velocity.Size2D()), LastLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg, bLastLandingHot ? TEXT(", HOT") : TEXT(""));
+					UE_LOG(LogKiteSurf, Log, TEXT("Landed %s%s%s: tilt %.1f deg, yaw %.1f deg, rider up %.2f. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn (x%.2f), LandingG: %.2f (sink %.2f m/s over %.0f cm, kite %.0f deg up%s)"),
+						*GradeName, LastLandingVerdict.Cause != ELandingCause::None ? TEXT(", ") : TEXT(""), LastLandingVerdict.Cause != ELandingCause::None ? *CauseName : TEXT(""),
+						LandingInputs.TiltDeg, LandingInputs.YawOffVelocityDeg, LandingInputs.BodyUpDot, LastJumpApexHeight, LastJumpAirtime, KiteUnits::CmSToKnots(Velocity.Size2D()), LastLandingVerdict.SpeedRetention,
+						LastLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg, bLastLandingHot ? TEXT(", HOT") : TEXT(""));
 				}
 				else
 				{
 					// Crash landing: speed drops to 0 over 0.5 s, rider respawns upright after 1.5 s
+					OnBoardLandingVerdict.Broadcast(LastLandingVerdict);
 					TriggerCrash();
 
-					UE_LOG(LogKiteSurf, Log, TEXT("Crash landing! Angle: %.1f deg (most %.1f), LandingG: %.2f (most %.1f; sink %.2f m/s over %.0f cm, kite %.0f deg up%s). Apex: %.1f cm, Airtime: %.2f s. Initiating crash sequence."),
-						LandingAngleDeg, MaxLandingAngle, LastLandingG, CrashLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg, bLastLandingHot ? TEXT(", HOT") : TEXT(""), LastJumpApexHeight, LastJumpAirtime);
+					UE_LOG(LogKiteSurf, Log, TEXT("Crash landing (%s)! Tilt %.1f deg, yaw %.1f deg, rider up %.2f, LandingG: %.2f (most %.1f; sink %.2f m/s over %.0f cm, kite %.0f deg up%s). Apex: %.1f cm, Airtime: %.2f s. Initiating crash sequence."),
+						*CauseName, LandingInputs.TiltDeg, LandingInputs.YawOffVelocityDeg, LandingInputs.BodyUpDot, LastLandingG, CrashLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg,
+						bLastLandingHot ? TEXT(", HOT") : TEXT(""), LastJumpApexHeight, LastJumpAirtime);
 				}
 			}
 		}
@@ -994,6 +1068,23 @@ float UBoardMovementComponent::LimitTurnByHarness(float YawDeg, float TargetYawD
 		return TargetYawDeg;
 	}
 	return FRotator::NormalizeAxis(YawDeg + Side * (OffPullAllowed - OffPullBefore));
+}
+
+void UBoardMovementComponent::SetAirAttitude(const FQuat& BoardQuat, bool bActive, const FQuat& BodyQuat, const FVector& AngularVelocityRadS)
+{
+	bAirAttitudeActive = bActive;
+	AirAttitudeBoardQuat = BoardQuat.GetNormalized();
+	AirAttitudeBodyQuat = BodyQuat.GetNormalized();
+	AirAttitudeAngularVelocity = AngularVelocityRadS;
+}
+
+FQuat UBoardMovementComponent::GetBoardWorldQuat() const
+{
+	if (bAirBoardQuatInUse && CurrentBoardState == EBoardState::Airborne)
+	{
+		return AirBoardQuat;
+	}
+	return UpdatedComponent ? UpdatedComponent->GetComponentQuat() : FQuat::Identity;
 }
 
 float UBoardMovementComponent::LandingGForSink(float SinkMS, float AbsorbDistanceCm)

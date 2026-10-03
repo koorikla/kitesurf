@@ -1,6 +1,6 @@
 # Agent skills for KiteSurf
 
-`skills/` holds 16 skills in the `SKILL.md` format, for AI coding agents working in this
+`skills/` holds 17 skills in the `SKILL.md` format, for AI coding agents working in this
 repository. `AGENTS.md` at the repository root lists when to use each one.
 
 ## Provenance
@@ -8,7 +8,7 @@ repository. `AGENTS.md` at the repository root lists when to use each one.
 ### Written for this repository
 
 `kitesurf-build-test`, `kitesurf-automation-tests`, `kitesurf-editor-python`,
-`kitesurf-big-air-sim`, `unreal-water-queries`.
+`kitesurf-big-air-sim`, `unreal-water-queries`, `tmux-agent-comms`.
 
 These describe this repository's scripts, tests and physics model. Keep them in step with
 the code: when a script or convention changes, update the skill in the same change.

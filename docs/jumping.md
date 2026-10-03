@@ -9,7 +9,7 @@ The board lifecycle transitions through four distinct states in `EBoardState`:
 1. **Displacement**: Speeds below the planing threshold (< 400 cm/s).
 2. **Planing**: Speeds $\ge 400 \text{ cm/s}$ skimming over the surface.
 3. **Airborne**: Active pop off the water, or the lines lifting the rider off; the water's forces are off while above water surface + 10 cm, and the air drags on the rider instead.
-4. **Landing**: 0.25 s after a clean touchdown, while the touchdown absorber takes the sink out; or the crash recovery.
+4. **Landing**: 0.25 s after a touchdown graded anything but Crash, while the touchdown absorber takes the sink out; or the crash recovery.
 
 ### Pop
 A rider can always pop while they are up on the board on the water: no edge and no minimum speed are needed. `Jump()` is refused (`NotPlaning`, shown as "Get up on the board first") only in the air, during a crash, or while floating. A part-sunk board gives proportionally less push.
@@ -39,6 +39,7 @@ The legs give about 2.5 m/s (3.7 m/s with the weight on the tail, 5.9 m/s from a
 - In a storm the kite loads up at once, so the best moment is 0.2 s after it answers; from 0.22 s in 90 kn (0.3 s in 60 kn) the lines pluck the loaded rider off first, lower. Let go at 0.2 s, that is 21.2 m and 156 m downwind in 60 kn on the 3 m kite and 22.4 m and 225 m in 90 kn on the 2 m (`KiteSurf.Wind.StormIsRideable`), and both land crouched, sinking 12.1 and 12.6 m/s: 9.4 and 9.9 g, hot, just inside the crash (the descent gap above). The higher storm jumps come down harder and crash: in 60 kn every release from 0.22 s until the pluck, the 0.25 s jump (23.9 m) at 13.4 m/s and 11.2 g and the highest (24.5 m at 0.28 s) at 11.4 g; in 90 kn the releases at 0.17 to 0.19 s, which go highest (25.0 m at 0.18 s), at 11.1 g. Height still levels off above 60 kn (`docs/physics/storm-jumps.md`). A kite far too big for a storm does not go higher: it barely jumps.
 
 ### Airborne Dynamics & Apex Envelope
+- The rider rotates in the air with `URiderAttitudeComponent` (see Rider rotation below). The board's full orientation in the air is the strapped board's (`SetAirAttitude`, `GetBoardWorldQuat`); the physics root keeps only its heading. Without the attitude (`bUseRiderAttitude` off) the board keeps the old kinematic air orientation: carve input spins it at `AirSpinRate`, left alone it lines up with the travel, and weight shift pitches it by `AirWeightShiftPitchDeg`.
 - The line force continues to act on the rider. The pawn tells the kite when the rider is in the air (`UKiteComponent::SetRiderAirborne`), and with the bar centred the kite's assist then flies it to 12 over them and holds it there (`AirborneZenithGain`, `AirborneZenithMaxHeadingDeg`; 0 gain turns that off), so it carries most of their weight on the way down. Bar over still flies it round the window, and a loop is still the rider's.
 - The air drags on the rider and board, $0.5 \rho C_D A |v_a| v_a$ with `RiderDragAreaM2` (0.7 m^2) and $v_a$ the wind at chest height (`UKiteComponent::RiderWindHeightCm`) minus their velocity, sampled at the board's simulation time.
 - A little slack in the lines does not drop the kite: the canopy keeps flying and takes the slack back up. Only with more than `SlackCollapseCm` of slack is it a loose sheet that falls.
@@ -57,19 +58,17 @@ Upon coming down to the water (sinking into it relative to its surface, which on
 - **The sink** $v$ (m/s, relative to the surface) is taken out by the touchdown absorber at a constant $v^2 / (2 s)$ over the absorb distance $s$: `LandingAbsorbDistanceCm` (45 cm standing: the legs, the board's immersion and the water's give; research 0.2 to 0.4 m of legs and immersion) times $1 + \text{CrouchAbsorbBonus} \cdot \text{crouch}$ (1: a full crouch doubles it). The board goes $s$ on into the water and comes back up on the buoyancy and the planing lift; nothing is snapped or zeroed.
 - **Landing g**: $1 + v^2 / (2 g s)$, what `OnBoardLanding` reports, `GetLastLandingG()` holds (with `GetLastLandingSinkMS()` and `GetLastLandingAbsorbCm()`) and the HUD's landing card shows. Standing, 2 m/s is 1.7 g, 4 m/s 3.7 g and 6 m/s 7.1 g (the ratio of the squares); crouched 1.3 and 4.0 g; at 6 m/s the water's push on the board peaks at the landing's g and the board goes 31 cm on into the water (`KiteSurf.Physics.LandingGFromSink`).
 - **Hot** (`WasLastLandingHot()`): sinking faster than `HotLandingSinkMS` (6 m/s), or with the kite under `HotLandingKiteElevationDeg` (45 deg) above the rider. A flag, not a crash.
-- **Landing Angle**: between the horizontal velocity and the board's axis, either way round ($0..90^\circ$).
-- **Clean Landing** (Angle $\le$ `MaxLandingAngle` (30 deg) and the landing g at most `CrashLandingG` (10)):
-  - Rider retains 80% horizontal speed (`CleanLandingSpeedRetention = 0.80`).
-  - The board is in the Landing state for 0.25 s while the absorber works, then planing or displacement.
-- **The timed jump at 30 kn** (crouched from the apex) touches down sinking 8.2 m/s with the kite 55 deg up, over 90 cm: 4.8 g, hot (the sink is over 6 m/s), ridden away (`KiteSurf.Physics.GoodLandingIsThreeToSixG`). That is inside the measured 4.2 to 5.5 g; the sink itself is still above the real 3 to 6 m/s, because the kite loses height in the last two seconds (known gaps). Standing, the same landing is 8.6 g: hot, but landed. Past 10 g it is a crash: a 9.5 m/s sink standing (11.2 g), or 12.7 m/s crouched, about where storm jumps come down (the 0.2 s releases land at 12.1 and 12.6 m/s, 9.4 and 9.9 g).
-- **Crash Landing** (Angle $> 30^\circ$, or more than `CrashLandingG`):
+- **The grade** (`LandingEvaluator::Evaluate`, below): from the board's tilt from the water and its yaw off the velocity along the water (either way round), the rider's up, the landing g, the sink, the hot flag and the kite's elevation. In the air with the rider attitude the board and the rider are the attitude's; without it, the root's orientation and an upright rider. `GetLastLandingVerdict()` holds the grade, the cause and the speed kept, `GetLastLandingInputs()` what it was graded on, and `OnBoardLandingVerdict` is broadcast for every landing (before `OnBoardCrash` for a crash). `GetLastLandingAngleDeg()` is the evaluator's yaw.
+- **Landed** (any grade but Crash): the rider keeps the grade's share of their horizontal speed (stomped 85%, clean 80%, sketchy 60%); the board is in the Landing state for 0.25 s while the absorber works, then planing or displacement. `WasLastLandingClean()` is true. `OnBoardLanding(LandingG)` is broadcast as before.
+- **The timed jump at 30 kn** (crouched from the apex) touches down sinking 8.2 m/s with the kite 55 deg up, over 90 cm: 4.8 g, hot (the sink is over 6 m/s), so graded sketchy (cause too hard) and ridden away with 60% of its speed, where the single clean grade kept 80% (`KiteSurf.Physics.GoodLandingIsThreeToSixG`). That is inside the measured 4.2 to 5.5 g; the sink itself is still above the real 3 to 6 m/s, because the kite loses height in the last two seconds (known gaps). Standing, the same landing is 8.6 g: hot, but landed. Past 10 g it is a crash: a 9.5 m/s sink standing (11.2 g), or 12.7 m/s crouched, about where storm jumps come down (the 0.2 s releases land at 12.1 and 12.6 m/s, 9.4 and 9.9 g).
+- **Crash Landing** (a Crash grade: tilt past 50 deg, yaw past 75 deg, the rider inverted, or more than `CrashLandingG`):
   - Speed decelerates linearly to 0 over `CrashDecelDuration` (0.5 s).
   - Rider stays at crash location for `CrashRespawnDelay` (1.0 s), 1.5 s from the crash in all.
   - Rider respawns upright (pitch=0, roll=0, at water level) at 8 kn on the tack they were on (`ResetToTack`), with the kite parked at 45 degrees on that side.
   - The kite keeps flying through the crash, but its pull is spent each step: the scripted stop owns the rider's motion. Until plan-3 item 1 the board saved that pull up and applied it in the first step after the reset, and with the bar in and the kite deep in the window in 25 kn that threw the rider 26 m up at 36 m/s; now they come out of the reset at its 8 kn and stay on the water (`KiteSurf.Physics.CrashedRiderIsNotFlung`).
 
-### Landing grades (planned)
-`LandingEvaluator::Evaluate` (`Tricks/LandingEvaluator.h`, docs/tricks.md 6.7) is written and tested but **not yet called by the board**: the clean-or-crash test above is still what decides a landing. When it is wired in, the board's angle test becomes a grade (thresholds are **estimates**, every limit inclusive):
+### Landing grades
+`LandingEvaluator::Evaluate` (`Tricks/LandingEvaluator.h`, docs/tricks.md 6.7) grades every landing from a jump; the board crashes only on a Crash grade. The thresholds are **estimates**, every limit inclusive, in `UBoardMovementComponent::LandingThresholds` (its `CrashLandingG` and hot-landing limits come from the board's own properties of those names):
 
 | Grade | Tilt from the water normal | Yaw off velocity (either end) | Other | Speed kept |
 | :--- | :--- | :--- | :--- | :--- |
@@ -78,16 +77,21 @@ Upon coming down to the water (sinking into it relative to its surface, which on
 | Sketchy | ≤ 50° | ≤ 75° | Or a hot landing (kite under 45°, sink over 6 m/s) or over 8 g | 60% |
 | Crash | Beyond | Beyond | Or board off, bar lost, pass unfinished, rider inverted, over 10 g | 0 |
 
-The yaw is folded to 0..90°, so a switch landing (tail first) grades the same as a forward one. Each verdict carries a cause for the failure message: under- or over-rotated (tilt past 50°, by the direction of the spin), sideways, inverted, kite too low, too hard, board not caught, bar lost, pass not finished. Today any yaw over 30° crashes; with the table, 30 to 75° will be clean or sketchy, and the 90° of `KiteSurf.Jump.CrashRecovery` still crashes.
+The yaw is folded to 0..90°, so a switch landing (tail first) grades the same as a forward one (`KiteSurf.Trick.SwitchLandingIsCleanOnBoard`). Each verdict carries a cause for the failure message: under- or over-rotated (tilt past 50°, by the direction of the spin), sideways, inverted, kite too low, too hard, board not caught, bar lost, pass not finished.
+
+What changed against the single angle test (`MaxLandingAngle` 30° and `CleanLandingSpeedRetention` 0.8, both gone):
+- A yaw of 30 to 75° was a crash and is now clean (to 45°) or sketchy (`KiteSurf.Trick.BoardLandingUsesEvaluator`); the 90° of `KiteSurf.Jump.CrashRecovery` still crashes, sideways.
+- The board's tilt and the rider's up count: a rider who comes down past 50° of tilt or upside down crashes, under-rotated, over-rotated or inverted (`KiteSurf.Trick.UnderRotatedRollCrashesOnPawn`).
+- A straight landing keeps 85% of its speed when stomped (`KiteSurf.Jump.CleanLanding`: 0.5 m/s with the kite up is stomped), 80% clean, and a hot landing 60% (sketchy) where it kept 80%.
 
 ## Jump record and trick card
 `UTrickTrackerComponent` (`Tricks/TrickTrackerComponent.h`, on the pawn as `GetTrickTracker()`) turns every jump into an `FJumpRecord` with a name, a grade and a score (docs/tricks/T0.md sections 4 and 6). It does not tick: `AKiteRiderPawn::StepSimulation` calls `StepTracker` once per fixed step, right after the board. It reads only public getters of the board and the kite, so it works in tests where no delegate is bound:
 
-- **Take-off**: the board entering `Airborne`. The take-off time is the board time less `GetCurrentJumpAirtime()`. It counts as **popped** when the board already has airtime on the first step in the air: a pop (the jump key, or letting go of the load) leaves the water between steps, a kite lift-off inside one. This is an inference until the board exposes `WasLastTakeoffPopped` (physics phase 2).
-- **Apex**: the board's `GetLastJumpApexHeight()`, at the time of the step the board was seen highest.
-- **Airtime and distance**: the board's `GetLastJumpAirtime()` and `GetLastJumpDistance()`.
-- **Sink and landing g**: the board's own, `GetLastLandingSinkMS()` (relative to the surface) and `GetLastLandingG()` (1 + v²/(2 g s) over the absorb distance, which the crouch lengthens; see Landing Evaluation above), read when the board's jump count goes up. So the trick card and the landing card show the same g, and so do `OnBoardLanding`, the haptics and the sound. The timed 30 kn jump flown as `KiteSurf.Trick.TrackerRecordsJump` flies it lands at 7.4 g, graded **Clean**: the grade reads the g and the kite's elevation, not the board's hot flag. The landing yaw is not exposed by the board, so it is recorded as 0.
-- **Kite loops**: an `FKiteLoopTracker` stepped with the kite's heading turn each step: the signed angle between successive `GetKiteHeading()` values about the line from the rider to the kite (positive to the kite's right, the sign of `GetTurnDeg`). In the tests it agrees with the kite's own turn count to within 1%. A heading jump over 45° in one step, or a reset, cancels the open run. T0.3's kite hookup replaces this with the kite's own per-step turn.
+- **Take-off**: the board's own count, `GetTakeoffCount()`, with `WasLastTakeoffPopped()` and `GetLastTakeoffTimeSeconds()`. Every take-off goes through the board's `BeginAirborne(bool bPopped)`: the pop (the jump key, or letting go of the load) is popped, the kite lifting the rider off is not. Each also broadcasts `OnBoardTakeoff(bPopped)` for anything bound. A skip off the surface (a kite lift-off that comes down under 50 cm) is a take-off but not a jump, so it opens a live record that is dropped.
+- **Apex**: the board's `GetLastJumpApexHeight()`, at `GetCurrentJumpApexTimeSeconds()`, the board time at which the jump was highest. The board broadcasts `OnBoardApex(height)` and counts `GetApexCount()` on the first step that is no longer rising after rising, at a new highest point: once per jump, again only if the kite lifts the rider higher after they started down.
+- **Airtime and distance**: the board's `GetLastJumpAirtime()` and `GetLastJumpDistance()`. The landing comes the airtime after the take-off time.
+- **Sink, landing g and landing yaw**: the board's own, `GetLastLandingSinkMS()` (relative to the surface), `GetLastLandingG()` (1 + v²/(2 g s) over the absorb distance, which the crouch lengthens; see Landing Evaluation above) and `GetLastLandingAngleDeg()` (the landing evaluator's yaw: the board's axis against its velocity along the water), read when the board's jump count goes up. So the trick card and the landing card show the same g, and so do `OnBoardLanding`, the haptics and the sound. The landing angle is the record's `LandingYawDeg`, which the grade reads (it was recorded as 0 before the board exposed it). The timed 30 kn jump flown as `KiteSurf.Trick.TrackerRecordsJump` lands at 5.3 g, graded **Clean**: the grade reads the g, the yaw and the kite's elevation, not the board's hot flag. The straight jumps the tests fly land at 0.0 deg (`KiteSurf.Trick.JumpRecordMatchesTrajectory`).
+- **Kite loops**: the kite's own records, `UKiteComponent::GetLoopRecords()` and `GetOpenLoop()`. The kite steps an `FKiteLoopTracker` every fixed step with its own heading turn (`GetLastStepTurnDeg()`, the steering, weathercock and gravity turn of the nose, looping or not), so the records do not depend on `IsLooping` or on the HUD's turn counter. Placing the kite (a reset or a relaunch) cancels the open run; a kite crash ends it as a crashed record.
 - **The record**: `FJumpRecorder` finalises it when the board's jump count goes up, landed or crashed; a skip or a reset drops it. The loops are those overlapping take-off to landing, plus an open run of 180° or more. `FJumpSession` applies the repeat factor (a landed family pays 1, 0.75, 0.5, ...), keeps the last 200 records and the session's points.
 - **The trick book**: each finished record goes to `UKiteSurfGameInstance::RecordTrickLanding` when the game has that game instance; the book is saved with the settings, not here.
 
@@ -104,9 +108,15 @@ The first line is in the grade's colour: STOMPED green, CLEAN white, SKETCHY amb
 
 `kitesurf.Jumps` logs the session as CSV lines tagged `jumpcsv` in `LogKiteSurf`: index, outcome, name, height (m), airtime (s), distance (m), landing g, peak line tension (N), completed loops, points. `grep -o 'jumpcsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` gives the CSV.
 
-## Rider rotation (not yet wired)
+## Rider rotation
 
-`URiderAttitudeComponent` (`Source/KiteSurf/Public/Tricks/`) is the rider's rotation in the air for tricks (T1.2 in `docs/tricks.md`). **The pawn does not step it yet**: the air orientation in the game is still `AirSpinRate` and the auto-align above. Wiring it into `StepSimulation`, after the line force and before `StepBoard`, comes in a later change. Until then it runs only in the `KiteSurf.Trick.*` tests.
+`URiderAttitudeComponent` (`Source/KiteSurf/Public/Tricks/`) is the rider's rotation in the air for tricks (T1.2 in `docs/tricks.md`). It is **wired**: `AKiteRiderPawn::StepSimulation` steps it after the line force and before `StepBoard`, every fixed step (`StepRiderAttitude`), and the board flies and lands with it.
+
+- **Inputs** (`FAttitudeInputs`): the board's state at the start of the step, its velocity, this step's line force and taut flag, the height above the water and its normal, the board's vertical acceleration (measured step to step, filtered over `VerticalAccelFilterSeconds`, 0.1 s; the take-off starts it from free fall), the load and edge at the last step on the water (the pop zeroes the board's load), the travel side latched at the take-off, and three controls. On the water it copies the riding pose (`ComputeSlavedBodyQuat`: the stance facing and the riding lean from the simulation's own state, so the take-off is the same at any frame rate).
+- **Controls** (scripted for now; the keys and sticks come with T1.4): `SetPreWind(FVector2D)` holds the pre-wind stick, which winds up over `PreWindBuildSeconds` (0.5 s) while the jump button is held on the water and the stick is past `PreWindStickThreshold` (0.3); the last direction held is what the take-off uses, so letting go of the stick as you pop does not lose it. `SetAirRotationInput(FVector2D)` is the stick in the air (past `AirRotationDeadzone`, 0.15). `SetTuck(float)` is the tuck. Stick X +1 is a back roll, -1 a front roll; Y -1 (pulled) a backflip. From the console: `kitesurf.PreWind <x> <y>`, and `kitesurf.Input <steer> <sheet rate> <turn> <weight shift> <raw steer> <air rot x> <air rot y> <tuck>`.
+- **The board**: in the air the board is the strapped board (body times strap offset); the root keeps only its heading, held when the nose points nearly straight up or down. `AirSpinRate`, the auto-align and `AirWeightShiftPitchDeg` are not used while the attitude is live. Off (`bUseRiderAttitude` false, or no component), the board flies as before.
+- **What is drawn**: the drawn board (`BoardVisual`) takes the attitude's board between the last two steps, placed so the rider turns about their centre of mass (`ComAboveBoardCm` above the board), and eases back onto the root over `RiderHandoverSeconds` (0.2 s) after the landing; a crash or a reset puts it back at once. The jointed rider takes the attitude's body quaternion in the air: over the same 0.2 s from the take-off, and back after the landing, the torso and the pelvis line blend from the riding pose, so the pelvis starts exactly where the riding pose had it. The drawn crouch lets go no faster than the board's `LoadReleaseRatePerSec`, so the pop (which zeroes the board's load) no longer jumps the pelvis 30 cm in a frame: at 60 fps the pelvis moves at most 7 cm a frame against the root through a back roll, against 5 cm through a straight jump (`KiteSurf.Trick.BoardVisualFollowsAttitude`). The camera ignores all of it: in the air it follows the flight and its pivot sits straight above the root, and it never rolls (measured 0.0000 deg through a roll).
+- **On a real jump** (the phase 2 timed jump at 30 kn on the recommended kite, the jump button held through the send with a full back-roll pre-wind, `KiteSurf.Trick.BackRollFromPreWindOnRide`): 4.9 s in the air, the chest turns to the tail first, the rider is inverted 0.52 s after the take-off and upright again at 2.97 s, one inversion; the lines hold them 60 to 80 deg off upright until the last second, where the assist brings them round to land at 4 deg of tilt and 2 deg of yaw (sketchy, because the sink is hot). With no input the same jump never inverts, tilts at most 22 deg, keeps the board along the flight and lands at 2 deg of tilt and 3 deg of yaw (`KiteSurf.Trick.NoInputNoRotationOnRide`). 30, 60 and 120 fps give the same rotation (`KiteSurf.Trick.RotationStepRateIndependent`).
 
 The model, one fixed step (SI inside, cm and kg*cm/s^2 only at the boundary):
 - **State**: the body quaternion and the angular momentum L about the centre of mass. The inertia is diagonal in the body frame (Front, Right, Up) and blends from stretched to tucked, so `omega = I^-1 L` and a tuck spins the rider faster with no extra rule.
@@ -115,6 +125,7 @@ The model, one fixed step (SI inside, cm and kg*cm/s^2 only at the boundary):
   - **Line torque**: `LineTorqueScale * r x F` at the hook (`HookOffsetFromComCm`), and only while the lines are taut. It pulls Up towards the lines and does no work on rotation about them. Hanging still, the rider leans back atan(12/20) = 31 deg.
   - **Air control**: the stick sets a target rate. The torque is capped at `AirControlFractionPerS` of a full pre-wind per second, so the take-off decides most of the rotation.
   - **Landing assist**: a PD towards the nearest valid attitude, which is upright with the board along the travel, either way round. It acts only with no stick input, under `AssistWindowSeconds` from contact and within `AssistMaxErrorDeg`.
+  - **Travel align**: with no rotation committed (no pre-wind, no stick held this jump), no stick and the assist not acting, a yaw PD about world up keeps the board pointed along the flight, either end first, as the kinematic auto-align did: the kite drags the flight round by about 60 deg on the timed jump, and without it the board came down 65 deg off its course. It comes in over `StrapSettleSeconds` after the take-off.
 - **Posture damping and drag**: posture damping decays rotation off the committed axis, or all rotation when no axis is committed; drag acts on every axis. Both are exact exponential decays, so they cannot overshoot at any step size.
 - **Rotation**: the free rigid-body motion for the step, exact for a symmetric top. With no torque, |L| and the energy are conserved.
 - **Board**: the strapped board is the body times a strap offset. The offset eases from the take-off heel and pitch to flat under the feet.
@@ -134,8 +145,9 @@ The tunables are under the category `Tuning|Rotation`:
 | `AirControlFractionPerS` / `AirControlResponseSeconds` | 0.3 1/s / 0.25 s | |
 | `PostureDampingPerS` / `PostureMaxTorqueNm` | 3 1/s / 60 N*m | |
 | `AirAngularDragPerS` | 0.05 1/s | |
-| `AssistStrength` / `AssistWindowSeconds` / `AssistMaxErrorDeg` | 1 / 0.7 s / 60 deg | |
+| `AssistStrength` / `AssistWindowSeconds` / `AssistMaxErrorDeg` | 1 / 1.0 s / 90 deg | The plan's 0.7 s and 60 deg missed the rolled rider on a real jump, whom the lines hold 60 to 80 deg off upright until the last second. |
 | `AssistNaturalFreqHz` / `AssistDampingRatio` / `AssistMaxTorqueNm` | 1.2 Hz / 0.9 / 120 N*m | |
+| `TravelAlignNaturalFreqHz` / `TravelAlignDampingRatio` / `TravelAlignMaxTorqueNm` / `TravelAlignMinSpeedCmS` | 0.8 Hz / 1 / 40 N*m / 200 cm/s | 0 Hz turns it off. |
 | `StrapSettleSeconds` / `ComOffsetSettleSeconds` | 0.3 / 0.5 s | |
 
 Every default is an *estimate*.
@@ -144,7 +156,8 @@ Every default is an *estimate*.
 - With the plan's starting values (0.15 and 200 deg/s), the rider tips half over and falls back the way they came. That is not a roll.
 - Just above the energy needed to get over the top, the duration climbs steeply, past 3 s.
 - At 0.1 and 250 deg/s the roll goes round in 1.76 s, and 1.70 to 1.85 s at 720 to 880 N, inside the 1.5 to 2.5 s target (`KiteSurf.Trick.BackRollFromPreWind`).
-- Repeat the calibration on a real jump once the attitude is wired, and again once the kite sits overhead in the air (physics phase 2).
+- On the real timed jump (30 kn, the recommended kite, about 2 kN as the rider leaves the water) the same pre-wind goes over once: inverted at 0.52 s, upright again at 2.97 s (`KiteSurf.Trick.BackRollFromPreWindOnRide`).
+- In a `-game` run on the 9 m kite in 24 kn, which pulls 3.5 kN at the pop, the pre-wind alone turns the rider only to horizontal: they come down 60 to 77 deg over and crash, under-rotated. Holding the air stick towards the back roll and tucking for the first second takes them over (inverted with the board above them, landed clean). Whether the line torque should scale less than linearly with the tension, or the roll axis lean towards the lines, is open (a calibration question for the next pass).
 
 ## Default Tunable Properties
 
@@ -157,22 +170,21 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 | `EdgeReleaseSeconds` | `0` | Seconds of the kite's upward line force counted again as an impulse when the edge lets go (s). 0 is physics only; phase 1 used 0.22. |
 | `LoadHoldBonus` | `1.5` | Upward pull, in rider weights above their own, that a fully loaded rider hangs on to before the lines lift them off. |
 | `RiderDragAreaM2` | `0.7` | Drag area of the rider and board in the air (m^2). |
-| `AirSpinRate` | `200` | Board spin in the air at full carve (deg/s). |
-| `AirWeightShiftPitchDeg` | `30` | Board pitch at full weight shift in the air (deg). |
+| `AirSpinRate` | `200` | Board spin in the air at full carve (deg/s); only without the rider attitude. |
+| `AirWeightShiftPitchDeg` | `30` | Board pitch at full weight shift in the air (deg); only without the rider attitude. |
 | `MaxJumpHeight` | `500000` | Maximum jump apex height clamp in cm (5 km, the cloud base). |
-| `MaxLandingAngle` | `30` | Maximum deviation angle in degrees between velocity and board heading for clean landing. |
+| `LandingThresholds` | see Landing grades | The grades' tilt and yaw limits, the stomp's kite and g, and the speed kept per grade. Replaces `MaxLandingAngle` (30) and `CleanLandingSpeedRetention` (0.8). |
 | `LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | `45` / `1.0` | The distance a touchdown's sink is taken out over (cm), and how much longer a full crouch makes it (fraction). |
 | `CrashLandingG` | `10` | A landing harder than this (g) is a crash. |
 | `HotLandingSinkMS` / `HotLandingKiteElevationDeg` | `6` / `45` | A landing sinking faster than this (m/s), or with the kite lower than this (deg), is hot. |
 | `LoadRatePerSec` / `LoadReleaseRatePerSec` | `2.5` / `6.0` | How fast the crouch builds while the jump button is held, and lets go (1/s). |
 | `LoadPopBonus` | `0.6` | Extra pop from a full load, as a fraction. |
-| `CleanLandingSpeedRetention` | `0.8` | Fraction of horizontal velocity retained on clean landing (80%). |
 | `CrashDecelDuration` | `0.5` | Duration in seconds to decelerate to zero upon crash landing. |
 | `CrashRespawnDelay` | `1.0` | Time in seconds after the deceleration before the rider respawns upright (1.5 s in all). |
 
 ## HUD Telemetry
 `AKiteSurfHUD` renders:
-- Current board state: `Displacement`, `Planing`, `Airborne (<height>m)`, or `Landing (Clean/Crash!)`.
+- Current board state: `Displacement`, `Planing`, `Airborne (<height>m)`, or `Landing (Clean/Crash!)` (clean: any grade but Crash).
 - Jump stats in the telemetry: best height and distance, and the last jump's.
 - The jump readout, top centre: `12.4 m high   35 m far   2.1 s` while the rider is more than a metre up, then `JUMP  14.8 m high   62 m far   4.1 s` for four seconds after it ends, in gold with NEW BEST when it beat the session's best height (`UpdateJumpReadout`). Hops under a metre are not announced.
 - The trick card under the readout after a jump, and the trick ticker while a named element is in the air (see Jump record and trick card).

@@ -4,9 +4,11 @@
 #include "Engine/GameInstance.h"
 #include "RiderCharacter.h"
 #include "KiteGear.h"
+#include "Tricks/TrickBook.h"
 #include "KiteSurfGameInstance.generated.h"
 
 class UKiteSurfSaveGame;
+struct FJumpRecord;
 
 UCLASS()
 class KITESURF_API UKiteSurfGameInstance : public UGameInstance
@@ -126,6 +128,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SaveSettingsToDisk();
 
+	/** Takes the settings and the trick book from a loaded save: what LoadSettingsFromDisk does with the Settings slot. */
+	void ApplySaveGame(const UKiteSurfSaveGame& SaveGame);
+
+	/** Writes the settings and the trick book into a save: what SaveSettingsToDisk does before writing the Settings slot. */
+	void WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const;
+
+	/** The tricks landed so far, loaded from and saved to the Settings slot with the settings. */
+	const FTrickBook& GetTrickBook() const { return TrickBook; }
+
+	/**
+	 * Counts a finished jump in the trick book (FTrickBook::RecordLanding, twin-tip). True when it
+	 * was the first landing of that trick. Does not write to disk: SaveSettingsToDisk does. Not
+	 * yet fed by the game; the trick tracker wiring will call it.
+	 */
+	bool RecordTrickLanding(const FJumpRecord& Record);
+
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetPendingWindKnots(float InKnots);
 
@@ -137,4 +155,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetPendingMapName(const FString& InMapName) { PendingMapName = InMapName; }
+
+private:
+	FTrickBook TrickBook;
 };

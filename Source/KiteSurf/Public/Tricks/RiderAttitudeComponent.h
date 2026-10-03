@@ -1,0 +1,340 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "Tricks/RiderAxes.h"
+#include "RiderAttitudeComponent.generated.h"
+
+/**
+ * What one fixed step of the rider's attitude reads. The pawn fills it at the start of each step,
+ * after the kite step and before the board step (Kite->StepKite, line force, Attitude->Step,
+ * Board->SetAirAttitude, Board->StepBoard). Positions and forces in Unreal units, as the pawn has
+ * them; the component converts to SI once.
+ */
+USTRUCT()
+struct KITESURF_API FAttitudeInputs
+{
+	GENERATED_BODY()
+
+	/** The board is in the air at the start of the step. False: the attitude copies the slaved poses below. */
+	bool bAirborne = false;
+
+	/** The board is strapped to the feet. Read from T2 (board-off); the board follows the body for now. */
+	bool bStrapped = true;
+
+	/** The kinematic body pose on the water (world). Read on the water and on the take-off step. */
+	FQuat SlavedBodyQuat = FQuat::Identity;
+
+	/** The board's world orientation on the water. Read on the water and on the take-off step. */
+	FQuat SlavedBoardQuat = FQuat::Identity;
+
+	/** Board (point mass) velocity (cm/s, world). */
+	FVector VelocityCmS = FVector::ZeroVector;
+
+	/** This step's line force on the rider (kg*cm/s^2, world): Kite->GetLineForce(). */
+	FVector LineForceUU = FVector::ZeroVector;
+
+	/** The lines are taut. Slack (storm bursts, a dropped kite), the line torque is off whatever LineForceUU says. */
+	bool bLinesTaut = true;
+
+	/** Height of the board above the water below it (cm), for the time to contact. */
+	float HeightAboveWaterCm = 0.0f;
+
+	/** Measured vertical acceleration (cm/s^2), filtered by the pawn over about 0.1 s; the kite makes the fall far from ballistic. */
+	float VerticalAccelCmS2 = 0.0f;
+
+	/** Water surface normal under the rider; the landing assist turns Up towards it. */
+	FVector WaterNormal = FVector::UpVector;
+
+	/** Air rotation stick after the pawn's side mapping. X: +1 back roll, -1 front roll. Y: +1 up, -1 down (pulled, backflip). */
+	FVector2D RotationStick = FVector2D::ZeroVector;
+
+	/** The rotation stick is past its deadzone. While set, the control torque acts and the landing assist does not. */
+	bool bRotationInput = false;
+
+	/** Target tuck, 0 (stretched) to 1 (tucked). */
+	float Tuck = 0.0f;
+
+	/** Pre-wind stick direction captured by the pawn during the load; consumed on the take-off edge. Same axes as RotationStick. */
+	FVector2D PreWindStick = FVector2D::ZeroVector;
+
+	/** How far the pre-wind was built, 0..1. */
+	float PreWindAmount = 0.0f;
+
+	/** The board's load (0..1) at the pop, recorded before Jump() zeroes it. */
+	float TakeoffLoad = 0.0f;
+
+	/** How hard the edge was held at the pop (0..1). Carried for later tuning; the pre-wind rate does not use it yet. */
+	float TakeoffEdgeHold = 0.0f;
+
+	/** Sigma, the travel side latched at load start or take-off (RiderAxes::TravelSide): +1 or -1. */
+	float TravelSideSigma = 1.0f;
+};
+
+/** What the last step did, for debug drawing, telemetry and the landing evaluator. Torques in N*m, world. */
+struct FAttitudeDebug
+{
+	FVector LineTorqueNm = FVector::ZeroVector;
+	FVector ControlTorqueNm = FVector::ZeroVector;
+	FVector AssistTorqueNm = FVector::ZeroVector;
+	/** Posture damping's torque (its angular impulse over the step). */
+	FVector PostureTorqueNm = FVector::ZeroVector;
+	/** The committed rotation axis (world, unit), zero when none. */
+	FVector CommittedAxisWorld = FVector::ZeroVector;
+	/** Predicted time to touchdown (s); a large number when the rider is not falling towards the water. */
+	float TimeToContactSeconds = TNumericLimits<float>::Max();
+	/** Angle to the nearest valid landing attitude (deg): upright, board along the travel either way round. */
+	float LandingErrorDeg = 0.0f;
+	/** dot(error axis, omega-hat): > 0 under-rotated, < 0 over-rotated, 0 when not rotating. */
+	float ErrorAlongSpin = 0.0f;
+	bool bAssistActive = false;
+	RiderAxes::ERotationFamily Family = RiderAxes::ERotationFamily::None;
+};
+
+/**
+ * The rider's rotation in the air (T1.2): body orientation and angular momentum on top of the
+ * board's point-mass trajectory. Angular momentum is the state, so it is conserved with no torque
+ * and a tuck spins the rider faster with no extra rule (omega = I^-1 L).
+ *
+ * One fixed step: torques at the start of the step (line torque at the hook, capped air control
+ * towards a target rate, or the landing-assist PD inside its window), then posture damping and
+ * drag as exact exponential decays, then the free rigid-body rotation for the step (a split that
+ * is exact for a symmetric top and conserves |L| and, to rounding, the energy).
+ *
+ * On the water the attitude is slaved to the kinematic pose. The pawn steps it (it does not tick);
+ * Step is pure and touches no world, so tests drive a bare NewObject. Not yet stepped by the pawn.
+ *
+ * SI inside (kg*m^2, N*m, rad/s); Unreal units (cm, kg*cm/s^2) only at the boundary.
+ */
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+class KITESURF_API URiderAttitudeComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	URiderAttitudeComponent();
+
+	/** One fixed step of Dt seconds. Pure: reads only the inputs and this component's state. */
+	void Step(float Dt, const FAttitudeInputs& In);
+
+	/** Back to the slaved pose with no angular momentum, inactive (board reset, crash, teleport). */
+	void Reset(const FQuat& Body, const FQuat& Board);
+
+	/**
+	 * Puts the rider in the air with this body orientation and angular momentum (kg*m^2/s, world),
+	 * for tests and debug. The next airborne Step does not run the take-off (no pre-wind). The
+	 * rotation that L gives becomes the committed axis, so posture damping leaves it alone.
+	 */
+	void SetState(const FQuat& Body, const FVector& AngularMomentumKgM2S);
+
+	/**
+	 * True while the attitude is simulated (in the air); false while slaved to the water pose.
+	 * (The T1 plan calls it IsActive, which UActorComponent already owns for activation.)
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	bool IsSimulating() const { return bActive; }
+
+	FQuat GetBodyQuat() const { return Q; }
+	FQuat GetRenderBodyQuat(float Alpha) const { return FQuat::Slerp(PrevQ, Q, Alpha); }
+
+	/** The strapped board's world orientation: body times the strap offset (T1.2.5). */
+	FQuat GetBoardQuat() const { return Q * StrapOffset; }
+	FQuat GetRenderBoardQuat(float Alpha) const { return FQuat::Slerp(PrevQ * PrevStrapOffset, Q * StrapOffset, Alpha); }
+
+	/** The board in body coordinates: settles from the take-off heel and pitch to the canonical offset. */
+	FQuat GetStrapOffset() const { return StrapOffset; }
+
+	/**
+	 * The board flat under the feet with its nose along NoseSideSign * Right, in body coordinates.
+	 * The nose is on the -StanceSide side, so NoseSideSign = -StanceSide.
+	 */
+	static FQuat MakeCanonicalStrapOffset(float NoseSideSign);
+
+	/** Angular velocity (rad/s, world). */
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	FVector GetAngularVelocity() const { return OmegaW; }
+
+	/** Angular momentum about the centre of mass (kg*m^2/s, world). */
+	FVector GetAngularMomentum() const { return L; }
+
+	/** Principal inertia in the body frame (Front, Right, Up) for the current tuck (kg*m^2). */
+	FVector GetBodyInertiaKgM2() const;
+
+	/** The current tuck, 0..1, after its smoothing spring. */
+	float GetTuckAmount() const { return TuckNow; }
+
+	/** The committed rotation axis in body coordinates (unit), zero when none. */
+	FVector GetCommittedAxisBody() const { return CommittedAxisBody; }
+
+	const FAttitudeDebug& GetLastStepDebug() const { return LastDebug; }
+
+	/**
+	 * Offset from the physics root (board centre) to the centre of mass (cm, world), between the last
+	 * two steps (T1.2.6). The visual board sits at Root + this - Body.Rotate((0, 0, ComAboveBoardCm)),
+	 * which is the root at take-off and when upright on landing.
+	 */
+	FVector GetVisualComOffsetCm(float Alpha) const { return FMath::Lerp(PrevComOffsetWorldCm, ComOffsetWorldCm, Alpha); }
+
+	/**
+	 * The landing assist torque (N*m, world) for these inputs at the current state, without
+	 * stepping. Zero outside its window or with rotation input. Also fills the time to contact,
+	 * landing error, ErrorAlongSpin, bAssistActive and AssistTorqueNm of OutDebug.
+	 */
+	FVector ComputeAssistTorque(const FAttitudeInputs& In, FAttitudeDebug& OutDebug) const;
+
+	/** Time to contact (s): the smallest positive root of h + v t + a t^2 / 2 = 0, else h / max(-v, 1 cm/s). */
+	static float ComputeTimeToContact(float HeightCm, float VerticalSpeedCmS, float VerticalAccelCmS2);
+
+	/** The nearest valid landing attitude for this velocity and water normal: Up along the normal, the board along the travel either way round. */
+	FQuat ComputeLandingTarget(const FVector& VelocityCmS, const FVector& WaterNormal) const;
+
+	// Tuning. Every default is an estimate (docs/tricks.md section 8, T1 plan T1.2.2).
+
+	/** Principal inertia stretched out, rider plus strapped board (kg*m^2): Front, Right, Up. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation")
+	FVector InertiaStretchedKgM2;
+
+	/** Principal inertia fully tucked (kg*m^2): Front, Right, Up. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation")
+	FVector InertiaTuckedKgM2;
+
+	/** Smoothing time of the critically damped tuck spring (s): about 60% of the way after this, all but done after three times it. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.01"))
+	float TuckSmoothSeconds;
+
+	/** The harness hook relative to the centre of mass (cm, body: Front, Right, Up). Its hang lean is atan(X / Z), 31 deg. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation")
+	FVector HookOffsetFromComCm;
+
+	/** Height of the centre of mass above the board centre (cm), the visual pivot. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float ComAboveBoardCm;
+
+	/** Scale on the line torque r x F at the hook. Calibrated so a full pre-wind back roll at 800 N hang tension takes 1.5 to 2.5 s (KiteSurf.Trick.BackRollFromPreWind). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float LineTorqueScale;
+
+	/** Roll rate from a full pre-wind at full load (deg/s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float PreWindRollRateDegS;
+
+	/** Flip rate from a full pre-wind at full load (deg/s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float PreWindFlipRateDegS;
+
+	/** Spin rate from a full pre-wind at full load (deg/s), for an axis tilted less than SpinAxisTiltMaxDeg. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float PreWindSpinRateDegS;
+
+	/** A roll axis tilted less than this from Up counts as a spin for its rate (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float SpinAxisTiltMaxDeg;
+
+	/** Default roll axis tilt from Up towards Front (deg). At least about 54 so a default roll counts as an inversion. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float DefaultRollAxisTiltDeg;
+
+	/** How far stick Y moves the roll axis tilt either way (deg): down towards inverted, up towards a flat spin. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float RollAxisTiltRangeDeg;
+
+	/** A stick within this of vertical is a flip (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float FlipSectorDeg;
+
+	/** Extra angle the stick must move to leave the flip sector once in it (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "45.0"))
+	float FlipSectorHysteresisDeg;
+
+	/** Pre-wind rate scale with no load; full load gives 1: Floor + (1 - Floor) * load. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PreWindLoadFloor;
+
+	/** Air control torque cap as a fraction of a full pre-wind per second (1/s): cap = this * I_axis * full rate. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AirControlFractionPerS;
+
+	/** Time constant of air control towards its target rate (s), before the cap. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.01"))
+	float AirControlResponseSeconds;
+
+	/** Decay rate of rotation off the committed axis, or of all rotation when none is committed (1/s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float PostureDampingPerS;
+
+	/** Cap on the posture damping torque (N*m). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float PostureMaxTorqueNm;
+
+	/** Air drag on all rotation (1/s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AirAngularDragPerS;
+
+	/** Landing assist strength, 0 (off) to 1; the settings set it later. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AssistStrength;
+
+	/** The landing assist acts when the time to contact is under this (s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AssistWindowSeconds;
+
+	/** The landing assist acts only within this of a valid landing attitude (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float AssistMaxErrorDeg;
+
+	/** Natural frequency of the landing assist PD (Hz). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AssistNaturalFreqHz;
+
+	/** Damping ratio of the landing assist PD. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AssistDampingRatio;
+
+	/** Cap on the landing assist torque (N*m). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float AssistMaxTorqueNm;
+
+	/** Time constant of the board easing from its take-off heel and pitch to flat under the feet (s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.01"))
+	float StrapSettleSeconds;
+
+	/** Time constant of the visual centre-of-mass offset settling to straight above the board (s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.01"))
+	float ComOffsetSettleSeconds;
+
+private:
+	/** Take-off edge: strap offset, centre-of-mass offset and the pre-wind (T1.2.4). */
+	void BeginAir(const FAttitudeInputs& In);
+
+	/** The stick mapping with this component's tunables. */
+	RiderAxes::FRotationAxisChoice ChooseAxis(const FVector2D& Stick, float Sigma, bool bWasFlip) const;
+
+	/** Full rate of a rotation family (rad/s). */
+	float FullRateRadS(RiderAxes::ERotationFamily Family) const;
+
+	/** Inertia about a world axis for body inertia Ib at the current orientation (kg*m^2). */
+	double InertiaAbout(const FVector& AxisWorld, const FVector& Ib) const;
+
+	/** Angular velocity (rad/s, world) from L at the current orientation for body inertia Ib. */
+	FVector OmegaFrom(const FVector& Ib) const;
+
+	/** The free rigid-body rotation for Dt with L fixed (exact for a symmetric top). */
+	void RotateFree(float Dt, const FVector& Ib);
+
+	FQuat Q = FQuat::Identity;
+	FQuat PrevQ = FQuat::Identity;
+	FQuat StrapOffset = FQuat::Identity;
+	FQuat PrevStrapOffset = FQuat::Identity;
+	FQuat CanonicalStrapOffset = FQuat::Identity;
+	FVector L = FVector::ZeroVector;
+	FVector OmegaW = FVector::ZeroVector;
+	FVector CommittedAxisBody = FVector::ZeroVector;
+	float TuckNow = 0.0f;
+	float TuckVel = 0.0f;
+	bool bActive = false;
+	bool bWasAirborne = false;
+	bool bControlWasFlip = false;
+	FVector ComOffsetWorldCm = FVector::ZeroVector;
+	FVector PrevComOffsetWorldCm = FVector::ZeroVector;
+	FAttitudeDebug LastDebug;
+};

@@ -151,15 +151,15 @@ gen = unreal.new_object(unreal.GerstnerWaterWaveGeneratorSimple, waves)
 # sideways by steepness / wavenumber regardless of its amplitude (FGerstnerWave::Recompute),
 # so the surface folds over itself into foam-white lumps once the steepness values sum past
 # 1. Keep num_waves * steepness well below that.
-gen.set_editor_property('num_waves', 16)
-gen.set_editor_property('min_wavelength', 800.0)
-gen.set_editor_property('max_wavelength', 4000.0)
-gen.set_editor_property('min_amplitude', 50.0)
-gen.set_editor_property('max_amplitude', 400.0)
+gen.set_editor_property('num_waves', 12)
+gen.set_editor_property('min_wavelength', 1200.0)
+gen.set_editor_property('max_wavelength', 5000.0)
+gen.set_editor_property('min_amplitude', 20.0)
+gen.set_editor_property('max_amplitude', 150.0)
 gen.set_editor_property('wind_angle_deg', 0.0)
 gen.set_editor_property('direction_angular_spread_deg', 40.0)
-gen.set_editor_property('small_wave_steepness', 0.15)
-gen.set_editor_property('large_wave_steepness', 0.08)
+gen.set_editor_property('small_wave_steepness', 0.05)
+gen.set_editor_property('large_wave_steepness', 0.02)
 
 # Assign the generator last: UGerstnerWaterWaves caches the generated wave list and only
 # recomputes it when one of its own properties is set, not when the generator is edited.
@@ -195,32 +195,6 @@ player_start = unreal.EditorLevelLibrary.spawn_actor_from_class(
 if player_start:
     player_start.set_actor_label('PlayerStart')
     print("Spawned PlayerStart at (0, 0, 50)")
-
-
-# Spawn Wildlife
-import math
-wildlife = [
-    ('/Game/Meshes/SM_Dolphin', 5, (1000, 2000, -20)),
-    ('/Game/Meshes/SM_Seagull', 10, (500, 3000, 1500)),
-    ('/Game/Meshes/SM_Rock', 3, (800, 1000, 10)),
-    ('/Game/Meshes/SM_Coral', 4, (1200, 1200, -100)),
-]
-
-for mesh_path, count, (x_range, y_range, z_val) in wildlife:
-    mesh_asset = unreal.EditorAssetLibrary.load_asset(mesh_path)
-    if mesh_asset:
-        for i in range(count):
-            x = (math.cos(i) * x_range)
-            y = (math.sin(i) * y_range)
-            actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
-                unreal.StaticMeshActor,
-                unreal.Vector(x, y, z_val)
-            )
-            if actor:
-                mesh_comp = actor.get_component_by_class(unreal.StaticMeshComponent)
-                if mesh_comp:
-                    mesh_comp.set_static_mesh(mesh_asset)
-                actor.set_actor_label(f'{mesh_path.split("/")[-1]}_{i}')
 
 
 # 9. Save current level

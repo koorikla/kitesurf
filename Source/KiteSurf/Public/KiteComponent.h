@@ -59,7 +59,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
  * assist judges where the window is from the wind the rider feels across the water: the true wind
  * less their horizontal velocity. With the loop input held the bar turns the kite directly, so
  * holding it flies a loop. In the air a full bar does the same from anywhere in the window, and
- * reversed mid-loop starts a loop the other way (AirLoopFullBarThreshold).
+ * reversed mid-loop starts a loop the other way (AirLoopFullBarThreshold). For an unhooked rider the
+ * low park (SetLowParkAssist) holds the kite at about 45 deg instead, on the water and in the air;
+ * RequestFlick dips it briefly for slack, and SetLeashed lets it flag on the leash.
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -550,6 +552,100 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float AirborneZenithMaxHeadingDeg;
 
+	// Unhooked freestyle (docs/tricks/T3.md 1.3). Assists, off by default: the pawn switches them.
+
+	/**
+	 * The low park, for a rider who has unhooked: with the bar centred the assist flies the kite to
+	 * InElevationDeg (LowParkElevationDeg) above the horizon at the window edge and holds it there, on the water and in the
+	 * air, instead of letting it drift up to 12. It takes priority over the airborne overhead hold
+	 * (AirborneZenithGain) and over bParkHoldAssist, so an unhooked pop stays near ballistic and the
+	 * kite pulls the hands, not up. The bar still travels, loops and keeps the floor rule as before.
+	 * The kite stays on the side it is on (LowParkSide at exactly 12); steering it across and
+	 * centring the bar parks it on the new side. Ignored while leashed.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite|Assist")
+	void SetLowParkAssist(bool bOn, float InElevationDeg = 45.0f);
+
+	UFUNCTION(BlueprintPure, Category = "Kite|Assist")
+	bool IsLowParkAssistOn() const { return bLowParkAssist; }
+
+	/** Whether the low park is on; SetLowParkAssist sets it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist")
+	bool bLowParkAssist;
+
+	/**
+	 * Elevation the low park holds the kite at (deg above the horizon). 45: the freestyle park in
+	 * docs/tricks.md 6.4; T3.1 PR 3 may lower it to 35 at most. Estimate. The assist turns it into a
+	 * clock position with sin(elevation) = cos(clock) cos(depth) and holds that with ParkHoldGain and
+	 * ParkHoldMaxDeg.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "10.0", ClampMax = "85.0", Units = "deg"))
+	float LowParkElevationDeg;
+
+	/** The side (+1 right, -1 left) the low park uses for a kite at exactly 12 o'clock. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float LowParkSide;
+
+	/**
+	 * The flick: dips the kite for Seconds to make line slack for a handle pass. While it runs the
+	 * canopy's trim drops by FlickTrimDropDeg (GetTrimOffsetDeg), so it loses its pull at once, and
+	 * with the low park on its target clock moves FlickClockDeg further round towards the horizon.
+	 * A new request restarts the timer; placing the kite ends it. The flick assist toggle itself
+	 * (on by default) belongs to whoever calls this (the pawn, T3.4).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite|Assist")
+	void RequestFlick(float Seconds);
+
+	/** Seconds left of the flick in progress; 0 when none. */
+	UFUNCTION(BlueprintPure, Category = "Kite|Assist")
+	float GetFlickSecondsLeft() const { return FlickSecondsLeft; }
+
+	/** How long a flick lasts when the pawn asks for one (s). docs/tricks/T3.md 1.3; estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0", Units = "s"))
+	float FlickSeconds;
+
+	/** Trim taken off the canopy during a flick (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+	float FlickTrimDropDeg;
+
+	/** How much further round towards the horizon the low park aims during a flick (deg of clock). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0", ClampMax = "45.0", Units = "deg"))
+	float FlickClockDeg;
+
+	/**
+	 * The bar is lost and the kite hangs on the safety leash: nobody is flying it (no bar, no assist,
+	 * no floor rule), its trim is LeashTrimDeg so the canopy flags, and the pull the rider feels is
+	 * capped at LeashTensionCapN. A leashed kite that reaches the water stays there (it does not
+	 * relaunch by itself) until the leash is cleared; the pawn clears it on a reset (T3.1 PR 2).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite|Assist")
+	void SetLeashed(bool bInLeashed);
+
+	UFUNCTION(BlueprintPure, Category = "Kite|Assist")
+	bool IsLeashed() const { return bLeashed; }
+
+	/** Trim of a kite flagging on its leash (deg, added to the bar's trim). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "-90.0", ClampMax = "0.0", Units = "deg"))
+	float LeashTrimDeg;
+
+	/** Most pull a leashed kite passes to the rider (N). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Assist", meta = (ClampMin = "0.0"))
+	float LeashTensionCapN;
+
+	/**
+	 * Where the leash meets the rider (world, cm), for drawing: while leashed the centre (power) lines
+	 * run from here instead of from the bar centre. Until it is set they keep the bar centre.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Kite|Assist")
+	void SetLeashAnchor(const FVector& InAnchor);
+
+	/**
+	 * Trim added to the bar's (deg) in the last fixed step: LeashTrimDeg while leashed, otherwise
+	 * -FlickTrimDropDeg during a flick, otherwise 0. StepFlight adds it to the canopy's trim.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Kite|Assist")
+	float GetTrimOffsetDeg() const { return TrimOffsetDeg; }
+
 	/** The assist will not fly the kite lower than this; a loop, a stall or slack lines can take it lower. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Tuning")
 	float MinElevationDeg;
@@ -708,6 +804,19 @@ protected:
 	bool bCrashed;
 	bool bLinesTaut;
 	float CrashedSeconds;
+
+	/** The low park's side for this park (+1, -1), chosen when it starts and again after the bar has steered. */
+	float LowParkActiveSide = 1.0f;
+	bool bHasLowParkSide = false;
+	float FlickSecondsLeft = 0.0f;
+	bool bLeashed = false;
+	FVector LeashAnchor = FVector::ZeroVector;
+	bool bHasLeashAnchor = false;
+	/** See GetTrimOffsetDeg. */
+	float TrimOffsetDeg = 0.0f;
+
+	/** Recomputes TrimOffsetDeg from the leash and the flick. */
+	void UpdateTrimOffset();
 
 	float LineTensionN;
 	FVector LineForce;

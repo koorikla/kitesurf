@@ -93,6 +93,14 @@ UKiteComponent::UKiteComponent()
 	ParkHoldMaxDeg = 45.0f;
 	AirborneZenithGain = 2.0f;
 	AirborneZenithMaxHeadingDeg = 45.0f;
+	bLowParkAssist = false;
+	LowParkElevationDeg = 45.0f;
+	LowParkSide = 1.0f;
+	FlickSeconds = 0.3f;
+	FlickTrimDropDeg = 8.0f;
+	FlickClockDeg = 10.0f;
+	LeashTrimDeg = -45.0f;
+	LeashTensionCapN = 120.0f;
 	MinElevationDeg = 10.0f;
 	CrashHeightCm = 60.0f;
 	RelaunchDelaySeconds = 3.0f;
@@ -308,7 +316,8 @@ void UKiteComponent::UpdateVisuals(float Alpha)
 		RightLine->CableLength = (RightTipPos - RightBarPos).Size() * 0.98f;
 	}
 
-	const FVector CenterBarPos = (LeftBarPos + RightBarPos) * 0.5f;
+	// The power lines run to the bar centre; with the bar lost, to where the leash meets the rider.
+	const FVector CenterBarPos = (bLeashed && bHasLeashAnchor) ? LeashAnchor : (LeftBarPos + RightBarPos) * 0.5f;
 	const FVector LeftCenterTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-12.0f, -98.0f, -22.0f) * SizeScale);
 	const FVector RightCenterTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-12.0f, 98.0f, -22.0f) * SizeScale);
 
@@ -348,6 +357,45 @@ void UKiteComponent::SetLoopHeld(bool bHeld)
 void UKiteComponent::SheetKite(float Amount)
 {
 	Sheet = FMath::Clamp(Amount, 0.0f, 1.0f);
+}
+
+void UKiteComponent::SetLowParkAssist(bool bOn, float InElevationDeg)
+{
+	if (bOn != bLowParkAssist)
+	{
+		bHasLowParkSide = false; // choose the side afresh from where the kite is now
+	}
+	bLowParkAssist = bOn;
+	LowParkElevationDeg = FMath::Clamp(InElevationDeg, 10.0f, 85.0f);
+}
+
+void UKiteComponent::RequestFlick(float Seconds)
+{
+	FlickSecondsLeft = FMath::Max(Seconds, 0.0f);
+	UpdateTrimOffset();
+}
+
+void UKiteComponent::SetLeashed(bool bInLeashed)
+{
+	bLeashed = bInLeashed;
+	if (bLeashed)
+	{
+		bLooping = false;
+		bHasParkClock = false;
+		bHasLowParkSide = false;
+	}
+	UpdateTrimOffset();
+}
+
+void UKiteComponent::SetLeashAnchor(const FVector& InAnchor)
+{
+	LeashAnchor = InAnchor;
+	bHasLeashAnchor = true;
+}
+
+void UKiteComponent::UpdateTrimOffset()
+{
+	TrimOffsetDeg = bLeashed ? LeashTrimDeg : (FlickSecondsLeft > 0.0f ? -FlickTrimDropDeg : 0.0f);
 }
 
 FVector UKiteComponent::GetLineForce() const
@@ -588,6 +636,9 @@ void UKiteComponent::PlaceParked()
 	LastStepTurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
 	bHasParkClock = false;
+	bHasLowParkSide = false;
+	FlickSecondsLeft = 0.0f; // a kite put somewhere is not being dipped
+	UpdateTrimOffset();
 	bPlacementPending = false;
 	bCrashed = false;
 	bLinesTaut = true;
@@ -668,6 +719,15 @@ void UKiteComponent::GetAeroCoefficients(float AlphaDeg, float& OutLift, float& 
 
 float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector& RiderVelocity, const FVector& Wind)
 {
+	if (bLeashed)
+	{
+		// The bar is gone: nobody flies the kite, and there is no assist to keep it off the water.
+		bLooping = false;
+		bHasParkClock = false;
+		bHasLowParkSide = false;
+		return 0.0f;
+	}
+
 	const bool bSteering = FMath::Abs(Bar) >= CentredBarThreshold;
 
 	// The bar held towards the side the kite is already on goes straight to the kite, which
@@ -724,6 +784,7 @@ float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector&
 	{
 		CentredBarSeconds = 0.0f;
 		bHasParkClock = false;
+		bHasLowParkSide = false;
 		return Bar;
 	}
 
@@ -753,6 +814,32 @@ float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector&
 		// Bar over: travel round the window that way.
 		OffsetDeg = Bar * TravelHeadingDeg;
 		bHasParkClock = false;
+		bHasLowParkSide = false;
+	}
+	else if (bLowParkAssist)
+	{
+		// Bar centred, unhooked: park the kite low at the window edge, on the water and in the air,
+		// ahead of the airborne overhead hold, so an unhooked pop stays near ballistic and the kite
+		// pulls the hands rather than up (docs/tricks/T3.md 1.3). The elevation is turned into a clock
+		// position with sin(elevation) = cos(clock) cos(depth), the geometry of SetWindowPosition.
+		bHasParkClock = false;
+		const float ClockNowDeg = GetClockDeg();
+		if (!bHasLowParkSide)
+		{
+			const float SideFromClock = FMath::Sign(ClockNowDeg);
+			LowParkActiveSide = SideFromClock != 0.0f ? SideFromClock : (LowParkSide < 0.0f ? -1.0f : 1.0f);
+			bHasLowParkSide = true;
+		}
+		const float DepthRad = FMath::DegreesToRadians(GetWindowDepthDeg());
+		const float SinElevation = FMath::Sin(FMath::DegreesToRadians(LowParkElevationDeg));
+		float TargetClockDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(SinElevation / FMath::Max(FMath::Cos(DepthRad), KINDA_SMALL_NUMBER), -1.0f, 1.0f)));
+		if (FlickSecondsLeft > 0.0f)
+		{
+			// The flick dips the kite: aim further round towards the horizon for a moment.
+			TargetClockDeg = FMath::Min(TargetClockDeg + FlickClockDeg, 90.0f);
+		}
+		const float DriftDeg = FMath::FindDeltaAngleDegrees(ClockNowDeg, LowParkActiveSide * TargetClockDeg);
+		OffsetDeg = FMath::Clamp(ParkHoldGain * DriftDeg, -ParkHoldMaxDeg, ParkHoldMaxDeg);
 	}
 	else if (bRiderAirborne && AirborneZenithGain > 0.0f)
 	{
@@ -836,7 +923,8 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	const float SpanFlow = FVector::DotProduct(Airflow, Span);     // sideways
 	const float PlaneFlowSpeed = FMath::Sqrt(FMath::Square(ChordFlow) + FMath::Square(NormalFlow));
 
-	const float TrimDeg = FMath::Lerp(TrimSheetedOutDeg, TrimSheetedInDeg, FMath::Clamp(Sheet, 0.0f, 1.0f));
+	// The bar sets the trim; the leash or a flick offsets it (GetTrimOffsetDeg).
+	const float TrimDeg = FMath::Lerp(TrimSheetedOutDeg, TrimSheetedInDeg, FMath::Clamp(Sheet, 0.0f, 1.0f)) + TrimOffsetDeg;
 	const float AlphaDeg = PlaneFlowSpeed > 0.05f ? FMath::RadiansToDegrees(FMath::Atan2(NormalFlow, ChordFlow)) + TrimDeg : 0.0f;
 
 	float LiftCoefficient = 0.0f;
@@ -1090,6 +1178,7 @@ void UKiteComponent::StepKite(float StepSeconds)
 	}
 	SimTimeSeconds += FMath::Max(StepSeconds, 0.0f);
 	PrevKiteWorldPosition = KiteWorldPosition;
+	UpdateTrimOffset(); // the flick counts down after the step that flew it
 
 	const FVector RiderPos = GetRiderPosition();
 	const FVector RiderVelocity = GetRiderVelocity();
@@ -1116,7 +1205,8 @@ void UKiteComponent::StepKite(float StepSeconds)
 		const bool bSteeredUp = CrashedSeconds >= MinSecondsBeforeSteeredRelaunch && FMath::Abs(Steer) >= CentredBarThreshold;
 		// It will not come off the water without enough wind to fly in.
 		const bool bEnoughWind = (GetWindAt(KiteWorldPosition) - RiderVelocity).SizeSquared() >= FMath::Square(MinRelaunchWindCmS);
-		if (bEnoughWind && (CrashedSeconds >= RelaunchDelaySeconds || bSteeredUp))
+		// A kite on its leash stays in the water until the rider has the bar back.
+		if (!bLeashed && bEnoughWind && (CrashedSeconds >= RelaunchDelaySeconds || bSteeredUp))
 		{
 			Relaunch();
 		}
@@ -1146,9 +1236,15 @@ void UKiteComponent::StepKite(float StepSeconds)
 
 	// The rider feels the pull along the lines. (Debug drawing of all this is the pawn's, behind
 	// kite.Physics.Debug or bDrawDebug.)
-	LineTensionN = FMath::Min(Tension, MaxLineTensionN);
+	// On the leash the rider feels only what the leash passes on.
+	LineTensionN = FMath::Min(Tension, bLeashed ? FMath::Min(MaxLineTensionN, LeashTensionCapN) : MaxLineTensionN);
 	LineForce = KiteDir * KiteUnits::NToUnrealForce(LineTensionN);
 	StepLoopTracker(RiderPos, RiderVelocity);
+	FlickSecondsLeft -= FMath::Max(StepSeconds, 0.0f);
+	if (FlickSecondsLeft < KINDA_SMALL_NUMBER)
+	{
+		FlickSecondsLeft = 0.0f; // a whole number of steps, not one more for rounding
+	}
 }
 
 void UKiteComponent::StepLoopTracker(const FVector& RiderPos, const FVector& RiderVelocity)

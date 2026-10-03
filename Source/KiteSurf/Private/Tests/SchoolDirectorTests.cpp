@@ -22,7 +22,7 @@
 namespace SchoolDirectorTest
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
-	const float FrameSeconds = 1.0f / 60.0f;
+	const float DirectorFrameSeconds = 1.0f / 60.0f;
 
 	struct FDirectorFixture
 	{
@@ -77,8 +77,8 @@ namespace SchoolDirectorTest
 
 		void Frame()
 		{
-			Pawn->Tick(FrameSeconds);
-			Director->UpdateLesson(FrameSeconds);
+			Pawn->Tick(DirectorFrameSeconds);
+			Director->UpdateLesson(DirectorFrameSeconds);
 		}
 	};
 
@@ -223,9 +223,9 @@ namespace SchoolDirectorTest
 	template <typename FDone>
 	bool RideUntil(FDirectorFixture& Fx, FJumpRider& Rider, float Seconds, FDone&& Done)
 	{
-		for (float T = 0.0f; T < Seconds; T += FrameSeconds)
+		for (float T = 0.0f; T < Seconds; T += DirectorFrameSeconds)
 		{
-			Rider.Step(Fx.Pawn, FrameSeconds);
+			Rider.Step(Fx.Pawn, DirectorFrameSeconds);
 			Fx.Frame();
 			if (Done())
 			{

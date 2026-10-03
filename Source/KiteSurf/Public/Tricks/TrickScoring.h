@@ -119,8 +119,20 @@ struct FLandingGradeSettings
 namespace TrickScoring
 {
 	/**
+	 * A jump record's grade from the board's landing verdict (LandingEvaluator::Evaluate through
+	 * UBoardMovementComponent::GetLastLandingVerdict), which owns the grade (docs/tricks/README.md
+	 * decision 6): Crash when the board crashed; otherwise the verdict's grade, with a Crash verdict
+	 * the board rode away from (it never does: the board crashes on every Crash verdict) reported as
+	 * Sketchy, as GradeLanding does.
+	 */
+	KITESURF_API ELandingGrade GradeFromVerdict(ELandingGrade VerdictGrade, bool bCrashed);
+
+	/**
 	 * The record-only shortcut over LandingEvaluator::Evaluate, for a jump record that has the
-	 * yaw, g and kite elevation but no tilt or rider state; Evaluate is the full verdict.
+	 * yaw, g and kite elevation but no tilt or rider state; Evaluate is the full verdict. The jump
+	 * recorder uses it only when it has no board verdict (pure tests that build records by hand);
+	 * on a ride the record's grade is GradeFromVerdict. It does not read the sink, so it can call a
+	 * hot landing (sink over 6 m/s) clean where the verdict says sketchy.
 	 * Crash when the board crashed. Otherwise Evaluate's grade with tilt 0 and Settings mapped
 	 * onto FLandingThresholds, with a crash there reported as Sketchy (the board decides crashes):
 	 * Stomped when the yaw (folded, so switch counts), g and kite elevation are all inside the

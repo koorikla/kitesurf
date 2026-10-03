@@ -37,8 +37,8 @@ struct FJumpLoop
 
 /**
  * Everything kept about one jump, from take-off to landing or crash. Times are board simulation
- * time. The recorder (T0.2) fills the facts; the tracker fills the trick fields at the end of the
- * jump from TrickRecognition, TrickNaming and TrickScoring.
+ * time. The recorder (T0.2) fills the facts and the rider's rotation (T1.6, FRotationRecognizer);
+ * the trick fields at the end of the jump come from TrickRecognition, TrickNaming and TrickScoring.
  */
 USTRUCT(BlueprintType)
 struct FJumpRecord
@@ -119,6 +119,43 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	TArray<FJumpLoop> Loops;
 
+	// --- Rider rotation (T1.6): FRotationRecognizer over the rider attitude. All defaults when the attitude was not live. ---
+
+	/** The rider attitude was simulated in the air, so the rotation fields below were measured. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	bool bRotationTracked = false;
+
+	/** Inversions in the order they were counted. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	TArray<ETrickInversion> Inversions;
+
+	/** Body spin credited, in half turns (2 is a 360). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	int32 SpinHalfTurns = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickSense SpinSense = ETrickSense::None;
+
+	/** Rotation about world up the spin is credited from, less the flight's own turn (deg, signed). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float SpinDeg = 0.0f;
+
+	/** Heelside, or Blind or Toeside when the rider landed facing the other way. Heelside in the air. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickStance LandingStance = ETrickStance::Heelside;
+
+	/** Net heading at touchdown against the take-off's, less the flight's turn (deg, -180..180). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float NetHeadingDeg = 0.0f;
+
+	/** When the first inversion's rotation started, from take-off (s); negative when nothing inverted. Feeds TrickRecognition::LoopRollTiming. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float RollStartSinceTakeoffSeconds = -1.0f;
+
+	/** Why the board's landing verdict graded the landing down (UBoardMovementComponent::GetLastLandingVerdict); None for a good landing. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ELandingCause LandingCause = ELandingCause::None;
+
 	/** TrickNaming::Name of the jump's signature. */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	FString TrickName;
@@ -127,6 +164,10 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	FString FamilyKey;
 
+	/**
+	 * The board's landing verdict's grade (TrickScoring::GradeFromVerdict; docs/tricks/README.md
+	 * decision 6), Crash for a crashed jump. Records built without a board use TrickScoring::GradeLanding.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	ELandingGrade Grade = ELandingGrade::Clean;
 

@@ -2,6 +2,7 @@
 #include "KiteSurfUnits.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
+#include "Tricks/RiderAttitudeComponent.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -36,6 +37,11 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 	{
 		return;
 	}
+	if (!Attitude && GetOwner())
+	{
+		// The rider attitude (T1.2), found on the owner as the board and kite are.
+		Attitude = GetOwner()->FindComponentByClass<URiderAttitudeComponent>();
+	}
 
 	// Everything below is the board's or the kite's own: the take-off counters and the apex time
 	// from the board's BeginAirborne and air step, the landing facts from its landing, and the loop
@@ -60,6 +66,22 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 	In.LastLandingG = Board->GetLastLandingG();
 	In.LastLandingAngleDeg = Board->GetLastLandingAngleDeg();
 	In.bLastLandingClean = Board->WasLastLandingClean();
+	// The board's landing verdict owns the record's grade (decision 6). It is set on the landing that
+	// counts the jump, which is the only step the recorder reads it on.
+	const FLandingVerdict Verdict = Board->GetLastLandingVerdict();
+	In.LastLandingCause = Verdict.Cause;
+	In.bHasLandingVerdict = true;
+	In.LastLandingGrade = Verdict.Grade;
+	In.BoardForward = Board->GetBoardWorldQuat().GetAxisX();
+	// The rider's rotation. The attitude stepped before the board, so on the touchdown step it still
+	// holds the body as it met the water.
+	In.bHasAttitude = Attitude != nullptr;
+	if (Attitude)
+	{
+		In.bAttitudeActive = Attitude->IsSimulating();
+		In.BodyQuat = Attitude->GetBodyQuat();
+		In.AngularVelocityRadS = Attitude->GetAngularVelocity();
+	}
 	In.TensionN = Kite->GetLineTensionN();
 	In.KiteElevationDeg = Kite->GetElevationDeg();
 	In.KiteTimeSeconds = Kite->GetSimTimeSeconds();
@@ -69,8 +91,13 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 	FJumpRecord Finished;
 	if (Session.Step(In, &Finished))
 	{
-		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s, %.1f pts"), Finished.Index, *Finished.TrickName,
-			*UEnum::GetValueAsString(Finished.Grade), Finished.Score.Total * Finished.RepeatFactor);
+		const FRotationRecognizer& Rotation = Session.GetRecorder().GetRotation();
+		const float AboutUpDeg = FMath::RadiansToDegrees(static_cast<float>(Rotation.GetSpinAboutURad()));
+		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s (cause %s), %.1f pts; rotation: %d inversion(s), spin %.0f deg (%d half turns; about up %.0f, flight turned %.0f, sigma %+.0f), heading %.0f deg, landed %s"),
+			Finished.Index, *Finished.TrickName, *UEnum::GetValueAsString(Finished.Grade), *UEnum::GetValueAsString(Finished.LandingCause),
+			Finished.Score.Total * Finished.RepeatFactor, Finished.Inversions.Num(), Finished.SpinDeg, Finished.SpinHalfTurns,
+			AboutUpDeg, AboutUpDeg - Finished.SpinDeg,
+			Rotation.GetFrame().Sigma, Finished.NetHeadingDeg, *UEnum::GetValueAsString(Finished.LandingStance));
 		if (UWorld* World = GetWorld())
 		{
 			if (UKiteSurfGameInstance* GameInstance = World->GetGameInstance<UKiteSurfGameInstance>())

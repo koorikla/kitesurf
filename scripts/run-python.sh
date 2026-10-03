@@ -14,4 +14,4 @@ if has_arg -RenderOffScreen "${@:2}" || has_arg -AllowCommandletRendering "${@:2
 fi
 
 echo "=== Running Editor Python Script: $SCRIPT_PATH ==="
-"${LOCK[@]}" "$UE_EDITOR_CMD" "$UPROJECT" -run=pythonscript -Script="$SCRIPT_PATH" -unattended -nosplash -stdout "${@:2}"
+${LOCK[@]+"${LOCK[@]}"} "$UE_EDITOR_CMD" "$UPROJECT" -run=pythonscript -Script="$SCRIPT_PATH" -unattended -nosplash -stdout "${@:2}"

@@ -5,13 +5,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export UPROJECT="$PROJECT_ROOT/KiteSurf.uproject"
 
-# Resolve UE_ROOT: $UE_ROOT -> .engine-path -> /opt/unreal-engine
+# The host the engine runs on: Linux (the CI runner) or Mac. The scripts keep to bash 3.2, the
+# bash macOS ships: no ${var,,}, no mapfile, and empty arrays expanded as ${a[@]+"${a[@]}"}.
+case "$(uname -s)" in
+    Darwin) export UE_HOST_PLATFORM=Mac ;;
+    *)      export UE_HOST_PLATFORM=Linux ;;
+esac
+
+# Resolve UE_ROOT: $UE_ROOT -> .engine-path -> the default install for the host
+if [[ "$UE_HOST_PLATFORM" == Mac ]]; then
+    DEFAULT_UE_ROOT="/Users/Shared/Epic Games/UE_5.8"
+else
+    DEFAULT_UE_ROOT="/opt/unreal-engine"
+fi
 if [[ -n "${UE_ROOT:-}" && -d "${UE_ROOT:-}" ]]; then
     :
 elif [[ -f "$PROJECT_ROOT/.engine-path" ]]; then
-    export UE_ROOT="$(cat "$PROJECT_ROOT/.engine-path" | tr -d '[:space:]')"
-elif [[ -d "/opt/unreal-engine" ]]; then
-    export UE_ROOT="/opt/unreal-engine"
+    export UE_ROOT="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$PROJECT_ROOT/.engine-path")"
+elif [[ -d "$DEFAULT_UE_ROOT" ]]; then
+    export UE_ROOT="$DEFAULT_UE_ROOT"
 else
     echo "ERROR: Unreal Engine installation not found. Set UE_ROOT or create .engine-path" >&2
     exit 1
@@ -22,10 +34,16 @@ if [[ ! -d "$UE_ROOT" ]]; then
     exit 1
 fi
 
-export UE_BUILD="$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh"
+export UE_BUILD="$UE_ROOT/Engine/Build/BatchFiles/$UE_HOST_PLATFORM/Build.sh"
 export UE_RUNUAT="$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh"
-export UE_EDITOR="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor"
-export UE_EDITOR_CMD="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor-Cmd"
+if [[ "$UE_HOST_PLATFORM" == Mac ]]; then
+    export UE_EDITOR="$UE_ROOT/Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor"
+    export UE_EDITOR_CMD="$UE_ROOT/Engine/Binaries/Mac/UnrealEditor-Cmd"
+    [[ -x "$UE_EDITOR_CMD" ]] || UE_EDITOR_CMD="$UE_EDITOR"
+else
+    export UE_EDITOR="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor"
+    export UE_EDITOR_CMD="$UE_ROOT/Engine/Binaries/Linux/UnrealEditor-Cmd"
+fi
 
 # One GPU (8 GB) is shared by every worktree, agent and the CI runner on this machine, and two
 # Vulkan runs at once can run it out of memory. with_gpu_lock runs a command while holding a
@@ -74,8 +92,9 @@ wait_for_free_vram() {
 }
 export -f gpu_free_mb gpu_engine_processes wait_for_free_vram
 
+# macOS has no flock and no shared NVIDIA GPU to queue for, so there the command runs directly.
 with_gpu_lock() {
-    if [[ "${KITESURF_GPU_LOCK:-1}" == 0 ]]; then
+    if [[ "${KITESURF_GPU_LOCK:-1}" == 0 ]] || ! command -v flock >/dev/null; then
         "$@"
         return
     fi
@@ -94,12 +113,17 @@ with_gpu_lock() {
         exec "$@"' with_gpu_lock "$lock" "$PROJECT_ROOT" "${start:-}" "$@"
 }
 
+lower() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # True if an engine argument is present; engine arguments ignore case.
 has_arg() {
-    local want="${1,,}" arg
+    local want arg
+    want="$(lower "$1")"
     shift
     for arg in "$@"; do
-        [[ "${arg,,}" == "$want" ]] && return 0
+        [[ "$(lower "$arg")" == "$want" ]] && return 0
     done
     return 1
 }

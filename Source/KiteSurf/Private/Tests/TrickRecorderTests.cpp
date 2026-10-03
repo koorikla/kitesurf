@@ -515,4 +515,58 @@ bool FKiteSurfJumpLandingGIsAG::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Decision 6: with the board's verdict in the snapshot, the record's grade is the verdict's, the score's
+// execution follows it, and a crash stays a crash; without one the record-only GradeLanding grades it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickRecorderGradesFromVerdict, "KiteSurf.Trick.RecorderGradesFromVerdict", TrickRecorderTest::Flags)
+
+bool FKiteSurfTrickRecorderGradesFromVerdict::RunTest(const FString& Parameters)
+{
+	using namespace TrickRecorderTest;
+	TestEqual(TEXT("GradeFromVerdict: a crashed jump is a crash"), TrickScoring::GradeFromVerdict(ELandingGrade::Stomped, true), ELandingGrade::Crash);
+	TestEqual(TEXT("GradeFromVerdict: the verdict's grade"), TrickScoring::GradeFromVerdict(ELandingGrade::Sketchy, false), ELandingGrade::Sketchy);
+	TestEqual(TEXT("GradeFromVerdict: stomped stays stomped"), TrickScoring::GradeFromVerdict(ELandingGrade::Stomped, false), ELandingGrade::Stomped);
+	TestEqual(TEXT("GradeFromVerdict: a crash verdict ridden away from is sketchy"), TrickScoring::GradeFromVerdict(ELandingGrade::Crash, false), ELandingGrade::Sketchy);
+
+	// One jump, landed at 3 m/s with 5 deg of yaw and the kite at 60 deg: GradeLanding calls it stomped.
+	auto Jump = [this](bool bVerdict, ELandingGrade VerdictGrade, ELandingCause Cause, bool bClean)
+	{
+		FJumpRecorder Recorder;
+		FDriver D(StepRecorder(Recorder));
+		D.In.bHasLandingVerdict = bVerdict;
+		D.In.LastLandingGrade = VerdictGrade;
+		D.In.LastLandingCause = Cause;
+		const float T0 = D.TakeOff();
+		D.Fly(T0, 2.0f, Arc(1.0f, 500.0f));
+		D.Land(T0, bClean, 300.0f, 500.0f, T0 + 1.0f);
+		D.RideAway();
+		FJumpRecord R;
+		if (TestEqual(TEXT("One record"), D.Finalised.Num(), 1))
+		{
+			R = D.Finalised[0];
+		}
+		return R;
+	};
+
+	const FJumpRecord NoVerdict = Jump(false, ELandingGrade::Sketchy, ELandingCause::None, true);
+	TestEqual(TEXT("No verdict: GradeLanding's stomped"), NoVerdict.Grade, ELandingGrade::Stomped);
+
+	const FJumpRecord Hot = Jump(true, ELandingGrade::Sketchy, ELandingCause::TooHard, true);
+	TestEqual(TEXT("A sketchy verdict: the record is sketchy, where GradeLanding said stomped"), Hot.Grade, ELandingGrade::Sketchy);
+	TestEqual(TEXT("with the verdict's cause"), Hot.LandingCause, ELandingCause::TooHard);
+	TestNearlyEqual(TEXT("The execution is sketchy's"), Hot.Score.Execution, TrickScoring::ExecutionFactor(ELandingGrade::Sketchy), 1e-6f);
+	TestNearlyEqual(TEXT("and the rest of the score is the stomped landing's"), Hot.Score.Total * TrickScoring::ExecutionFactor(ELandingGrade::Stomped),
+		NoVerdict.Score.Total * TrickScoring::ExecutionFactor(ELandingGrade::Sketchy), 1e-3f);
+	TestEqual(TEXT("The name does not depend on the grade"), Hot.TrickName, NoVerdict.TrickName);
+
+	const FJumpRecord Clean = Jump(true, ELandingGrade::Clean, ELandingCause::None, true);
+	TestEqual(TEXT("A clean verdict: clean"), Clean.Grade, ELandingGrade::Clean);
+	TestNearlyEqual(TEXT("The execution is clean's"), Clean.Score.Execution, TrickScoring::ExecutionFactor(ELandingGrade::Clean), 1e-6f);
+
+	const FJumpRecord Crash = Jump(true, ELandingGrade::Crash, ELandingCause::Sideways, false);
+	TestEqual(TEXT("A crash: outcome"), Crash.Outcome, EJumpOutcome::Crashed);
+	TestEqual(TEXT("A crash: graded a crash"), Crash.Grade, ELandingGrade::Crash);
+	TestNearlyEqual(TEXT("A crash: scores 0"), Crash.Score.Total, 0.0f, 1e-6f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

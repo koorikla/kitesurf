@@ -375,7 +375,9 @@ bool FKiteSurfRiderBodyQuatMatchesLevelFacing::RunTest(const FString& Parameters
 		const FRiderRigPose LevelPose = RiderRig::SolveBody(Level);
 		const FRiderRigPose QuatPose = RiderRig::SolveBody(WithQuat);
 		TestFalse(FString::Printf(TEXT("%s: nothing is NaN"), Case.Name), PoseHasNaN(QuatPose));
-		TestTrue(FString::Printf(TEXT("%s: the torso is the level pose's"), Case.Name), LevelPose.Torso.AngularDistance(QuatPose.Torso) < 1e-5f);
+		// 1e-4 rad: arm64 fuses multiply-adds, which leaves the two solves ~2e-5 rad apart there.
+		const double TorsoRad = LevelPose.Torso.AngularDistance(QuatPose.Torso);
+		TestTrue(FString::Printf(TEXT("%s: the torso is the level pose's (%.3g rad apart)"), Case.Name, TorsoRad), TorsoRad < 1e-4);
 		const float FeetCm = FMath::Max(FVector::Dist(LevelPose.Legs[0].End, QuatPose.Legs[0].End), FVector::Dist(LevelPose.Legs[1].End, QuatPose.Legs[1].End));
 		TestTrue(FString::Printf(TEXT("%s: the feet are in the same straps (%.6f cm apart)"), Case.Name, FeetCm), FeetCm < 1e-3f);
 		const FVector Up = WithQuat.BodyQuat.GetValue().GetAxisZ();

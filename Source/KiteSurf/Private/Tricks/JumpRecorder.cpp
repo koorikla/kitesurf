@@ -77,6 +77,16 @@ void FJumpRecorder::Open(const FJumpRecorderInput& In)
 	KiteMinusBoardSeconds = In.KiteTimeSeconds - In.BoardTimeSeconds;
 	HighestZCm = static_cast<float>(In.Location.Z);
 	HighestZTimeSeconds = In.BoardTimeSeconds;
+
+	// The rotation is measured from the riding pose at the take-off; the attitude takes over on the
+	// next step.
+	Rotation = FRotationRecognizer();
+	bRotationStepped = false;
+	LastStepTimeSeconds = In.BoardTimeSeconds;
+	if (In.bHasAttitude)
+	{
+		Rotation.Begin(FRotationTakeoffFrame::Make(In.BodyQuat, In.Velocity, In.BoardForward), In.BodyQuat);
+	}
 }
 
 void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
@@ -93,6 +103,31 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	Live.ApexHeightCm = FMath::Max(HighestZCm - static_cast<float>(Live.TakeoffLocation.Z), 0.0f);
 	Live.ApexTimeSeconds = HighestZTimeSeconds;
 	Live.AirtimeSeconds = FMath::Max(In.BoardTimeSeconds - Live.TakeoffTimeSeconds, 0.0f);
+
+	const float StepSeconds = In.BoardTimeSeconds - LastStepTimeSeconds;
+	LastStepTimeSeconds = In.BoardTimeSeconds;
+	if (Rotation.HasBegun() && In.bHasAttitude && In.bAttitudeActive && StepSeconds > 0.0f)
+	{
+		Rotation.Step(In.BodyQuat, In.AngularVelocityRadS, StepSeconds, In.Velocity);
+		bRotationStepped = true;
+	}
+	if (bRotationStepped)
+	{
+		// The live view: what has been credited so far, for the ticker.
+		ApplyRotation(Rotation.GetCurrent(), Live);
+	}
+}
+
+void FJumpRecorder::ApplyRotation(const FRotationResult& Result, FJumpRecord& Record)
+{
+	Record.bRotationTracked = true;
+	Record.Inversions = Result.InversionKinds();
+	Record.SpinHalfTurns = Result.SpinHalfTurns;
+	Record.SpinSense = Result.SpinSense;
+	Record.SpinDeg = Result.SpinDeg;
+	Record.LandingStance = Result.LandingStance;
+	Record.NetHeadingDeg = Result.NetHeadingDeg;
+	Record.RollStartSinceTakeoffSeconds = Result.RollStartSeconds;
 }
 
 void FJumpRecorder::Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecord)
@@ -110,9 +145,21 @@ void FJumpRecorder::Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecor
 	Record.LandingG = In.LastLandingG;
 	Record.LandingYawDeg = In.LastLandingAngleDeg;
 	Record.KiteElevationAtLandingDeg = In.KiteElevationDeg;
+	Record.LandingCause = In.LastLandingCause;
 	CollectLoops(In, Record);
+	if (bRotationStepped)
+	{
+		// The touchdown step's body: the attitude stepped before the board landed.
+		ApplyRotation(Rotation.Finish(In.BodyQuat), Record);
+	}
 
-	const FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade);
+	FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade);
+	if (In.bHasLandingVerdict)
+	{
+		// Decision 6: the board's landing verdict owns the grade. The signature's GradeLanding is the
+		// record-only shortcut, kept for snapshots without a board.
+		Signature.Grade = TrickScoring::GradeFromVerdict(In.LastLandingGrade, Record.Outcome == EJumpOutcome::Crashed);
+	}
 	Record.TrickName = TrickNaming::Name(Signature);
 	Record.FamilyKey = TrickNaming::FamilyKey(Signature);
 	Record.Grade = Signature.Grade;

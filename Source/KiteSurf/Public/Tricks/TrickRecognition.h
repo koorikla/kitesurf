@@ -58,9 +58,9 @@ struct FLoopClassifySettings
 };
 
 /**
- * Builds a trick signature from what a jump record knows. Today that is the kite loops and the
- * landing: the rider is taken as hooked in and heelside, with no rotation. T1.6 replaces the rest
- * with the live tracker.
+ * Builds a trick signature from what a jump record knows: the kite loops, the rider's rotation
+ * (inversions, spin and landing stance, which the recorder's FRotationRecognizer put in the record,
+ * T1.6) and the landing. The rider is taken as hooked in, taking off heelside.
  */
 namespace TrickRecognition
 {
@@ -91,7 +91,7 @@ namespace TrickRecognition
 	 * - unfinished halves in alternating directions (SLoopHalfMinDeg, SLoopMaxGapSeconds) give one
 	 *   S-loop entry for two halves and one snake loop entry for three or more;
 	 * - other unfinished or crashed records give nothing.
-	 * Roll timing is left at None: rolls are not in the jump record yet (LoopRollTiming).
+	 * Roll timing is left at None here; SignatureFromJump sets it from the record's roll start.
 	 */
 	KITESURF_API TArray<FTrickLoop> ClassifyLoops(const TArray<FJumpLoop>& Loops, const FLoopClassifySettings& Settings = FLoopClassifySettings());
 
@@ -107,8 +107,13 @@ namespace TrickRecognition
 	KITESURF_API float PeakTensionSinceTakeoffSeconds(const FJumpLoop& Loop);
 
 	/**
-	 * Hooked, heelside, no rotation; the loops from ClassifyLoops; the grade from
+	 * Hooked, taking off heelside; the loops from ClassifyLoops; the inversions, spin half turns and
+	 * sense and the landing stance from the record's rotation fields; the grade from
 	 * TrickScoring::GradeLanding on the record's landing facts.
+	 *
+	 * With an inversion and a roll start (RollStartSinceTakeoffSeconds >= 0), every kite and
+	 * megaloop entry gets LoopRollTiming of that start against the yank of the record's first
+	 * completed loop that is not a heli loop (PeakTensionSinceTakeoffSeconds).
 	 */
 	KITESURF_API FTrickSignature SignatureFromJump(const FJumpRecord& Record,
 		const FLoopClassifySettings& Settings = FLoopClassifySettings(),

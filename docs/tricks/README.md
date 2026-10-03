@@ -39,6 +39,12 @@ These reconcile the four plans.
    rider attitude is stepped before `StepBoard` (T1 section 2.10).
 6. **Landing g.** `LandingAbsorbDistanceCm` (30) and `ComputeLandingG` keep the names from physics
    phase 2 item 4. T1.5's evaluator owns the grade. Phase 2 only supplies the inputs.
+   Since #90 the evaluator's verdict is also the only source of a jump's grade:
+   the tracker feeds the board's `GetLastLandingVerdict()` grade to the recorder, which sets
+   `FJumpRecord::Grade` from it (`TrickScoring::GradeFromVerdict`; a crashed jump stays Crash), so
+   the score's execution and the trick card follow the verdict, and the card shows the verdict's
+   cause line whenever it names one. `TrickScoring::GradeLanding` remains as the record-only
+   shortcut for records built without a board (pure tests).
 7. **Input.** In the air, the left stick and WASD are read by state (pre-wind while loading,
    rotation in the air). There is no new `IA_Rotate`. LeftShift and RB are guarded by
    `KiteSurfHUDTests.cpp`: that guard is narrowed to "not bound to IA_Steer" in the same PR that
@@ -92,4 +98,6 @@ Updated as PRs merge.
 | T2.0 rig hand targets (`FRiderRigInput::Hands`, `SolveArmsPerHand`), board grab points (`Tricks/BoardGrabPoints.h`), strap loops moved to ±30 cm in `SM_KiteBoard` | #76 | Merged. Not used by the pawn yet (T2.1 grabs will); torso fold, tuck, pelvis anchor and `SolveGrab` from the T2.0 plan are not in it |
 | T1.2 PR E rotation live: attitude stepped before the board, board air orientation and drawn board from it, rig body quaternion with a hand-over, travel align, `LandingEvaluator` wired into the board's landing (T1.5 wiring), scripted pre-wind, air stick and tuck | #79 | Merged. The tracker does not count inversions yet (T1.6) and grades from its own record, not the board's verdict |
 | T2.5 best-three session: pure `FBestThreeSession` (`Tricks/SessionScoring.h`), `UTrickSessionSubsystem` polling the tracker, HUD clock row and results card, local best per length in the save game, `kitesurf.Session [seconds]`, pause menu entry | #84 | Merged. A world subsystem as the T2.5 plan says; best paid landing per family key, best three of those (F5 and GKA reconciled as in the plan) |
-| T1.4 player input: the left stick / WASD read by state (board, pre-wind with the board latched, air rotation by the screen side of the rider's back), jump held in the air is the tuck, stick X alone with no pre-wind is a flat spin (`AirStickTiltWithoutPreWindDeg`), legend rows, `kitesurf.Stick` and `kitesurf.JumpButton` | this PR | Open. No new input action or `.uasset` (decision 7) |
+| T1.4 player input: the left stick / WASD read by state (board, pre-wind with the board latched, air rotation by the screen side of the rider's back), jump held in the air is the tuck, stick X alone with no pre-wind is a flat spin (`AirStickTiltWithoutPreWindDeg`), legend rows, `kitesurf.Stick` and `kitesurf.JumpButton` | #87 | Merged. No new input action or `.uasset` (decision 7) |
+| T1.6 live rotation recognition: pure `FRotationRecognizer` (`Tricks/RotationRecognizer.h`) run by the recorder from the attitude (inversions, spin half turns and sense, landing stance, roll start), rotation fields in `FJumpRecord`, `SignatureFromJump` reads them and times early or late rolls in loops, live ticker; T2.6 cause line on the trick card from the board's verdict | #88 | Merged. Spin and net heading are measured against the flight's own turn; with an inversion the spin is the net heading's (0 or one half turn). The card's grade was still the record's `GradeLanding`, so the cause line showed only on sketchy or crashed cards (fixed by the next row). `RecognisesMegaloopBackRoll` is the synthetic `NamesMegaloopBackRollFromRecord`; the ride version waits for a real megaloop |
+| Jump grade from the landing verdict (decision 6): `FJumpRecorderInput` carries the verdict's grade, `FJumpRecord::Grade` is set from it, the card shows the cause line for any named cause | this PR | Open. The timed 30 kn jumps are now graded Sketchy (too hard) on the record and the card, where `GradeLanding` said Clean |

@@ -801,4 +801,105 @@ bool FKiteSurfWaterSurfaceInterface::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+// The board reads the water at five points (docs/physics/plan-2.md item 4): the centre, the nose and
+// tail at WaterSampleAlongFraction of its length, and both rails at WaterSampleAcrossCm. It fits a plane
+// to them: the height under the board is the plane's (their mean), its pitch and roll follow the plane's
+// slope, and the surface's vertical speed under it is the plane's height change along its path. On a
+// 1 m, 20 m sine swell (FKiteWaveWaterSurface) at its steepest point, 17.4 deg: the plane has the chord
+// slope across the samples, the board pitches with it heading along the swell and rolls with it heading
+// across, and moving at 15 m/s along the swell the surface rises under it at the slope times the speed.
+// On flat water nothing rises and the board is level.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfWaterFittedPlaneUnderTheBoard, "KiteSurf.Water.FittedPlaneUnderTheBoard", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfWaterFittedPlaneUnderTheBoard::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+	TestTrue(TEXT("Rider and board created"), Board != nullptr);
+	if (!Board)
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+		}
+		return false;
+	}
+	const float AmplitudeCm = 100.0f;
+	const float WavelengthCm = 2000.0f;
+	const float Step = 1.0f / 240.0f;
+	const float K = 2.0f * PI / WavelengthCm;
+	const TSharedPtr<FKiteWaveWaterSurface> Swell = MakeShared<FKiteWaveWaterSurface>(0.0f, AmplitudeCm, WavelengthCm, FVector2D(1.0f, 0.0f));
+	Board->SetWaterSurface(Swell);
+	auto Height = [&](float X) { return AmplitudeCm * FMath::Sin(K * X); };
+	const float AlongCm = Board->WaterSampleAlongFraction * Board->BoardLengthCm;
+	TestNearlyEqual(TEXT("The nose and tail samples are 0.45 of the 140 cm board from its centre (cm)"), AlongCm, 63.0f, 0.01f);
+	TestNearlyEqual(TEXT("and the rail samples 18 cm either side (cm)"), Board->WaterSampleAcrossCm, 18.0f, 0.01f);
+
+	// At rest on the steepest point of the swell, heading along it: x = 0, where it rises at A k.
+	auto StandAt = [&](float X, float Yaw, const FVector& Velocity)
+	{
+		Pawn->SetActorRotation(FRotator(0.0f, Yaw, 0.0f));
+		Pawn->SetActorLocation(FVector(X, 0.0f, Height(X)));
+		Board->Velocity = Velocity;
+		Board->SetBoardState(EBoardState::Planing);
+		Board->Simulate(Step);
+	};
+	StandAt(0.0f, 0.0f, FVector::ZeroVector);
+	const float ChordSlope = (Height(AlongCm) - Height(-AlongCm)) / (2.0f * AlongCm);
+	const float ExpectedHeightCm = (Height(0.0f) + Height(AlongCm) + Height(-AlongCm) + 2.0f * Height(0.0f)) / 5.0f;
+	const FVector ExpectedNormal = FVector(-ChordSlope, 0.0f, 1.0f).GetSafeNormal();
+	const float SlopeDeg = FMath::RadiansToDegrees(FMath::Atan(ChordSlope));
+	const FBoardStepDebug& Water = Board->GetLastStepDebug();
+	TestNearlyEqual(TEXT("The height under the board is the mean of the five samples (cm)"), Board->GetWaterSurfaceHeightCm(), ExpectedHeightCm, 0.01f);
+	TestTrue(FString::Printf(TEXT("The plane's normal has the chord slope across the samples, %.2f deg (%s)"), SlopeDeg, *Board->GetWaterSurfaceNormal().ToString()), Board->GetWaterSurfaceNormal().Equals(ExpectedNormal, 1.0e-4f));
+	TestNearlyEqual(TEXT("The nose sample is 63 cm ahead, on the surface (cm)"), static_cast<float>(Water.WaterSamplesCm[1].X), AlongCm, 0.01f);
+	TestNearlyEqual(TEXT("and on the surface there (cm)"), static_cast<float>(Water.WaterSamplesCm[1].Z), Height(AlongCm), 0.01f);
+	TestNearlyEqual(TEXT("The right rail sample is 18 cm to the right (cm)"), static_cast<float>(Water.WaterSamplesCm[3].Y), Board->WaterSampleAcrossCm, 0.01f);
+	const float PitchAlongDeg = Pawn->GetActorRotation().Pitch;
+	const float RollAlongDeg = Pawn->GetActorRotation().Roll;
+	TestNearlyEqual(TEXT("Heading up the slope the board pitches nose up with it (deg)"), PitchAlongDeg, SlopeDeg, 0.05f);
+	TestNearlyEqual(TEXT("At rest nothing rises under the board (cm/s)"), Board->GetSurfaceVerticalSpeedCmS(), 0.0f, 0.01f);
+
+	// Heading across the swell (+Y) on the same spot: the slope is now across the board, measured
+	// between the rail samples.
+	StandAt(0.0f, 90.0f, FVector::ZeroVector);
+	const float AcrossCm = Board->WaterSampleAcrossCm;
+	const float RailSlopeDeg = FMath::RadiansToDegrees(FMath::Atan((Height(AcrossCm) - Height(-AcrossCm)) / (2.0f * AcrossCm)));
+	const float PitchAcrossDeg = Pawn->GetActorRotation().Pitch;
+	const float RollAcrossDeg = Pawn->GetActorRotation().Roll;
+	TestTrue(FString::Printf(TEXT("Heading across the swell the board rolls with the slope between its rails, %.2f deg (%.2f deg), and does not pitch (%.2f deg)"), RailSlopeDeg, RollAcrossDeg, PitchAcrossDeg),
+		FMath::Abs(FMath::Abs(RollAcrossDeg) - RailSlopeDeg) < 0.05f && FMath::Abs(PitchAcrossDeg) < 0.05f);
+
+	// Moving along the swell at 15 m/s from 1 m before the steepest point: after a few steps the
+	// surface rises under the board at about the slope times the speed.
+	const float SpeedCmS = 1500.0f;
+	StandAt(-100.0f, 0.0f, FVector(SpeedCmS, 0.0f, 0.0f));
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		Board->Velocity = FVector(SpeedCmS, 0.0f, Board->Velocity.Z);
+		Board->Simulate(Step);
+	}
+	const float X = Pawn->GetActorLocation().X;
+	// The plane's height is the mean of the five samples, so it rises at the speed times the slope of
+	// that mean: A k cos(k x) (3 + 2 cos(k L')) / 5, L' the nose offset, at the middle of the last step.
+	const float MidX = X - 0.5f * SpeedCmS * Step;
+	const float ExpectedRiseCmS = SpeedCmS * AmplitudeCm * K * FMath::Cos(K * MidX) * (3.0f + 2.0f * FMath::Cos(K * AlongCm)) / 5.0f;
+	UE_LOG(LogKiteSurf, Log, TEXT("FittedPlaneUnderTheBoard: on a %.1f m, %.0f m swell at its steepest the plane's height %.2f cm (centre %.2f), slope %.2f deg (steepest %.2f), pitch %.2f / roll %.2f heading along, pitch %.2f / roll %.2f across; at %.0f m/s the surface rises %.1f cm/s under the board (expected %.1f)"),
+		AmplitudeCm / 100.0f, WavelengthCm / 100.0f, ExpectedHeightCm, Height(0.0f), SlopeDeg, FMath::RadiansToDegrees(FMath::Atan(AmplitudeCm * K)), PitchAlongDeg, RollAlongDeg, PitchAcrossDeg, RollAcrossDeg,
+		SpeedCmS / 100.0f, Board->GetSurfaceVerticalSpeedCmS(), ExpectedRiseCmS);
+	TestNearlyEqual(TEXT("Riding along the swell the surface rises under the board at the speed times the plane's slope (cm/s)"), Board->GetSurfaceVerticalSpeedCmS(), ExpectedRiseCmS, 0.01f * FMath::Abs(ExpectedRiseCmS));
+
+	// Flat water: level, and nothing rises.
+	Board->SetWaterSurface(MakeShared<FKiteFlatWaterSurface>(0.0f));
+	StandAt(0.0f, 30.0f, FVector(SpeedCmS, 0.0f, 0.0f));
+	Board->Simulate(Step);
+	TestNearlyEqual(TEXT("On flat water nothing rises under a moving board (cm/s)"), Board->GetSurfaceVerticalSpeedCmS(), 0.0f, 0.001f);
+	TestTrue(TEXT("and the plane is level"), Board->GetWaterSurfaceNormal().Equals(FVector::UpVector, 1.0e-6f));
+
+	World->DestroyWorld(false);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

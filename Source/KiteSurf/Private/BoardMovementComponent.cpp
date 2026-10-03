@@ -18,6 +18,11 @@ namespace
 	// trim and 292.5 N from these (they were 8 kg/s and 0.03 kg/cm, 380 N on their own).
 	constexpr float ReferencePlaningDragKgPerS = 6.15f;
 	constexpr float ReferencePlaningQuadraticDragKgPerCm = 0.0231f;
+
+	// The surface's vertical speed under the board is its height change per step along the board's
+	// path. A board moved further than its velocity explains (put somewhere by a reset or a test) has no
+	// path to measure along; then the speed comes from the fitted slope alone.
+	constexpr float WaterTrackJumpToleranceCm = 1.0f;
 }
 
 UBoardMovementComponent::UBoardMovementComponent()
@@ -28,6 +33,8 @@ UBoardMovementComponent::UBoardMovementComponent()
 	MassKg = 85.0f;
 	BoardLengthCm = 140.0f;
 	BoardWidthCm = 42.0f;
+	WaterSampleAlongFraction = 0.45f; // nose and tail samples 63 cm either side of the centre
+	WaterSampleAcrossCm = 18.0f;      // the rails
 	BuoyancyN = 1500.0f;
 	PlaningThresholdCmS = 400.0f;
 	DisplacementQuadraticDragKgPerCm = 0.1f;
@@ -172,6 +179,43 @@ void UBoardMovementComponent::SampleWaterSurface(const FVector& Location, float&
 		WaterSurface = MakeShared<FKiteWaterBodySurface>(CachedWaterBodyComponent.Get());
 		WaterSurface->SampleWaterSurface(Location, OutWaterHeight, OutWaterNormal);
 	}
+}
+
+void UBoardMovementComponent::SampleWaterUnderBoard(const FVector& Location, float Yaw, float DeltaTime)
+{
+	// Centre, nose, tail, right rail, left rail, in the level frame of the heading.
+	const FVector Forward = FRotator(0.0f, Yaw, 0.0f).Vector();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Forward);
+	const float AlongCm = FMath::Max(WaterSampleAlongFraction, 0.0f) * BoardLengthCm;
+	const float AcrossCm = FMath::Max(WaterSampleAcrossCm, 0.0f);
+	const FVector Offsets[5] = { FVector::ZeroVector, Forward * AlongCm, -Forward * AlongCm, Right * AcrossCm, -Right * AcrossCm };
+	float Heights[5] = {};
+	for (int32 Index = 0; Index < 5; ++Index)
+	{
+		FVector Normal = FVector::UpVector;
+		SampleWaterSurface(Location + Offsets[Index], Heights[Index], Normal);
+		LastStepDebug.WaterSamplesCm[Index] = FVector(Location.X + Offsets[Index].X, Location.Y + Offsets[Index].Y, Heights[Index]);
+	}
+
+	// The least-squares plane z = h + a x + b y through the five, x along the heading and y across:
+	// the points are symmetric about the centre, so h is their mean and each slope is the difference
+	// across its own pair.
+	const float HeightCm = (Heights[0] + Heights[1] + Heights[2] + Heights[3] + Heights[4]) / 5.0f;
+	const float SlopeAlong = AlongCm > KINDA_SMALL_NUMBER ? (Heights[1] - Heights[2]) / (2.0f * AlongCm) : 0.0f;
+	const float SlopeAcross = AcrossCm > KINDA_SMALL_NUMBER ? (Heights[3] - Heights[4]) / (2.0f * AcrossCm) : 0.0f;
+	const FVector Gradient = Forward * SlopeAlong + Right * SlopeAcross;
+	LastStepDebug.WaterHeightCm = HeightCm;
+	LastStepDebug.WaterNormal = FVector(-Gradient.X, -Gradient.Y, 1.0f).GetSafeNormal();
+
+	// How fast the surface rises under the board: its height change since the last step along the
+	// path the board took. Without a path (the first step, or a board put somewhere), the slope times
+	// the board's horizontal velocity.
+	const float ExpectedTravelCm = Velocity.Size2D() * DeltaTime + WaterTrackJumpToleranceCm;
+	const bool bTracked = bHasWaterTrack && DeltaTime > KINDA_SMALL_NUMBER && FVector::Dist2D(Location, LastWaterTrackLocation) <= ExpectedTravelCm;
+	LastStepDebug.SurfaceVerticalSpeedCmS = bTracked ? (HeightCm - LastWaterTrackHeightCm) / DeltaTime : FVector::DotProduct(FVector(Velocity.X, Velocity.Y, 0.0f), Gradient);
+	bHasWaterTrack = true;
+	LastWaterTrackLocation = Location;
+	LastWaterTrackHeightCm = HeightCm;
 }
 
 void UBoardMovementComponent::AddExternalForce(const FVector& Force)
@@ -341,6 +385,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const FRotator Rotation = UpdatedComponent->GetComponentRotation();
 		const FVector Forward = UpdatedComponent->GetForwardVector();
 
+		// The water under the board: a plane fitted to five samples, and how fast it is rising here.
+		SampleWaterUnderBoard(Location, Rotation.Yaw, DeltaTime);
+
 		// 0. Crash recovery handling
 		if (bIsCrashing)
 		{
@@ -388,10 +435,10 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			}
 		}
 
-		// 1. Water surface sampling
-		float WaterHeight = 0.0f;
-		FVector WaterNormal = FVector::UpVector;
-		SampleWaterSurface(Location, WaterHeight, WaterNormal);
+		// 1. The water under the board (sampled above, before the crash recovery).
+		const float WaterHeight = LastStepDebug.WaterHeightCm;
+		const FVector WaterNormal = LastStepDebug.WaterNormal;
+		const float SurfaceVerticalSpeed = LastStepDebug.SurfaceVerticalSpeedCmS;
 
 		bool bIsAirborne = (CurrentBoardState == EBoardState::Airborne);
 
@@ -471,7 +518,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			const float BuoyancyBalance = -GravityForceZ; // exactly balances gravity at rest
 			const float OmegaRadS = 2.0f * PI * BuoyancyNaturalFrequencyHz;
 			const float SpringForceZ = EffectiveMassForBuoyancy() * OmegaRadS * OmegaRadS * Submersion;
-			const float DampingForceZ = -2.0f * BuoyancyDampingRatio * EffectiveMassForBuoyancy() * OmegaRadS * Velocity.Z;
+			// The damping acts on the board's vertical speed relative to the surface under it, which on
+			// a swell rises and falls as the board rides over it.
+			const float DampingForceZ = -2.0f * BuoyancyDampingRatio * EffectiveMassForBuoyancy() * OmegaRadS * (Velocity.Z - SurfaceVerticalSpeed);
 
 			float BuoyancyForceZ = BuoyancyBalance + SpringForceZ + DampingForceZ;
 			const float MaxBuoyancyForce = KiteUnits::NToUnrealForce(BuoyancyN);

@@ -59,6 +59,13 @@ struct FBoardStepDebug
 	float CarriedN = 0.0f;
 	/** Air drag on the rider and board, along the wind they feel; only in the air. */
 	FVector AirDragN = FVector::ZeroVector;
+	/** Where the water was sampled under the board (world, cm, on the surface): centre, nose, tail, right rail, left rail. */
+	FVector WaterSamplesCm[5] = { FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector };
+	/** The plane fitted to the samples: its height under the board's centre (cm) and its normal. */
+	float WaterHeightCm = 0.0f;
+	FVector WaterNormal = FVector::UpVector;
+	/** How fast the surface under the board is rising (cm/s): its height change per step along the board's path. */
+	float SurfaceVerticalSpeedCmS = 0.0f;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
@@ -228,6 +235,21 @@ public:
 	/** Samples water height and normal at the given world location */
 	void SampleWaterSurface(const FVector& Location, float& OutWaterHeight, FVector& OutWaterNormal) const;
 
+	/**
+	 * The water under the board as the last step saw it: a plane fitted to five samples (the centre, the
+	 * nose and tail at WaterSampleAlongFraction of the length, and both rails at WaterSampleAcrossCm),
+	 * its height under the board's centre (cm), its normal, and how fast it is rising under the board
+	 * (cm/s). Pitch and roll on the water follow the plane.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetWaterSurfaceHeightCm() const { return LastStepDebug.WaterHeightCm; }
+
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	FVector GetWaterSurfaceNormal() const { return LastStepDebug.WaterNormal; }
+
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetSurfaceVerticalSpeedCmS() const { return LastStepDebug.SurfaceVerticalSpeedCmS; }
+
 	/** Sets the water surface interface (used by tests or custom water providers) */
 	void SetWaterSurface(TSharedPtr<IKiteWaterSurface> InWaterSurface);
 
@@ -251,6 +273,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BoardWidthCm;
+
+	/** The nose and tail water samples are this fraction of BoardLengthCm ahead of and behind the board's centre (docs/physics/plan-2.md item 4). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Water", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float WaterSampleAlongFraction;
+
+	/** The rail water samples are this far either side of the board's centre line (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Water", meta = (ClampMin = "0.0"))
+	float WaterSampleAcrossCm;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BuoyancyN;
@@ -567,6 +597,18 @@ private:
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();
+
+	/**
+	 * Samples the water at the five points under a board at Location heading Yaw, fits a plane to them
+	 * and fills the water fields of LastStepDebug: the plane's height under the centre, its normal and
+	 * the surface's vertical speed under the board since the last step (DeltaTime s ago).
+	 */
+	void SampleWaterUnderBoard(const FVector& Location, float Yaw, float DeltaTime);
+
+	/** Where and how high the water under the board's centre was at the last step, for the surface's vertical speed. */
+	bool bHasWaterTrack = false;
+	FVector LastWaterTrackLocation = FVector::ZeroVector;
+	float LastWaterTrackHeightCm = 0.0f;
 
 	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
 	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);

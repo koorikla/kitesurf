@@ -344,7 +344,7 @@ Each task ships with `KiteSurf.School.*` automation tests and follows the merge-
 
 | ID | Task | Acceptance | Size | Depends on |
 | --- | --- | --- | --- | --- |
-| S1 | **Done.** Lesson data types, objective and fault evaluators as pure functions over `FJumpRecord` and a telemetry sample buffer; chapters A and B as data (`School/`, `KiteSurf.School.*` tests) | Each metric and each fault rule tested on synthetic records | M | — |
+| S1 | **Done** (#81). Lesson data types, objective and fault evaluators as pure functions over `FJumpRecord` and a telemetry sample buffer; chapters A and B as data (`School/`, `KiteSurf.School.*` tests) | Each metric and each fault rule tested on synthetic records | M | — |
 | S2 | `ULessonSubsystem`, per-lesson progress in the save game (best stars, best value, attempts, passes, last played), unlock graph, recommended next lesson, reset | Progress persists across a save round trip; prerequisites unlock; the recommended lesson follows the rule; reset clears lessons but not the trick book; an old save loads with no progress | S | S1 |
 | S3 | `ALessonDirector`: set-up, state machine, pass and fail, drop-back offer | A scripted ride passes lesson B2 under `-nullrhi`; a bad send fails with "Bar out while it climbs" | M | S1, S2 |
 | S4 | HUD lesson layer: prompt with glyph, objective progress, window-arc target zones, ghost kite, timing grades, result card with stars | `KiteSurf.HUD.Lesson*` text and state tests; seen in a `-game` run | M | S3 |

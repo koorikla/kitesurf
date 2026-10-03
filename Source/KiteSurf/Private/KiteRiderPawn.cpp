@@ -1337,7 +1337,9 @@ void AKiteRiderPawn::ResetRiderAttitude()
 	PreWindDirection = FVector2D::ZeroVector;
 	bHasLastStepVerticalSpeed = false;
 	RiderAirBlend = 0.0f;
-	GrabState.Reset();
+	// The grab state is not reset here: a crash landing calls this from the board's crash event, before
+	// the tracker reads this flight's grabs. Off the water's air state the hands and the foot go back
+	// on their own (FGrabState).
 	if (bAttitudeOwnsBoardVisual)
 	{
 		ClearBoardVisualOverride();

@@ -157,6 +157,9 @@ FKiteSurfShotFrame AKiteSurfCinematicCamera::ComputeShotFrame(EKiteSurfShot InSh
 		// On the kite's side of the rider and a little ahead, level with the board: the chest, the toe
 		// edge and the hands face the lens.
 		Frame.Location = RiderLocation - Axes.Upwind * 330.0f + Axes.Heading * 260.0f + Up * 40.0f;
+		// Never under the water (a crash sinks the rider): rendering from below the surface lost the
+		// Vulkan device in an offscreen run.
+		Frame.Location.Z = FMath::Max(Frame.Location.Z, WaterZ + 80.0f);
 		Frame.LookAt = RiderLocation + Up * 60.0f;
 		Frame.FieldOfViewDeg = 50.0f;
 		break;

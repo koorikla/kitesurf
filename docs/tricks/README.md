@@ -44,6 +44,13 @@ These reconcile the four plans.
    `KiteSurfHUDTests.cpp`: that guard is narrowed to "not bound to IA_Steer" in the same PR that
    first binds them.
 
+8. **Rider rotation goes before the board.** The attitude step runs before `StepBoard` (T1),
+   not after it (T2 addendum).
+9. **Every rider can do tricks.** Since #54 the robot also uses the jointed rig, so the robot
+   question in `docs/tricks.md` sections 6.5 and 9 is closed.
+10. **Each plan ends with an addendum** that re-bases it on `a50c315`. Use the addendum's line
+    numbers.
+
 ## Order against physics phase 2
 
 Physics phase 2 (`physics/phase2`, `docs/physics/plan-2.md`) was being written on 2026-10-03. It

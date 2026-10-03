@@ -239,6 +239,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	PreWindBuildSeconds = 0.5f;
 	PreWindStickThreshold = 0.3f;
 	AirRotationDeadzone = 0.15f;
+	RotateReleaseGraceSeconds = 0.1f;
 	GrabReachFraction = 0.92f;
 	GrabMaxBoardPullCm = 60.0f;
 	OneFootKickStanceCm = FVector(-58.0f, -16.0f, 24.0f);
@@ -486,6 +487,12 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		if (PassAction)
 		{
 			EnhancedInputComponent->BindAction(PassAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPassPressed);
+		}
+		// The rotation modifier (batch A): held, so Started and Completed, like the pass and jump.
+		if (RotateAction)
+		{
+			EnhancedInputComponent->BindAction(RotateAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnRotatePressed);
+			EnhancedInputComponent->BindAction(RotateAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnRotateReleased);
 		}
 	}
 
@@ -922,12 +929,14 @@ void AKiteRiderPawn::RoutePlayerRiderInput()
 	if (bAirborne)
 	{
 		// The rotation stick and the tuck. The board keeps its last carve and weight shift until the
-		// landing; the attitude flies it in the air.
-		AirRotationStick = Rotation;
+		// landing; the attitude flies it in the air. Batch A: IA_Rotate gates the rotation stick, so
+		// a plain jump's board input does nothing to the attitude unless the modifier is held.
+		AirRotationStick = bRotateHeld ? Rotation : FVector2D::ZeroVector;
 		PreWindStick = FVector2D::ZeroVector;
 		TuckInput = bPlayerTuckHeld ? 1.0f : 0.0f;
 		// The same stick picks the grab zone while a grab button is held (StepRiderAttitude then
-		// leaves the rotation alone).
+		// leaves the rotation alone), whatever IA_Rotate is doing: a grab button already commits to
+		// picking a zone, not a rotation.
 		if (!bScriptedGrabZoneStick)
 		{
 			GrabZoneStick = Rotation;
@@ -939,8 +948,12 @@ void AKiteRiderPawn::RoutePlayerRiderInput()
 	TuckInput = 0.0f;
 	bPlayerTuckHeld = false;
 	const bool bLoading = BoardMovement->IsLoadHeld();
-	PreWindStick = bLoading ? Rotation : FVector2D::ZeroVector;
-	if (!bLoading || !bPreWindLatchesBoardInput)
+	// Batch A: the stick reaches the pre-wind only with IA_Rotate held too. The latch that freezes
+	// the board's carve and weight shift applies only while both are held, so the tail weight and
+	// the carve a plain load is taught with (README.md, School B1/B2) keep working through it.
+	const bool bRotateGate = bLoading && bRotateHeld;
+	PreWindStick = bRotateGate ? Rotation : FVector2D::ZeroVector;
+	if (!bRotateGate || !bPreWindLatchesBoardInput)
 	{
 		EdgeBoard(PlayerRiderStick.X);
 		BoardMovement->SetWeightShift(PlayerRiderStick.Y);
@@ -1028,6 +1041,20 @@ void AKiteRiderPawn::OnJumpReleased(const FInputActionValue& Value)
 	bPlayerTuckHeld = false;
 	ReleaseLoadAndPop();
 	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
+}
+
+void AKiteRiderPawn::OnRotatePressed(const FInputActionValue& Value)
+{
+	bPlayerRiderInput = true;
+	bRotateHeld = true;
+	RoutePlayerRiderInput();
+}
+
+void AKiteRiderPawn::OnRotateReleased(const FInputActionValue& Value)
+{
+	bPlayerRiderInput = true;
+	bRotateHeld = false;
 	RoutePlayerRiderInput();
 }
 
@@ -1612,11 +1639,32 @@ void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
 				PreWindAmount = FMath::Min(PreWindAmount + StepSeconds / FMath::Max(PreWindBuildSeconds, 0.01f), 1.0f);
 				PreWindDirection = PreWindStick;
 			}
+			// Batch A: on the player path, letting IA_Rotate go while still loading does not lose the
+			// pre-wind straight away (releasing the modifier and the jump button in the same frame
+			// still gives the trick, since RoutePlayerRiderInput has already zeroed PreWindStick by
+			// then and nothing here runs again before the take-off reads it). Past
+			// RotateReleaseGraceSeconds it clears, so a modifier let go well before the pop leaves a
+			// plain jump. The scripted setters (SetPreWind, kitesurf.PreWind) are not on the player
+			// path and are never gated.
+			if (bPlayerRiderInput && !bRotateHeld)
+			{
+				RotateReleaseElapsedSeconds += StepSeconds;
+				if (RotateReleaseElapsedSeconds > RotateReleaseGraceSeconds)
+				{
+					PreWindAmount = 0.0f;
+					PreWindDirection = FVector2D::ZeroVector;
+				}
+			}
+			else
+			{
+				RotateReleaseElapsedSeconds = 0.0f;
+			}
 		}
 		else
 		{
 			PreWindAmount = 0.0f;
 			PreWindDirection = FVector2D::ZeroVector;
+			RotateReleaseElapsedSeconds = 0.0f;
 		}
 	}
 
@@ -1939,7 +1987,8 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 
 	// The left stick and the jump button go where the rider's state now says: a held stick moves
 	// from the board to the pre-wind as the load starts, to the air stick at the take-off and back to
-	// the board on landing, with no new input event.
+	// the board on landing, with no new input event. IA_Rotate (batch A) gates whether the stick
+	// reaches the pre-wind or the air stick at all.
 	UpdateScreenBackSignLatch();
 	RoutePlayerRiderInput();
 

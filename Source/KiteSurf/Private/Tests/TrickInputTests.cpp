@@ -158,6 +158,19 @@ namespace TrickInputTest
 				Pawn->OnJumpReleased(FInputActionValue(false));
 			}
 		}
+
+		/** IA_Rotate (batch A): held, the stick reaches the pre-wind and the air rotation. */
+		void Rotate(bool bHeld)
+		{
+			if (bHeld)
+			{
+				Pawn->OnRotatePressed(FInputActionValue(true));
+			}
+			else
+			{
+				Pawn->OnRotateReleased(FInputActionValue(false));
+			}
+		}
 	};
 
 	/** What the air stick does in a player-path jump. */
@@ -235,12 +248,18 @@ namespace TrickInputTest
 	{
 		FSendResult S;
 		AKiteRiderPawn* Pawn = Ride.Pawn;
+		const bool bWantsRotation = !PreWind.IsZero();
 		const float SendAt = 8.0f;
 		Ride.SimulateUntil(SendAt);
 		Pawn->SteerKite(-1.0f);
 		Ride.Stick(0.0f, -1.0f);   // S: the weight on the tail
 		Ride.JumpButton(true);     // load: the board keeps the tail weight from here
 		S.BackSign = Pawn->GetScreenBackSign();
+		// IA_Rotate (batch A): held whenever a pre-wind is wanted, so the stick reaches it.
+		if (bWantsRotation)
+		{
+			Ride.Rotate(true);
+		}
 		Ride.Stick(PreWind.X * S.BackSign, PreWind.Y);
 		const float LatchedEdge = Ride.Board->GetEdgeInput();
 		const float LatchedWeight = Ride.Board->GetWeightShift();
@@ -254,6 +273,15 @@ namespace TrickInputTest
 		Pawn->SheetKite(1.0f);
 		Ride.Stick(0.0f, 0.0f);
 		Ride.JumpButton(false);    // pop
+		// Released after the pop (not before): releasing IA_Rotate while still loading would unlatch
+		// the board a step early (the gate on EdgeBoard/SetWeightShift is bLoading && bRotateHeld), which
+		// would lose the tail weight right as the board pops. The grace (RotateReleaseGraceSeconds)
+		// means the pre-wind this built is unaffected either way, since nothing reads it between here
+		// and the take-off.
+		if (bWantsRotation)
+		{
+			Ride.Rotate(false);
+		}
 		Pawn->SteerKite(0.0f);
 		return S;
 	}
@@ -290,6 +318,8 @@ namespace TrickInputTest
 		{
 			if (bWasAir && bUseStick && !bStickHeld && R.StickReleasedAt < 0.0f)
 			{
+				// IA_Rotate (batch A): held in the air too, so the stick reaches the attitude.
+				Ride.Rotate(true);
 				Ride.Stick(Script.AirStick.X * R.BackSign, Script.AirStick.Y);
 				bStickHeld = true;
 			}
@@ -330,6 +360,7 @@ namespace TrickInputTest
 					if (bLetGo)
 					{
 						Ride.Stick(0.0f, 0.0f);
+						Ride.Rotate(false);
 						bStickHeld = false;
 						R.StickReleasedAt = R.AirSeconds;
 					}
@@ -424,6 +455,7 @@ bool FKiteSurfInputPreWindLatchesBoard::RunTest(const FString& Parameters)
 		Ride.JumpButton(true);
 		TestTrue(TEXT("Jump held loads the board"), Ride.Board->IsLoadHeld());
 		const float BackSign = Pawn->GetScreenBackSign();
+		Ride.Rotate(true); // IA_Rotate (batch A): held, so the stick reaches the pre-wind
 		Ride.Stick(BackSign, 0.0f); // towards the rider's back on screen: a back roll
 		TestEqual(TEXT("Loading: the stick is the pre-wind (+1 back roll)"), static_cast<float>(Pawn->GetPreWindStick().X), 1.0f);
 		TestEqual(TEXT("Loading: the carve stays at its value when the load started"), Ride.Board->GetEdgeInput(), 0.4f);
@@ -455,6 +487,7 @@ bool FKiteSurfInputPreWindLatchesBoard::RunTest(const FString& Parameters)
 		TestTrue(TEXT("In the air the held stick is the rotation stick"), Pawn->GetAirRotationInput().X > 0.99f);
 		TestTrue(TEXT("In the air there is no pre-wind stick"), Pawn->GetPreWindStick().IsZero());
 		Ride.Stick(0.0f, 0.0f);
+		Ride.Rotate(false);
 	}
 
 	// No stick while loading: no pre-wind.
@@ -485,11 +518,13 @@ bool FKiteSurfInputPreWindLatchesBoard::RunTest(const FString& Parameters)
 		Ride.Pawn->bPreWindLatchesBoardInput = false;
 		Ride.SimulateUntil(4.0f);
 		Ride.JumpButton(true);
+		Ride.Rotate(true); // IA_Rotate (batch A): held, so the stick reaches the pre-wind
 		Ride.Stick(0.7f, 0.0f);
 		TestEqual(TEXT("Latch off: the stick carves while loading"), Ride.Board->GetEdgeInput(), 0.7f);
 		TestEqual(TEXT("Latch off: the pre-wind still takes the stick"), static_cast<float>(FMath::Abs(Ride.Pawn->GetPreWindStick().X)), 0.7f);
 		Ride.Stick(0.0f, 0.0f);
 		Ride.JumpButton(false);
+		Ride.Rotate(false); // after the pop: releasing it while still loading would unlatch the board a step early
 	}
 
 	// The scripted setters take the controls back from the player's stick.
@@ -550,28 +585,32 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfInputAirSpinReachable, "KiteSurf.Input
 
 bool FKiteSurfInputAirSpinReachable::RunTest(const FString& Parameters)
 {
-	// The mapping: stick X alone from a 0 deg default tilt is the spin family; from the roll's 65 it
-	// is a roll; a flat spin does not tilt past flat when stick Y pushes up.
+	// The mapping (batch A): AirStickTiltWithoutPreWindDeg is unified with the roll's
+	// DefaultRollAxisTiltDeg, so X alone is now a roll whether or not the jump left the water
+	// rotating; RollAxisTiltRangeDeg and SpinAxisTiltMaxDeg widen so the up-diagonal still tilts
+	// into the spin family and the down-diagonal into a more inverted roll.
 	{
 		URiderAttitudeComponent* A = NewObject<URiderAttitudeComponent>();
-		TestEqual(TEXT("Default: no pre-wind, the air stick starts flat"), A->AirStickTiltWithoutPreWindDeg, 0.0f);
-		const RiderAxes::FRotationAxisChoice Spin = RiderAxes::ChooseAxisBody(FVector2D(1.0f, 0.0f), 1.0f, A->AirStickTiltWithoutPreWindDeg,
+		TestEqual(TEXT("Batch A: the air stick's tilt with no pre-wind matches the roll's (unified)"), A->AirStickTiltWithoutPreWindDeg, A->DefaultRollAxisTiltDeg);
+		const RiderAxes::FRotationAxisChoice Roll = RiderAxes::ChooseAxisBody(FVector2D(1.0f, 0.0f), 1.0f, A->AirStickTiltWithoutPreWindDeg,
 			A->RollAxisTiltRangeDeg, A->FlipSectorDeg, A->SpinAxisTiltMaxDeg, A->FlipSectorHysteresisDeg, false);
-		TestEqual(TEXT("X alone from 0 deg is a spin"), Spin.Family, RiderAxes::ERotationFamily::Spin);
-		TestTrue(TEXT("The spin axis is the body's up (backside: -sigma)"), Spin.AxisBody.Equals(FVector(0.0, 0.0, -1.0), 1e-4));
-		const RiderAxes::FRotationAxisChoice Up = RiderAxes::ChooseAxisBody(FVector2D(1.0f, 0.5f), 1.0f, A->AirStickTiltWithoutPreWindDeg,
+		TestEqual(TEXT("X alone, with or without a pre-wind, is a roll"), Roll.Family, RiderAxes::ERotationFamily::Roll);
+		TestEqual(FString::Printf(TEXT("X alone tilts to the roll's default (%.0f deg)"), Roll.TiltDeg), Roll.TiltDeg, A->DefaultRollAxisTiltDeg);
+		const RiderAxes::FRotationAxisChoice Spin = RiderAxes::ChooseAxisBody(FVector2D(1.0f, 1.0f), 1.0f, A->AirStickTiltWithoutPreWindDeg,
 			A->RollAxisTiltRangeDeg, A->FlipSectorDeg, A->SpinAxisTiltMaxDeg, A->FlipSectorHysteresisDeg, false);
-		TestEqual(TEXT("Stick up does not tilt a flat spin past flat"), Up.TiltDeg, 0.0f);
-		const RiderAxes::FRotationAxisChoice Roll = RiderAxes::ChooseAxisBody(FVector2D(1.0f, 0.0f), 1.0f, A->DefaultRollAxisTiltDeg,
+		TestEqual(TEXT("The up-diagonal tilts into the spin family"), Spin.Family, RiderAxes::ERotationFamily::Spin);
+		const RiderAxes::FRotationAxisChoice DownRoll = RiderAxes::ChooseAxisBody(FVector2D(1.0f, -1.0f), 1.0f, A->AirStickTiltWithoutPreWindDeg,
 			A->RollAxisTiltRangeDeg, A->FlipSectorDeg, A->SpinAxisTiltMaxDeg, A->FlipSectorHysteresisDeg, false);
-		TestEqual(TEXT("X alone from the roll's default tilt is a roll"), Roll.Family, RiderAxes::ERotationFamily::Roll);
+		TestEqual(TEXT("The down-diagonal is still a roll, more inverted"), DownRoll.Family, RiderAxes::ERotationFamily::Roll);
+		TestTrue(FString::Printf(TEXT("The down-diagonal tilts past the roll's default (%.0f deg)"), DownRoll.TiltDeg), DownRoll.TiltDeg > Roll.TiltDeg);
 	}
 
-	// The bare attitude under 800 N straight up: no pre-wind, stick X alone for 2.5 s.
+	// The bare attitude under 800 N straight up: no pre-wind, the up-diagonal stick for 2.5 s (batch
+	// A: X alone is now a roll, so reaching the spin family needs the diagonal).
 	{
 		URiderAttitudeComponent* A = NewObject<URiderAttitudeComponent>();
 		FAttitudeInputs In = BareAir(800.0f);
-		In.RotationStick = FVector2D(1.0f, 0.0f);
+		In.RotationStick = FVector2D(1.0f, 1.0f).GetSafeNormal();
 		In.bRotationInput = true;
 		const float Dt = 1.0f / 240.0f;
 		double Turned = 0.0;
@@ -584,7 +623,7 @@ bool FKiteSurfInputAirSpinReachable::RunTest(const FString& Parameters)
 			MinUpZ = FMath::Min(MinUpZ, A->GetBodyQuat().GetAxisZ().Z);
 			bSpinFamily &= A->GetLastStepDebug().Family == RiderAxes::ERotationFamily::Spin;
 		}
-		AddInfo(FString::Printf(TEXT("Bare attitude, stick X alone for 2.5 s at 800 N: turned %.0f deg about up, lowest up.z %.2f"), Turned, MinUpZ));
+		AddInfo(FString::Printf(TEXT("Bare attitude, up-diagonal stick for 2.5 s at 800 N: turned %.0f deg about up, lowest up.z %.2f"), Turned, MinUpZ));
 		TestTrue(TEXT("Bare: the family is Spin all the way"), bSpinFamily);
 		TestTrue(FString::Printf(TEXT("Bare: at least 180 deg about up in 2.5 s (%.0f)"), Turned), FMath::Abs(Turned) >= 180.0);
 		TestTrue(TEXT("Bare: a backside spin (the back roll's sense, -sigma about up)"), Turned < 0.0);
@@ -605,10 +644,11 @@ bool FKiteSurfInputAirSpinReachable::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Pre-wound: stick X is a roll"), A->GetLastStepDebug().Family, RiderAxes::ERotationFamily::Roll);
 	}
 
-	// On the timed jump through the player's handlers: no pre-wind, the stick held in the air until the
+	// On the timed jump through the player's handlers: no pre-wind, the modifier and the up-diagonal
+	// stick held in the air (batch A: reaching the spin family needs the diagonal now) until the
 	// rider has turned 200 deg about their own up, then let go for the landing.
 	FPlayerJumpScript Script;
-	Script.AirStick = FVector2D(1.0f, 0.0f);
+	Script.AirStick = FVector2D(1.0f, 1.0f);
 	Script.Policy = EAirStickPolicy::UntilSpun;
 	Script.SpinTargetDeg = 200.0f;
 	const FPlayerJumpResult R = RunPlayerJump(Script);
@@ -618,7 +658,7 @@ bool FKiteSurfInputAirSpinReachable::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Nothing went NaN"), R.bNaN);
 	TestFalse(TEXT("No pre-wind: the jump left the water with no rotation"), R.bTookOffRotating);
 	TestTrue(TEXT("The held stick reached the attitude in the air"), R.bAirStickRouted);
-	TestTrue(TEXT("Stick X alone asked for the spin family"), R.bFamilySpinWhileHeld && !R.bFamilyRollWhileHeld);
+	TestTrue(TEXT("The up-diagonal asked for the spin family"), R.bFamilySpinWhileHeld && !R.bFamilyRollWhileHeld);
 	TestTrue(FString::Printf(TEXT("At least 180 deg about the body's up (%.0f)"), R.SpinAboutBodyUpDeg), FMath::Abs(R.SpinAboutBodyUpDeg) >= 180.0f);
 	TestTrue(FString::Printf(TEXT("At least 180 deg about world up (%.0f)"), R.SpinAboutUpDeg), FMath::Abs(R.SpinAboutUpDeg) >= 180.0f);
 	TestEqual(TEXT("No inversion"), R.Inversions, 0);
@@ -726,6 +766,7 @@ bool FKiteSurfInputBackRollSideFollowsScreen::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("Tack %+.0f: the back is clearly to one side of the screen (%.2f)"), Tack, BackOnRight), FMath::Abs(BackOnRight) > 0.5);
 		TestEqual(FString::Printf(TEXT("Tack %+.0f: the latched side is the screen side of the rider's back"), Tack), SignByTack[K], Expected);
 
+		Ride.Rotate(true); // IA_Rotate (batch A): held, so the stick reaches the pre-wind
 		Ride.Stick(-Expected, 0.0f);
 		TestEqual(FString::Printf(TEXT("Tack %+.0f: stick away from the back is a front roll"), Tack), static_cast<float>(Pawn->GetPreWindStick().X), -1.0f);
 		Ride.Stick(Expected, 0.0f);
@@ -733,6 +774,7 @@ bool FKiteSurfInputBackRollSideFollowsScreen::RunTest(const FString& Parameters)
 		Ride.Frames(0.55f);
 		Ride.Stick(0.0f, 0.0f);
 		Ride.JumpButton(false);
+		Ride.Rotate(false); // after the pop: releasing it while still loading would unlatch the board a step early
 		if (!TestTrue(FString::Printf(TEXT("Tack %+.0f: popped"), Tack), Ride.IsAirborne()))
 		{
 			continue;
@@ -755,7 +797,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfInputLegendShowsAirControls, "KiteSurf
 
 bool FKiteSurfInputLegendShowsAirControls::RunTest(const FString& Parameters)
 {
-	const TCHAR* Wanted[] = { TEXT("Pre-wind"), TEXT("Air: roll / flip / spin"), TEXT("Hold jump in the air: tuck") };
+	const TCHAR* Wanted[] = { TEXT("Pre-wind"), TEXT("Air, with Shift / LT"), TEXT("Hold jump in the air: tuck") };
 	for (const TCHAR* Action : Wanted)
 	{
 		const FKiteSurfControlBinding* Found = nullptr;

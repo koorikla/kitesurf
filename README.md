@@ -57,26 +57,27 @@ you leave it, so no key needs to be held to keep riding; with the bar centred th
 climbs the edge of the window towards 12 o'clock, as a real one does. The same table is shown in
 the main menu and the pause menu.
 
-The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick. The left stick and WASD are read by what the rider is doing: the board on the water, the pre-wind while the jump button is held, the rotation in the air. The motion bar and the mouse bar only fly the kite, so the stick's rotation works alongside them.
+The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick. The left stick and WASD are read by what the rider is doing: the board on the water, the pre-wind while the jump button and the rotation modifier (Shift / LT) are both held, the rotation in the air while the modifier is held. Without the modifier the stick is always the board, so a plain jump stays straight. The motion bar and the mouse bar only fly the kite, so the stick's rotation works alongside them.
 
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power (unhooked: your arms in / out). Let go and the bar springs back to the middle (Settings: BAR TO MIDDLE; off, it holds its position) | Down / Up (hold) | Right stick pulled back / pushed forward, triggers (half a trigger: half way) |
+| Bar in / out: power (unhooked: your arms in / out). Let go and the bar springs back to the middle (Settings: BAR TO MIDDLE; off, it holds its position) | Down / Up (hold) | Right stick pulled back / pushed forward, RT |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse (the bar stays where the mouse leaves it) | Hold right button: move to steer and sheet | |
 | Motion bar: recentre, with the bar in the middle | Home | Right stick click |
 | Turn the board left / right | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Hold to crouch and load the edge; let go to pop | Space | Bottom face button |
-| Pre-wind a rotation: hold a direction while loading | WASD while holding Space | Left stick while holding the bottom face button |
-| In the air: roll / flip / spin. Towards the side of the screen your back is on is a back roll (a flat spin if you popped with no pre-wind); S / pulled back is a backflip | A / D, W / S | Left stick |
+| Rotation modifier: hold to let the stick reach the pre-wind (loading) or the rotation (in the air); without it the stick is always the board | Left Shift | LT |
+| Pre-wind a rotation: hold Shift / LT and a direction while loading | WASD + hold Space + Shift | Left stick + hold the bottom face button + LT |
+| In the air, with Shift / LT held: towards the side of the screen your back is on is a back roll, away is a front roll; the up-diagonal is a spin; S / pulled back is a backflip | A / D / W / S + Shift | Left stick + LT |
 | Hold jump in the air: tuck (spins faster) | Space | Bottom face button |
 | In the air: grab the board with the front / back hand (hold) | Q / E | LB / RB |
 | While grabbing: pick the zone (nose, toe edge, heel edge, tail) | W / S: nose / tail; A / D towards your chest: toe edge, your back: heel edge | Left stick, same directions |
 | In the air: back foot out of the strap (hold; back in before landing) | C | Left stick click |
 | On the water: unhook / hook back in. Unhooked the kite parks low at 45 deg, its power is fixed, and the bar moves your arms (in to the hips, out along the lines) | F | Top face button (Y) |
-| Unhooked, in the air: pass the bar behind your back (with the lines slack and your back to the kite) | Left Shift | Left face button (X) |
+| Unhooked, in the air: pass the bar behind your back (with the lines slack and your back to the kite) | X | Left face button (X) |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, gear, session, school, freestyle heat, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |

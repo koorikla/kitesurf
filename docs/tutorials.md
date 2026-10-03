@@ -146,7 +146,7 @@ uses after tuning on rides.
 
 | # | Lesson | Needs | Drill | Pass (**estimate**) | Mistake → feedback |
 | --- | --- | --- | --- | --- | --- |
-| C1 | Back roll | B2 | Carve about 90° upwind before leaving the water | 330 to 390°, Clean | Steered mid-rotation → "Bar straight: kite stays at 12". Under-rotated → "Carve further upwind at take-off" |
+| C1 | Back roll | B2 | Hold Shift / LT and carve about 90° upwind before leaving the water | 330 to 390°, Clean | Steered mid-rotation → "Bar straight: kite stays at 12". Under-rotated → "Carve further upwind at take-off" |
 | C2 | Front roll | C1 | — | 330 to 390°, Clean | Under-rotated → "Lift the front foot, drag the back" |
 | C3 | Roll transitions, double back roll | C1, C2, B5 | — | Each landed Clean once; the double turns 690 to 750° | — |
 

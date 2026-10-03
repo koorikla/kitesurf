@@ -869,7 +869,8 @@ bool FKiteSurfTrickPassOnRide::RunTest(const FString& Parameters)
 			const float BackToKite = BarStateMachine::BackToKiteDeg(Pawn->GetRiderAttitude()->GetBodyQuat(), LineDir);
 			if (!bPressed && Ride.IsAirborne() && BackToKite <= Pawn->BarTunables.PassBackToKiteDeg)
 			{
-				// Through the Enhanced Input handler, as X or LeftShift does.
+				// Through the Enhanced Input handler, as X does (batch A moved the keyboard binding
+				// off LeftShift, which is IA_Rotate's now).
 				Pawn->OnPassPressed(FInputActionValue(true));
 				bPressed = true;
 			}

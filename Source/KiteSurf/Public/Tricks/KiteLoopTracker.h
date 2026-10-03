@@ -81,8 +81,8 @@ struct FKiteLoopTrackerSettings
 
 /**
  * Turns a kite's per-step heading turn into loop records, independent of the kite's looping
- * state (T0.3). Pure: no UObject, no world. Not yet stepped by the kite; UKiteComponent will own
- * one and feed it a sample per fixed step.
+ * state (T0.3). Pure: no UObject, no world. UKiteComponent owns one and feeds it a sample per
+ * fixed step (UKiteComponent::GetLoopRecords).
  *
  * - Pending: turn adds up while it keeps one sign; a step slower than StallRateDegPerS, or a turn
  *   of the other sign, starts it again. Once it reaches StartTurnDeg a run opens, starting where

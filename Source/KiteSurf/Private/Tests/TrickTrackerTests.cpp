@@ -15,7 +15,9 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-// Tests for the trick tracker wired into the pawn (docs/tricks/T0.md sections 4 and 6). The ride
+// Tests for the trick tracker wired into the pawn (docs/tricks/T0.md sections 4 and 6). The tracker
+// reads the board's take-off and landing facts and the kite's loop records (TrickFeedTests.cpp tests
+// those feeds); the heading-difference test that was here went with the tracker's own derivation. The ride
 // fixture and the timed send-and-pop are copied from RideLoopTests.cpp's RunJump and fly the jump
 // the way it does since physics phase 2: the jump button held and let go, and a crouched landing.
 namespace TrickTrackerTestsLocal
@@ -89,12 +91,16 @@ namespace TrickTrackerTestsLocal
 		/** The board's own judgement of the touchdown: its load (g) and the distance it was taken out over (cm). */
 		float BoardLastLandingG = 0.0f;
 		float BoardLastLandingAbsorbCm = 0.0f;
+		/** The board's landing angle and apex time, which the record now carries (deg, s). */
+		float BoardLastLandingAngleDeg = 0.0f;
+		float BoardApexTimeSeconds = 0.0f;
+		int32 BoardTakeoffCount = 0;
 		bool bBoardLandingClean = false;
 		int32 BoardJumpCount = 0;
 		int32 RecordCount = 0;
 		bool bHasRecord = false;
 		FJumpRecord Record;
-		/** The tracker's sum of heading turns while the kite was looping, and the kite's own count (deg). */
+		/** The sum of the kite's per-step turns (GetLastStepTurnDeg) while it was looping, and its own loop count (deg). */
 		float TrackerLoopTurnDeg = 0.0f;
 		float KiteTurnDeg = 0.0f;
 		/** What the HUD showed, when one was passed in. */
@@ -185,7 +191,7 @@ namespace TrickTrackerTestsLocal
 				if (Ride.Kite->IsLooping())
 				{
 					// Frames run four fixed steps each; this is only the last step's turn, so scale it.
-					Out.TrackerLoopTurnDeg += Ride.Tracker->GetLastStepTurnDeg() * RideDeltaTime / Ride.Pawn->SimStepSeconds;
+					Out.TrackerLoopTurnDeg += Ride.Kite->GetLastStepTurnDeg() * RideDeltaTime / Ride.Pawn->SimStepSeconds;
 					Out.KiteTurnDeg = Ride.Kite->GetTurnDeg();
 				}
 			}
@@ -215,6 +221,9 @@ namespace TrickTrackerTestsLocal
 
 		Out.BoardLastLandingG = Ride.Board->GetLastLandingG();
 		Out.BoardLastLandingAbsorbCm = Ride.Board->GetLastLandingAbsorbCm();
+		Out.BoardLastLandingAngleDeg = Ride.Board->GetLastLandingAngleDeg();
+		Out.BoardApexTimeSeconds = Ride.Board->GetCurrentJumpApexTimeSeconds();
+		Out.BoardTakeoffCount = Ride.Board->GetTakeoffCount();
 		Out.BoardLastAirtime = Ride.Board->GetLastJumpAirtime();
 		Out.BoardLastApexCm = Ride.Board->GetLastJumpApexHeight();
 		Out.BoardLastDistanceCm = Ride.Board->GetLastJumpDistance();
@@ -276,28 +285,6 @@ namespace TrickTrackerTestsLocal
 
 using namespace TrickTrackerTestsLocal;
 
-// The heading turn fed to the loop tracker has the kite's sign: positive to the rider's right,
-// which is towards Nose x LineDir.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickTrackerHeadingTurnSign, "KiteSurf.Trick.TrackerHeadingTurnSign", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-
-bool FKiteSurfTrickTrackerHeadingTurnSign::RunTest(const FString& Parameters)
-{
-	// Kite overhead (line straight up), nose pointing +X: its right is X x Z = -Y.
-	const FVector LineDir = FVector::UpVector;
-	const FVector Nose = FVector::ForwardVector;
-	const FVector Right = FVector::CrossProduct(Nose, LineDir);
-	const float Rad = FMath::DegreesToRadians(10.0f);
-	TestNearlyEqual(TEXT("10 deg towards the kite's right reads +10 deg"),
-		UTrickTrackerComponent::SignedHeadingTurnDeg(Nose, Nose * FMath::Cos(Rad) + Right * FMath::Sin(Rad), LineDir), 10.0f, 1e-3f);
-	TestNearlyEqual(TEXT("and towards its left -10 deg"),
-		UTrickTrackerComponent::SignedHeadingTurnDeg(Nose, Nose * FMath::Cos(Rad) - Right * FMath::Sin(Rad), LineDir), -10.0f, 1e-3f);
-	// A heading tipped along the line still measures the turn across it.
-	TestNearlyEqual(TEXT("Only the part across the line counts"),
-		UTrickTrackerComponent::SignedHeadingTurnDeg(Nose + 0.3f * LineDir, Nose * FMath::Cos(Rad) + Right * FMath::Sin(Rad), LineDir), 10.0f, 1e-3f);
-	TestEqual(TEXT("A degenerate line gives no turn"), UTrickTrackerComponent::SignedHeadingTurnDeg(Nose, Right, FVector::ZeroVector), 0.0f);
-	return true;
-}
-
 // The tracker on the pawn records a scripted send and pop as one jump, with the board's numbers,
 // and a later parked pop as the second.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickTrackerRecordsJump, "KiteSurf.Trick.TrackerRecordsJump", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -332,6 +319,11 @@ bool FKiteSurfTrickTrackerRecordsJump::RunTest(const FString& Parameters)
 		R.LandingG, LandingMath::ComputeLandingG(R.SinkRateCmS, Jump.BoardLastLandingAbsorbCm), 1e-3f);
 	TestTrue(TEXT("The lines pulled in the air"), R.PeakTensionN > 0.0f);
 	TestEqual(TEXT("Popped when the pop, not the kite, took the rider off"), R.bPopped, !Jump.bPulledOffEdge);
+	// Since the tracker reads the board's own landing facts: the landing yaw is the board's landing
+	// angle (it was 0 when the tracker synthesised it), and the apex time is the board's.
+	TestNearlyEqual(TEXT("The landing yaw is the board's landing angle (deg)"), R.LandingYawDeg, Jump.BoardLastLandingAngleDeg, 1e-4f);
+	TestNearlyEqual(TEXT("The apex time is the board's (s)"), R.ApexTimeSeconds, Jump.BoardApexTimeSeconds, 1e-4f);
+	TestEqual(TEXT("One take-off on the board for the one jump"), Jump.BoardTakeoffCount, 1);
 	TestFalse(TEXT("The jump has a name"), R.TrickName.IsEmpty());
 	TestFalse(TEXT("and a family key"), R.FamilyKey.IsEmpty());
 	TestTrue(TEXT("The board called the landing clean"), Jump.bBoardLandingClean);

@@ -76,6 +76,10 @@ struct FBoardStepDebug
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
+/** The board has left the water: popped by the rider (Jump) or lifted off by the kite (bPopped false). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardTakeoff, bool, bPopped);
+/** The jump in progress has stopped rising at a new highest point: its height above the water (cm). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardApex, float, ApexHeightCm);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
@@ -93,6 +97,14 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
 	FOnBoardReset OnBoardReset;
+
+	/** Broadcast on every take-off, popped or lifted off by the kite. Tests and the trick tracker poll GetTakeoffCount instead. */
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardTakeoff OnBoardTakeoff;
+
+	/** Broadcast when the board stops rising at a new highest point of the jump (again after a kite yank lifts it higher). Polled as GetApexCount. */
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardApex OnBoardApex;
 
 	UFUNCTION(BlueprintCallable, Category = "Board|State")
 	void TriggerCrash(float CrashIntensity = 1.0f);
@@ -215,6 +227,45 @@ public:
 	/** The load of a landing at this sink into the water (m/s) taken out over this distance (cm), in g: 1 + v^2 / (2 g s). */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	static float LandingGForSink(float SinkMS, float AbsorbDistanceCm);
+
+	/**
+	 * Angle between the board's axis and its horizontal velocity at the last landing from a jump
+	 * (deg, 0 to 90: a twin-tip lands either way round). Over MaxLandingAngle it was a crash. Set
+	 * with the other landing facts; 0 before the first.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingAngleDeg() const { return LastLandingAngleDeg; }
+
+	/**
+	 * Take-offs so far, popped or lifted off by the kite, counted in BeginAirborne. A take-off that
+	 * ends as a skip off the surface counts here but not in GetJumpCount. Polled by code that
+	 * cannot rely on OnBoardTakeoff being bound (tests, the trick tracker).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	int32 GetTakeoffCount() const { return TakeoffCount; }
+
+	/** True if the last take-off was the rider's pop (Jump), false if the kite lifted them off. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	bool WasLastTakeoffPopped() const { return bLastTakeoffPopped; }
+
+	/** Board simulation time of the last take-off (s, GetSimTimeSeconds): its landing comes GetLastJumpAirtime later. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastTakeoffTimeSeconds() const { return LastTakeoffTimeSeconds; }
+
+	/** How many times OnBoardApex has fired: once per jump, more if the kite lifts the rider higher after they started down. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	int32 GetApexCount() const { return ApexCount; }
+
+	/** The highest the jump in progress (or the last one, until the next take-off) has been above the water (cm). */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetCurrentJumpApexHeight() const { return CurrentJumpApexHeight; }
+
+	/**
+	 * Board simulation time at which the jump in progress was highest (s); after a landing, the last
+	 * jump's apex time until the next take-off. The take-off time before the board has risen.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetCurrentJumpApexTimeSeconds() const { return CurrentJumpApexTimeSeconds; }
 
 	/** How many landings from a jump the board has made, clean or crashed (not the kite's skips): the same count as GetJumpCount. Polled by the HUD's landing card. */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
@@ -678,8 +729,29 @@ private:
 	 */
 	void ApplyWaterDragAndSideForce(float DeltaTime, float DragDecelCmS2, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward);
 
-	/** Puts the board in the air and starts the jump telemetry. */
-	void BeginAirborne();
+	/**
+	 * Puts the board in the air and starts the jump telemetry: counts the take-off, notes whether the
+	 * rider popped (Jump) or the kite lifted them off, and broadcasts OnBoardTakeoff.
+	 */
+	void BeginAirborne(bool bPopped);
+
+	/**
+	 * Notes the facts of a landing from a jump that the board's own landing code does not keep:
+	 * the landing angle (deg). Called from the landing block once the jump is counted, clean or not.
+	 */
+	void NoteJumpEnd(float LandingAngleDeg);
+
+	/** Take-off and apex telemetry (GetTakeoffCount and the rest). */
+	int32 TakeoffCount = 0;
+	bool bLastTakeoffPopped = false;
+	float LastTakeoffTimeSeconds = 0.0f;
+	int32 ApexCount = 0;
+	float CurrentJumpApexTimeSeconds = 0.0f;
+	/** The board has risen since take-off or the last apex; the next step that does not rise is an apex. */
+	bool bJumpRising = false;
+	/** Height of the last apex broadcast in this jump (cm); an apex fires again only above it. Negative before the first. */
+	float LastApexEventHeightCm = -1.0f;
+	float LastLandingAngleDeg = 0.0f;
 
 	/**
 	 * Samples the water at the five points under a board at Location heading Yaw, fits a plane to them

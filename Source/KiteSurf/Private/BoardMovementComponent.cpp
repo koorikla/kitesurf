@@ -296,7 +296,7 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 
 	Velocity.Z = FMath::Max(Velocity.Z + VerticalDeltaV, VerticalDeltaV);
 
-	BeginAirborne();
+	BeginAirborne(true);
 
 	UE_LOG(LogKiteSurf, Log, TEXT("Board Jump initiated: Speed=%.1f kn, Edge=%.2f, KiteLiftZ=%.1f, Impulse=%.1f, VZ=%.1f cm/s"),
 		SpeedKnots, CurrentEdgeInput, UpwardKiteForce, Impulse, Velocity.Z);
@@ -304,9 +304,9 @@ EJumpRejectReason UBoardMovementComponent::Jump()
 	return EJumpRejectReason::None;
 }
 
-void UBoardMovementComponent::BeginAirborne()
+void UBoardMovementComponent::BeginAirborne(bool bPopped)
 {
-	bLiftedByKite = false;
+	bLiftedByKite = !bPopped;
 	CurrentBoardState = EBoardState::Airborne;
 	CurrentJumpAirtime = 0.0f;
 	CurrentJumpHeight = 0.0f;
@@ -314,6 +314,22 @@ void UBoardMovementComponent::BeginAirborne()
 	CurrentJumpDistance = 0.0f;
 	JumpStartLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	LandingStateTimer = 0.0f;
+
+	// The take-off, for the trick tracker and anything bound. A pop comes between steps and a kite
+	// lift-off inside one; either way the jump's airtime counts from here, so the landing comes
+	// LastJumpAirtime after LastTakeoffTimeSeconds.
+	++TakeoffCount;
+	bLastTakeoffPopped = bPopped;
+	LastTakeoffTimeSeconds = SimTimeSeconds;
+	CurrentJumpApexTimeSeconds = SimTimeSeconds;
+	bJumpRising = false; // a lift-off can start level: the apex waits for the board to rise first
+	LastApexEventHeightCm = -1.0f;
+	OnBoardTakeoff.Broadcast(bPopped);
+}
+
+void UBoardMovementComponent::NoteJumpEnd(float LandingAngleDeg)
+{
+	LastLandingAngleDeg = LandingAngleDeg;
 }
 
 void UBoardMovementComponent::SetBoardSize(EBoardSize InSize)
@@ -500,6 +516,8 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			if (CurrentJumpHeight > CurrentJumpApexHeight)
 			{
 				CurrentJumpApexHeight = CurrentJumpHeight;
+				// The height is where the last step left the board, at the start of this one.
+				CurrentJumpApexTimeSeconds = SimTimeSeconds - FMath::Max(DeltaTime, 0.0f);
 			}
 			CurrentJumpDistance = FVector::Dist2D(Location, JumpStartLocation);
 
@@ -510,6 +528,23 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				ClampedLocation.Z = WaterHeight + MaxJumpHeight;
 				UpdatedComponent->SetWorldLocation(ClampedLocation);
 				Velocity.Z = FMath::Min(Velocity.Z, 0.0f);
+			}
+
+			// Apex: the first step that is no longer rising after rising, at a new highest point
+			// (a kite yank after the rider started down can make a second, higher one).
+			if (Velocity.Z > 0.0f)
+			{
+				bJumpRising = true;
+			}
+			else if (bJumpRising)
+			{
+				bJumpRising = false;
+				if (CurrentJumpApexHeight > LastApexEventHeightCm)
+				{
+					LastApexEventHeightCm = CurrentJumpApexHeight;
+					++ApexCount;
+					OnBoardApex.Broadcast(CurrentJumpApexHeight);
+				}
 			}
 		}
 
@@ -544,8 +579,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const float LiftoffFactor = 1.0f + LoadHoldBonus * LoadAmount;
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffFactor - 1.0f))
 		{
-			BeginAirborne();
-			bLiftedByKite = true;
+			BeginAirborne(false);
 			bIsAirborne = true;
 			Velocity.Z = FMath::Max(Velocity.Z, 0.0f);
 			UE_LOG(LogKiteSurf, Log, TEXT("Board lifted off by the kite: upward force %.0f N against %.0f N of weight"), KiteUnits::UnrealForceToN(TotalForce.Z - GravityForceZ), KiteUnits::UnrealForceToN(-GravityForceZ));
@@ -835,6 +869,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				LastJumpApexHeight = CurrentJumpApexHeight;
 				LastJumpAirtime = CurrentJumpAirtime;
 				LastJumpDistance = CurrentJumpDistance;
+				NoteJumpEnd(LandingAngleDeg);
 				++JumpCount;
 				if (CurrentJumpApexHeight > BestJumpHeight)
 				{

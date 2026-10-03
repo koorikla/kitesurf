@@ -23,14 +23,11 @@ UBoardMovementComponent::UBoardMovementComponent()
 	DisplacementQuadraticDragKgPerCm = 0.1f;
 	PlaningDragKgPerS = 8.0f;
 	PlaningQuadraticDragKgPerCm = 0.03f; // mostly quadratic, so board speed scales with wind speed
-	EdgeGripKgPerS = 2000.0f;
 	MaxEdgeAngleDeg = 35.0f;
 	MaxBoardSpeedCmS = KiteUnits::KnotsToCmS(35.0f);
 	DisplacementDragKgPerS = 8.0f;
-	EdgeDriveEfficiency = 0.35f;
 
 	// Additional physics tuning
-	BaseGripKgPerS = 500.0f; // fins and a neutral stance hold a course without edge input
 	BuoyancyNaturalFrequencyHz = 0.945f; // the same as a 3000 kg/s^2 spring on 85 kg
 	BuoyancyDampingRatio = 0.79f;
 	PlaningLiftKgPerS = 50.0f;
@@ -44,25 +41,31 @@ UBoardMovementComponent::UBoardMovementComponent()
 	FloatUntilSpeedFraction = 0.45f;
 	FloatResponse = 2.5f;
 	CurrentFloatDepthCm = 0.0f;
-	TailWeightGripScale = 2.5f;
 	TailWeightDrag = 0.35f;
 	NoseWeightDragSaving = 0.15f;
-	TailWeightHeelDeg = 12.0f;
 	WeightShiftPitchDeg = 8.0f;
 	AirWeightShiftPitchDeg = 30.0f;
 	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
 	EdgedLiftoffWeightBonus = 3.0f;
 	LoadRatePerSec = 2.5f;        // a full crouch in 0.4 s
 	LoadReleaseRatePerSec = 6.0f;
-	LoadGripBonus = 1.5f;
 	LoadPopBonus = 0.6f;
 	LoadAmount = 0.0f;
 	bLoadHeld = false;
 	AirSpinRate = 200.0f;
 	TailWeightPopBonus = 0.5f;
-	AutoHeelDeg = 12.0f;
-	AutoHeelFullLoadN = 500.0f;
 	RiderDragAreaM2 = 0.7f;
+
+	// Edging from a force balance (docs/physics/plan-2.md item 3; research 2.3, 3.1).
+	bAutoEdge = true;
+	MaxHeelDeg = 65.0f;
+	LoadExtraHeelDeg = 25.0f;
+	HeelResponse = 8.0f;
+	FinAreaM2 = 0.013f;              // four fins 4.5 cm deep on a 7 cm mean chord
+	RailAreaM2 = 0.08f;              // the immersed rail at full heel
+	LateralLiftSlopePerRad = 2.5f;   // 2 to 3 /rad for these low aspect ratios
+	LeewayStallDeg = 12.0f;
+	TailWeightRailScale = 4.0f;      // weight fully back sinks the tail and buries the rail
 
 	// Jump tunables (Spec defaults)
 	PopImpulseKgCmPerS = 21000.0f; // kg*cm/s: about 2.5 m/s from the legs alone; height comes from the kite
@@ -238,8 +241,7 @@ void UBoardMovementComponent::SetBoardSize(EBoardSize InSize)
 	LowSpeedPivotMaxSpeedCmS = PlaningThresholdCmS;
 	PlaningDragKgPerS = 8.0f * Traits.PlaningDragScale;
 	PlaningQuadraticDragKgPerCm = 0.03f * Traits.PlaningDragScale;
-	BaseGripKgPerS = 500.0f * Traits.GripScale;
-	EdgeGripKgPerS = 2000.0f * Traits.GripScale;
+	RailAreaM2 = 0.08f * Traits.GripScale; // a longer board has more rail in the water
 	CarveTurnRate = 60.0f * Traits.TurnRateScale;
 }
 
@@ -266,7 +268,8 @@ float UBoardMovementComponent::GetForwardSpeed() const
 	{
 		return Velocity.X;
 	}
-	return FVector::DotProduct(Velocity, UpdatedComponent->GetForwardVector());
+	// Along the board's heading over the water, whatever its heel and pitch.
+	return FVector::DotProduct(Velocity, FRotator(0.0f, UpdatedComponent->GetComponentRotation().Yaw, 0.0f).Vector());
 }
 
 float UBoardMovementComponent::GetLateralSpeed() const
@@ -275,7 +278,9 @@ float UBoardMovementComponent::GetLateralSpeed() const
 	{
 		return Velocity.Y;
 	}
-	return FVector::DotProduct(Velocity, UpdatedComponent->GetRightVector());
+	// Across the board's heading over the water, whatever its heel: positive to its right.
+	const FVector LevelForward = FRotator(0.0f, UpdatedComponent->GetComponentRotation().Yaw, 0.0f).Vector();
+	return FVector::DotProduct(Velocity, FVector::CrossProduct(FVector::UpVector, LevelForward));
 }
 
 void UBoardMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -311,7 +316,6 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const FVector Location = UpdatedComponent->GetComponentLocation();
 		const FRotator Rotation = UpdatedComponent->GetComponentRotation();
 		const FVector Forward = UpdatedComponent->GetForwardVector();
-		const FVector Right = UpdatedComponent->GetRightVector();
 
 		// 0. Crash recovery handling
 		if (bIsCrashing)
@@ -398,7 +402,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 		// 2. Setup total forces
 		FVector TotalForce = AccumulatedExternalForce;
-		const float ExternalLateralForce = FVector::DotProduct(AccumulatedExternalForce, Right);
+		const FVector ExternalForceN = AccumulatedExternalForce / KiteUnits::UnrealForcePerN;
 		const FVector ExternalForce2D(AccumulatedExternalForce.X, AccumulatedExternalForce.Y, 0.0f);
 		AccumulatedExternalForce = FVector::ZeroVector;
 
@@ -457,7 +461,6 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		// 4. Horizontal Hydrodynamics (Displacement vs Planing, Edging, Lift)
 		const float Speed2D = Velocity.Size2D();
 		const float ForwardSpeed = FVector::DotProduct(Velocity, Forward);
-		const float LateralSpeed = FVector::DotProduct(Velocity, Right);
 
 		const bool bPlaning = (Speed2D >= PlaningThresholdCmS);
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing)
@@ -476,72 +479,50 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			}
 		}
 
-		// Drag and grip are integrated exactly over the step (below), so they never overshoot
-		// however long the step is. Here only the forces they give rise to are added: the planing
-		// lift, and the drive a heeled rail makes out of the sideways grip force.
+		// The drag and the side force are integrated exactly over the step (below), so they never
+		// overshoot however long the step is. Here only the forces are added: the planing lift, and
+		// the sideways part of the heeled board's normal force.
 		const float EffectiveMass = FMath::Max(MassKg, 1.0f);
-		float ForwardDragRatePerS = 0.0f;   // linear drag as a rate: a in dv/dt = -a v - b v^2
-		float ForwardDragRatePerCm = 0.0f;  // quadratic drag as a rate: b
-		float GripRatePerS = 0.0f;          // sideways grip as a rate
+		float DragRatePerS = 0.0f;   // linear drag as a rate: a in dv/dt = -a v - b v^2
+		float DragRatePerCm = 0.0f;  // quadratic drag as a rate: b
 		if (!bHydrodynamicsDisabled)
 		{
 			if (!bPlaning)
 			{
 				// Displacement regime: quadratic + linear drag so depowering stops (< 2 kn) within 5s
-				ForwardDragRatePerS = DisplacementDragKgPerS / EffectiveMass;
-				ForwardDragRatePerCm = DisplacementQuadraticDragKgPerCm / EffectiveMass;
+				DragRatePerS = DisplacementDragKgPerS / EffectiveMass;
+				DragRatePerCm = DisplacementQuadraticDragKgPerCm / EffectiveMass;
 			}
 			else
 			{
 				// Planing regime: linear drag + high-speed form/spray drag
 				// A sunk tail drags more; weight forward flattens the board and frees it up.
 				const float EdgeDragScale = 1.0f + TailWeightDrag * FMath::Max(-CurrentWeightShift, 0.0f) - NoseWeightDragSaving * FMath::Max(CurrentWeightShift, 0.0f);
-				ForwardDragRatePerS = PlaningDragKgPerS * EdgeDragScale / EffectiveMass;
-				ForwardDragRatePerCm = PlaningQuadraticDragKgPerCm * EdgeDragScale / EffectiveMass;
+				DragRatePerS = PlaningDragKgPerS * EdgeDragScale / EffectiveMass;
+				DragRatePerCm = PlaningQuadraticDragKgPerCm * EdgeDragScale / EffectiveMass;
 
 				// Hydrodynamic lift raising the board with surface contact falloff
 				const float SurfaceContact = FMath::Clamp((Submersion + 10.0f) / 15.0f, 0.0f, 1.0f);
 				const float PlaningLift = PlaningLiftKgPerS * (Speed2D - PlaningThresholdCmS) * SurfaceContact;
 				TotalForce.Z += PlaningLift;
 			}
-
-			// Sideways grip. Weight on the tail digs the rail in and bites harder; on the nose the board lets go.
-			// Weight back, and more so a loaded crouch, digs the edge in against the lines.
-			const float EdgeFactor = FMath::Abs(CurrentEdgeInput);
-			const float PressureGripScale = FMath::Pow(TailWeightGripScale, -CurrentWeightShift) * (1.0f + LoadGripBonus * LoadAmount);
-			GripRatePerS = (BaseGripKgPerS + EdgeGripKgPerS * EdgeFactor) * PressureGripScale / EffectiveMass;
-
-			// Edge Drive: the rail lift of a heeled board turns the sideways grip force into forward
-			// drive. The grip force is the sideways momentum the grip takes out of the board this step.
-			if (ForwardSpeed > 50.0f && EdgeFactor > 0.01f && EdgeDriveEfficiency > 0.0f && FMath::Abs(LateralSpeed) > KINDA_SMALL_NUMBER)
-			{
-				const float LateralSpeedRemoved = FMath::Abs(LateralSpeed) * (1.0f - FMath::Exp(-GripRatePerS * DeltaTime));
-				const float GripForce = EffectiveMass * LateralSpeedRemoved / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER);
-				const FVector DriveForce = Forward * (GripForce * EdgeFactor * EdgeDriveEfficiency);
-				TotalForce += DriveForce;
-				LastStepDebug.DriveForceN = DriveForce / KiteUnits::UnrealForcePerN;
-			}
 		}
 
-		// 5. Velocity Integration: the forces, then the drag and grip as exact decays of the
-		// board-frame velocity components, which is the same at any step length.
+		// Edging is a force balance (docs/physics/plan-2.md item 3): the rider heels the board against
+		// the pull across it, and the water's normal force on the heeled board carries that pull; the
+		// fins and the rail turn the velocity towards the board's axis (after the forces, below).
+		// Nothing drives the board but the kite.
+		const FVector LevelForward = FRotator(0.0f, Rotation.Yaw, 0.0f).Vector();
+		const FVector LevelRight = FVector::CrossProduct(FVector::UpVector, LevelForward);
+		const bool bStandingOnWater = !bIsAirborne && !bHydrodynamicsDisabled;
+		TotalForce += UpdateHeelAndNormalSideForce(DeltaTime, ExternalForceN, LevelRight, bStandingOnWater);
+
+		// 5. Velocity Integration: the forces, then the drag and the side force as exact solutions over
+		// the step, which is the same at any step length.
 		Velocity += TotalForce / EffectiveMass * DeltaTime;
 		if (!bHydrodynamicsDisabled)
 		{
-			const float ForwardNow = FVector::DotProduct(Velocity, Forward);
-			const float LateralNow = FVector::DotProduct(Velocity, Right);
-			const FVector Rest = Velocity - Forward * ForwardNow - Right * LateralNow;
-			const float ForwardAfter = FMath::Sign(ForwardNow) * DecayWithLinearAndQuadraticDrag(FMath::Abs(ForwardNow), ForwardDragRatePerS, ForwardDragRatePerCm, DeltaTime);
-			const float LateralAfter = LateralNow * FMath::Exp(-GripRatePerS * DeltaTime);
-			Velocity = Rest + Forward * ForwardAfter + Right * LateralAfter;
-
-			// The force each exact decay amounts to over the step: the momentum it took out.
-			if (DeltaTime > 0.0f)
-			{
-				LastStepDebug.DragForceN = Forward * (EffectiveMass * (ForwardAfter - ForwardNow) / DeltaTime / KiteUnits::UnrealForcePerN);
-				LastStepDebug.GripForceN = Right * (EffectiveMass * (LateralAfter - LateralNow) / DeltaTime / KiteUnits::UnrealForcePerN);
-			}
-			LastStepDebug.LeewayDeg = FMath::RadiansToDegrees(FMath::Atan2(LateralSpeed, FMath::Abs(ForwardSpeed)));
+			ApplyWaterDragAndSideForce(DeltaTime, DragRatePerS, DragRatePerCm, LevelForward);
 		}
 
 		// Velocity clamping at MaxBoardSpeed
@@ -585,18 +566,14 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		{
 			// Slope of the water along and across the board's heading. Measured against the level
 			// heading, not the board's current tilt, or the tilt would feed back into itself.
-			const FVector LevelForward = FRotator(0.0f, Rotation.Yaw, 0.0f).Vector();
-			const FVector LevelRight = FVector::CrossProduct(FVector::UpVector, LevelForward);
 			const float SurfacePitch = FMath::RadiansToDegrees(FMath::Atan2(-FVector::DotProduct(WaterNormal, LevelForward), FVector::DotProduct(WaterNormal, FVector::UpVector)));
 			const float SurfaceRoll = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(WaterNormal, LevelRight), FVector::DotProduct(WaterNormal, FVector::UpVector)));
 
 			// Positive pitch is nose up: weight on the tail lifts the nose.
 			TargetRotation.Pitch = FMath::Clamp(SurfacePitch - CurrentWeightShift * WeightShiftPitchDeg, -20.0f, 20.0f);
-			// The rider leans away from the kite, so the rail on the kite's side lifts with the load.
-			// Weight back heels further, weight forward takes the heel off.
-			const float LoadSide = FMath::Clamp(ExternalLateralForce / KiteUnits::NToUnrealForce(AutoHeelFullLoadN), -1.0f, 1.0f);
-			const float LoadHeelDeg = -LoadSide * FMath::Max(AutoHeelDeg - TailWeightHeelDeg * CurrentWeightShift, 0.0f);
-			TargetRotation.Roll = FMath::Clamp(SurfaceRoll + LoadHeelDeg + SmoothedCarveInput * MaxEdgeAngleDeg, -MaxEdgeAngleDeg, MaxEdgeAngleDeg);
+			// The heel lifts the rail on the kite's side; the carve's lean is drawn on top of it and
+			// does not change the force balance.
+			TargetRotation.Roll = FMath::Clamp(SurfaceRoll - HeelDeg + SmoothedCarveInput * MaxEdgeAngleDeg, -MaxHeelDeg, MaxHeelDeg);
 
 			// A twin-tip rides either way: once it is moving tail-first, the tail becomes the nose.
 			if (ForwardSpeed < -SwitchStanceSpeedCmS && CurrentBoardState != EBoardState::Landing)
@@ -604,6 +581,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + 180.0f);
 				TargetRotation.Pitch = -TargetRotation.Pitch;
 				TargetRotation.Roll = -TargetRotation.Roll;
+				HeelDeg = -HeelDeg; // the same rail in the water, seen from the new nose
 			}
 			// Edging changes board heading relative to velocity
 			else if (FMath::Abs(ForwardSpeed) > 50.0f && FMath::Abs(SmoothedCarveInput) > 0.02f)
@@ -775,6 +753,109 @@ float UBoardMovementComponent::DecayWithLinearAndQuadraticDrag(float Speed, floa
 	return LinearRatePerS * Speed / ((LinearRatePerS + QuadraticRatePerCm * Speed) * Growth - QuadraticRatePerCm * Speed);
 }
 
+FVector UBoardMovementComponent::UpdateHeelAndNormalSideForce(float DeltaTime, const FVector& PullN, const FVector& LevelRight, bool bOnWater)
+{
+	// The board carries the rider's weight less what the lines hold up (research 3.1); the pull
+	// across its axis is what the heel has to hold.
+	const float WeightN = FMath::Max(MassKg, 1.0f) * KiteUnits::GravityMS2;
+	const float PullAcrossN = FVector::DotProduct(PullN, LevelRight);
+	const float CarriedN = FMath::Max(WeightN - PullN.Z, 0.0f);
+	LastStepDebug.PullAcrossN = PullAcrossN;
+	LastStepDebug.CarriedN = CarriedN;
+
+	// The heel the rider sets: the balance, tan(heel) = pull across / weight carried, plus the
+	// load's extra on top. In the air there is nothing to heel against and the board comes level.
+	float TargetHeelDeg = 0.0f;
+	if (bOnWater)
+	{
+		if (bAutoEdge)
+		{
+			TargetHeelDeg = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(PullAcrossN), CarriedN));
+		}
+		TargetHeelDeg = FMath::Min(TargetHeelDeg + LoadAmount * LoadExtraHeelDeg, MaxHeelDeg);
+		// Against the pull; with no pull across the board the rider stays on the rail they are on.
+		const float PullSide = FMath::Abs(PullAcrossN) > KINDA_SMALL_NUMBER ? FMath::Sign(PullAcrossN) : (HeelDeg < 0.0f ? -1.0f : 1.0f);
+		TargetHeelDeg *= PullSide;
+	}
+	HeelDeg += (TargetHeelDeg - HeelDeg) * (1.0f - FMath::Exp(-FMath::Max(HeelResponse, 0.0f) * DeltaTime));
+	LastStepDebug.HeelDeg = HeelDeg;
+
+	if (!bOnWater)
+	{
+		return FVector::ZeroVector;
+	}
+	// The water's normal force on the heeled board is N = carried / cos(heel); its sideways part,
+	// N sin(heel), acts across the board against the pull. Only a rider standing on the board puts
+	// their weight through it: sunk in the water (no planing speed) they float, and buoyancy is
+	// vertical.
+	const float OnBoard = FloatSubmersionCm > 0.0f ? FMath::Clamp(1.0f - CurrentFloatDepthCm / FloatSubmersionCm, 0.0f, 1.0f) : 1.0f;
+	const float HeelRad = FMath::DegreesToRadians(FMath::Clamp(HeelDeg, -MaxHeelDeg, MaxHeelDeg));
+	const FVector NormalSideN = -LevelRight * (CarriedN * FMath::Tan(HeelRad) * OnBoard);
+	LastStepDebug.NormalSideForceN = NormalSideN;
+	return NormalSideN * KiteUnits::UnrealForcePerN;
+}
+
+void UBoardMovementComponent::ApplyWaterDragAndSideForce(float DeltaTime, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward)
+{
+	const FVector HorizontalBefore(Velocity.X, Velocity.Y, 0.0f);
+	const float SpeedBefore = HorizontalBefore.Size();
+	if (SpeedBefore <= KINDA_SMALL_NUMBER || DeltaTime <= 0.0f)
+	{
+		return;
+	}
+	const float EffectiveMass = FMath::Max(MassKg, 1.0f);
+
+	// The hull's drag, a + c v^2, against the velocity over the water: the closed-form decay of the speed.
+	const float Speed = DecayWithLinearAndQuadraticDrag(SpeedBefore, DragRatePerS, DragRatePerCm, DeltaTime);
+	LastStepDebug.DragForceN = HorizontalBefore / SpeedBefore * (EffectiveMass * (Speed - SpeedBefore) / DeltaTime / KiteUnits::UnrealForcePerN);
+
+	// Leeway: the angle from the board's axis (whichever end leads) to its velocity, positive to the
+	// axis's right.
+	const FVector Dragged = HorizontalBefore / SpeedBefore * Speed;
+	const float Along = FVector::DotProduct(Dragged, LevelForward);
+	const FVector Axis = Along >= 0.0f ? LevelForward : -LevelForward;
+	const FVector AxisRight = FVector::CrossProduct(FVector::UpVector, Axis);
+	const float AlongAbs = FMath::Abs(Along);
+	const float Across = FVector::DotProduct(Dragged, AxisRight);
+	LastStepDebug.LeewayDeg = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dragged, FVector::CrossProduct(FVector::UpVector, LevelForward)), AlongAbs));
+
+	// The fins and the immersed rail make side force from leeway, F = 0.5 rho_w v^2 A_lat C_L,beta
+	// beta up to the leeway stall (research 2.3). Like any low aspect ratio plate the force is
+	// normal to them, across the board's axis, so against the velocity it has a drag part F sin(beta).
+	// More heel puts more rail in the water; weight on the tail digs it in, weight on the nose lifts it.
+	const float RailScale = FMath::Pow(FMath::Max(TailWeightRailScale, 0.01f), -CurrentWeightShift);
+	const float LateralAreaM2 = FMath::Max(FinAreaM2 + RailAreaM2 * FMath::Sin(FMath::DegreesToRadians(FMath::Abs(HeelDeg))) * RailScale, 0.0f);
+	const float SpeedMS = Speed / KiteUnits::CmPerM;
+	const float ForcePerRadN = 0.5f * KiteUnits::WaterDensityKgM3 * SpeedMS * SpeedMS * LateralAreaM2 * LateralLiftSlopePerRad;
+	const float StallRad = FMath::DegreesToRadians(FMath::Max(LeewayStallDeg, 0.1f));
+	// The force takes the sideways speed w out at dw/dt = -F / m, F = ForcePerRad * clamp(beta), beta
+	// = atan(w / u): past the stall at the stall's constant rate, then (beta ~ w / u) as an exact
+	// exponential decay, so it never overshoots.
+	float AcrossAfterAbs = FMath::Abs(Across);
+	if (ForcePerRadN > 0.0f)
+	{
+		const float StallAcross = AlongAbs * FMath::Tan(StallRad); // cm/s of sideways speed at the stall
+		const float StallDecel = ForcePerRadN * StallRad * KiteUnits::UnrealForcePerN / EffectiveMass; // cm/s^2
+		float SecondsLeft = DeltaTime;
+		if (AcrossAfterAbs > StallAcross)
+		{
+			const float Seconds = FMath::Min((AcrossAfterAbs - StallAcross) / StallDecel, SecondsLeft);
+			AcrossAfterAbs -= StallDecel * Seconds;
+			SecondsLeft -= Seconds;
+		}
+		if (SecondsLeft > 0.0f)
+		{
+			const float RatePerS = AlongAbs > KINDA_SMALL_NUMBER ? ForcePerRadN * KiteUnits::UnrealForcePerN / (EffectiveMass * AlongAbs) : BIG_NUMBER;
+			AcrossAfterAbs *= FMath::Exp(-RatePerS * SecondsLeft);
+		}
+	}
+	const float AcrossAfter = FMath::Sign(Across) * AcrossAfterAbs;
+	LastStepDebug.SideForceN = AxisRight * (EffectiveMass * (AcrossAfter - Across) / DeltaTime / KiteUnits::UnrealForcePerN);
+	const FVector HorizontalAfter = Axis * AlongAbs + AxisRight * AcrossAfter;
+	Velocity.X = HorizontalAfter.X;
+	Velocity.Y = HorizontalAfter.Y;
+}
+
 FVector UBoardMovementComponent::ComputeAirDragForce(const FVector& Location, const FVector& InVelocity) const
 {
 	if (RiderDragAreaM2 <= 0.0f)
@@ -866,6 +947,7 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	Velocity = Forward2D * SpeedCmS;
 
 	// 5. Clear crash and set rideable state
+	HeelDeg = 0.0f;
 	bIsCrashing = false;
 	CrashTimer = 0.0f;
 	CrashInitialVelocity = FVector::ZeroVector;

@@ -88,7 +88,7 @@ gets there if you do not want one.
 
 **Jumping.** You can always pop while you are up on the board: tap the jump button for a hop
 of about a metre. The height comes from the kite. Hold the jump button to crouch with your weight
-back and load the edge: the board grips harder against the lines, the pull builds, and you are
+back and load the edge: the board heels harder against the lines, the pull builds, and you are
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about

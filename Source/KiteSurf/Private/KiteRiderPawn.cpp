@@ -857,8 +857,8 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 	DrawDebugVector(World, LineStart, Kite->GetLineForce() / KiteUnits::UnrealForcePerN, DebugCmPerN, FColor::Yellow);
 	const FBoardStepDebug& BoardStep = BoardMovement->GetLastStepDebug();
 	const FVector BoardAt = RiderAt + FVector(0.0f, 0.0f, DebugBoardForceHeightCm);
-	DrawDebugVector(World, BoardAt, BoardStep.GripForceN, DebugCmPerN, FColor::Orange);
-	DrawDebugVector(World, BoardAt, BoardStep.DriveForceN, DebugCmPerN, FColor::Green);
+	DrawDebugVector(World, BoardAt, BoardStep.SideForceN, DebugCmPerN, FColor::Orange);
+	DrawDebugVector(World, BoardAt, BoardStep.NormalSideForceN, DebugCmPerN, FColor::Green);
 	DrawDebugVector(World, BoardAt, BoardStep.DragForceN, DebugCmPerN, FColor::Red);
 	DrawDebugVector(World, Chest, BoardStep.AirDragN, DebugCmPerN, FColor::Silver); // in the air only
 

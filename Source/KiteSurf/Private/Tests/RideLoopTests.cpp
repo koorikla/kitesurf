@@ -833,35 +833,44 @@ bool FKiteSurfRideCarveIsSymmetric::RunTest(const FString& Parameters)
 	return true;
 }
 
-// Weight along the board trades grip for speed: on the tail the rail digs in and the board slips
-// less; on the nose the board runs flatter and slides off downwind more.
+// Weight along the board: on the tail it sinks the tail and buries the rail, on the nose it lifts the
+// rail out (TailWeightRailScale). Riding at the balance heel the water's normal force carries the
+// pull and the board does not slip whatever the weight (plan-2 item 3); the rail shows when something
+// pushes the board off its course. Here that is the load: the rider heels past the balance and the
+// board slides to windward of its heading, less with the weight on the tail and more on the nose.
+// Before item 3 the weight scaled a viscous grip and set the leeway of plain riding: nose 11.9 deg,
+// neutral 5.2 deg, tail 2.1 deg.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideWeightShiftChangesLeeway, "KiteSurf.Ride.WeightShiftChangesLeeway", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfRideWeightShiftChangesLeeway::RunTest(const FString& Parameters)
 {
-	struct FRun { float LeewayDeg; float PitchDeg; };
+	struct FRun { float RidingLeewayDeg; float LoadedLeewayDeg; float PitchDeg; };
 	auto RideWithWeight = [](float WeightShift) -> FRun
 	{
 		FRideFixture Ride;
 		if (!Ride.IsValid())
 		{
-			return { 0.0f, 0.0f };
+			return { 0.0f, 0.0f, 0.0f };
 		}
 		Ride.Board->SetWeightShift(WeightShift);
-		Ride.Simulate(15.0f);
-		return {
-			FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Ride.Board->GetLateralSpeed()), Ride.Board->GetForwardSpeed())),
-			static_cast<float>(Ride.Pawn->GetActorRotation().Pitch) };
+		Ride.Simulate(10.0f);
+		const float RidingLeewayDeg = FMath::Abs(Ride.Board->GetLeewayDeg());
+		const float PitchDeg = Ride.Pawn->GetActorRotation().Pitch;
+		Ride.Pawn->SetLoadHeld(true);
+		Ride.Simulate(1.0f);
+		return { RidingLeewayDeg, FMath::Abs(Ride.Board->GetLeewayDeg()), PitchDeg };
 	};
 
 	const FRun OnNose = RideWithWeight(1.0f);
 	const FRun Neutral = RideWithWeight(0.0f);
 	const FRun OnTail = RideWithWeight(-1.0f);
-	UE_LOG(LogKiteSurf, Log, TEXT("WeightShiftChangesLeeway: nose %.1f deg, neutral %.1f deg, tail %.1f deg; pitch nose %.1f, tail %.1f"),
-		OnNose.LeewayDeg, Neutral.LeewayDeg, OnTail.LeewayDeg, OnNose.PitchDeg, OnTail.PitchDeg);
+	UE_LOG(LogKiteSurf, Log, TEXT("WeightShiftChangesLeeway: riding nose %.2f deg, neutral %.2f deg, tail %.2f deg; loaded nose %.1f deg, neutral %.1f deg, tail %.1f deg; pitch nose %.1f, tail %.1f"),
+		OnNose.RidingLeewayDeg, Neutral.RidingLeewayDeg, OnTail.RidingLeewayDeg, OnNose.LoadedLeewayDeg, Neutral.LoadedLeewayDeg, OnTail.LoadedLeewayDeg, OnNose.PitchDeg, OnTail.PitchDeg);
 
-	TestTrue(FString::Printf(TEXT("Weight on the tail slips less than neutral (%.1f < %.1f deg)"), OnTail.LeewayDeg, Neutral.LeewayDeg), OnTail.LeewayDeg < Neutral.LeewayDeg);
-	TestTrue(FString::Printf(TEXT("Weight on the nose slips more than neutral (%.1f > %.1f deg)"), OnNose.LeewayDeg, Neutral.LeewayDeg), OnNose.LeewayDeg > Neutral.LeewayDeg);
+	TestTrue(FString::Printf(TEXT("At the balance heel the board holds its course whatever the weight (%.2f, %.2f, %.2f deg)"), OnNose.RidingLeewayDeg, Neutral.RidingLeewayDeg, OnTail.RidingLeewayDeg),
+		FMath::Max3(OnNose.RidingLeewayDeg, Neutral.RidingLeewayDeg, OnTail.RidingLeewayDeg) < 1.0f);
+	TestTrue(FString::Printf(TEXT("Loaded, weight on the tail slips less than neutral (%.1f < %.1f deg)"), OnTail.LoadedLeewayDeg, Neutral.LoadedLeewayDeg), OnTail.LoadedLeewayDeg < 0.8f * Neutral.LoadedLeewayDeg);
+	TestTrue(FString::Printf(TEXT("Loaded, weight on the nose slips more than neutral (%.1f > %.1f deg)"), OnNose.LoadedLeewayDeg, Neutral.LoadedLeewayDeg), OnNose.LoadedLeewayDeg > 1.25f * Neutral.LoadedLeewayDeg);
 	TestTrue(FString::Printf(TEXT("Weight on the nose tips the nose down (pitch %.1f)"), OnNose.PitchDeg), OnNose.PitchDeg < -4.0f);
 	TestTrue(FString::Printf(TEXT("Weight on the tail lifts the nose (pitch %.1f)"), OnTail.PitchDeg), OnTail.PitchDeg > 4.0f);
 	return true;
@@ -1289,13 +1298,14 @@ namespace
 
 	/**
 	 * When the timed jump lets go of the jump button and pops, after the send reaches the kite (s).
-	 * Loaded, the rider is pulled off the water 1.13 s after the send starts (0.24 s of it the bar's
-	 * dead time); this pops 0.07 s before that, as late as it can without racing the pull. Without the
-	 * edge-release impulse (plan-2 A3) the height is earned in the last tenth of a second: 0.74 s
-	 * gives 9.5 m, 0.82 s 10.8 m, 0.86 s 10.0 m (the pop and the pull together), 0.9 s is pulled off.
-	 * It was 0.7 s at phase 1 and 0.8 s with plan-2 item 1, weight back only.
+	 * Since plan-2 item 3 the board holds the send with its fins and rail alone once the lines lift
+	 * more than the rider weighs (the water's normal force is the weight the board carries), and the
+	 * longer the hold the further the board slides towards the kite. The best release is 0.68 s
+	 * (10.7 m); 0.70 s gives 9.8 m, 0.78 s 10.6 m, and from 0.80 s the rider is pulled off, 1.05 s
+	 * after the send starts (0.24 s of it the bar's dead time) at 4.5 body weights. It was 0.7 s at
+	 * phase 1, 0.8 s with plan-2 item 1 and 0.82 s with item 2.
 	 */
-	constexpr float TimedReleaseSeconds = 0.82f;
+	constexpr float TimedReleaseSeconds = 0.68f;
 
 	struct FJumpResult
 	{
@@ -1509,11 +1519,11 @@ bool FKiteSurfJumpTimedReleaseBeatsPop::RunTest(const FString& Parameters)
 // which in the air is dominated by their own climb and fall; the kite stayed low and to the side,
 // stalled all the way down, and 8h/t^2 was 7.4 to 7.8 m/s^2.
 //
-// The climb is physics only (A3): the loaded pop gives 6 m/s, and the lines, at 4 kN as the board
-// lets go, add 2 m/s more in the first 0.2 s before the kite, at 45 deg up and still deep in the
-// window, slows as it nears the edge and the rider rises towards it. With the weight back but
-// without the jump button's loaded pop the same send gives 7.4 to 8 m; that way it gave 13.3 m with
-// the old edge-release impulse (EdgeReleaseSeconds 0.22).
+// The climb is physics only (A3): the loaded pop gives 6 m/s, and the lines, at 2.4 kN as the board
+// lets go, add 1 to 2 m/s more in the first 0.2 s before the kite, still deep in the window, slows as
+// it nears the edge and the rider rises towards it. With the weight back but without the jump
+// button's loaded pop the same send gave 7.4 to 8 m at item 2; that way it gave 13.3 m with the old
+// edge-release impulse (EdgeReleaseSeconds 0.22).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHangTime, "KiteSurf.Physics.HangTime", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsHangTime::RunTest(const FString& Parameters)
@@ -1807,11 +1817,11 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("The boost kite pulls at least as hard parked (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] >= ParkedTensionN[0]);
 
 	// Where the boost kite earns its name: each kite released a little before its send would pull
-	// the rider off the edge (loaded, a release at 0.88 s is too late for the loop kite; the boost
-	// kite turns slower, so its send loads up later and 0.95 s is too late for it), it goes higher and
+	// the rider off the edge (loaded, a release at 0.80 s is too late for the loop kite; the boost
+	// kite turns slower, so its send loads up later and 0.85 s is too late for it), it goes higher and
 	// stays up longer.
-	const FJumpResult LoopJump = RunJump(true, true, 0.74f, EKiteModel::Loop);
-	const FJumpResult BoostJump = RunJump(true, true, 0.86f, EKiteModel::Boost);
+	const FJumpResult LoopJump = RunJump(true, true, 0.75f, EKiteModel::Loop);
+	const FJumpResult BoostJump = RunJump(true, true, 0.83f, EKiteModel::Boost);
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: best timed jump, loop kite %.1f m / %.1f s, boost kite %.1f m / %.1f s (pulled off %d %d)"), LoopJump.PeakCm / 100.0f, LoopJump.AirSeconds, BoostJump.PeakCm / 100.0f, BoostJump.AirSeconds, LoopJump.bPulledOffEdge, BoostJump.bPulledOffEdge);
 	TestFalse(TEXT("Neither rider was pulled off their edge"), LoopJump.bPulledOffEdge || BoostJump.bPulledOffEdge);
 	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > 1.1f * LoopJump.PeakCm);
@@ -1827,22 +1837,22 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	UBoardMovementComponent* Board = Ride.Board;
 	const float ReferencePop = Board->PopImpulseKgCmPerS;
 	const float ReferencePlaning = Board->PlaningThresholdCmS;
-	const float ReferenceGrip = Board->EdgeGripKgPerS;
+	const float ReferenceRail = Board->RailAreaM2;
 	const float ReferenceTurn = Board->CarveTurnRate;
 	Board->SetBoardSize(EBoardSize::Medium);
-	TestTrue(TEXT("The 138 is the board the simulation is tuned for"), Board->PopImpulseKgCmPerS == ReferencePop && Board->PlaningThresholdCmS == ReferencePlaning && Board->EdgeGripKgPerS == ReferenceGrip && Board->CarveTurnRate == ReferenceTurn);
+	TestTrue(TEXT("The 138 is the board the simulation is tuned for"), Board->PopImpulseKgCmPerS == ReferencePop && Board->PlaningThresholdCmS == ReferencePlaning && Board->RailAreaM2 == ReferenceRail && Board->CarveTurnRate == ReferenceTurn);
 
 	Board->SetBoardSize(EBoardSize::Small);
 	TestTrue(TEXT("The small board pops harder"), Board->PopImpulseKgCmPerS > ReferencePop);
 	TestTrue(TEXT("needs more speed to plane"), Board->PlaningThresholdCmS > ReferencePlaning);
 	TestTrue(TEXT("so it is still sunk at a speed the 138 planes at"), Board->GetFloatDepthForSpeed(ReferencePlaning) > 0.0f);
-	TestTrue(TEXT("and turns quicker with less grip"), Board->CarveTurnRate > ReferenceTurn && Board->EdgeGripKgPerS < ReferenceGrip);
+	TestTrue(TEXT("and turns quicker with less rail in the water"), Board->CarveTurnRate > ReferenceTurn && Board->RailAreaM2 < ReferenceRail);
 
 	Board->SetBoardSize(EBoardSize::Large);
 	TestTrue(TEXT("The big board pops less"), Board->PopImpulseKgCmPerS < ReferencePop);
 	TestTrue(TEXT("planes earlier"), Board->PlaningThresholdCmS < ReferencePlaning);
 	TestNearlyEqual(TEXT("so it is on the surface at a speed the 138 is still coming up at"), Board->GetFloatDepthForSpeed(0.9f * ReferencePlaning), 0.0f, 0.01f);
-	TestTrue(TEXT("and grips harder but turns slower"), Board->EdgeGripKgPerS > ReferenceGrip && Board->CarveTurnRate < ReferenceTurn);
+	TestTrue(TEXT("and has more rail to grip with but turns slower"), Board->RailAreaM2 > ReferenceRail && Board->CarveTurnRate < ReferenceTurn);
 
 	// Light wind, starting slow: the big board gets up and planes where the small one stays sunk.
 	float SpeedKn[2] = { 0.0f, 0.0f };
@@ -2060,13 +2070,15 @@ bool FKiteSurfSpotSharks::RunTest(const FString& Parameters)
 // The bar is the throttle: right out the kite barely pulls, right in it pulls several times harder.
 //
 // The phase 2 plan (docs/physics/plan-2.md item 1) asks for 1.0 to 1.4 body weights with the bar in
-// and at least four times the bar-out pull. That cannot hold together with the zenith target
-// (KiteSurf.Physics.ParkedAtZenith, 0.85 to 1.1 kN for this kite in 30 kn): with the bar in the kite
-// flies at the same angle of attack in both (14 deg), and riding at 18 kn on a beam reach in 20 kn
-// its airspeed is 13.1 m/s against 17.0 m/s overhead in 30 kn at 23 m, so it pulls 0.6 of the zenith
-// pull, at most about 0.8 body weights. The bar-out pull is set by the bar throw (19 deg, research 12
-// to 20). Before phase 2: out 9.0 kn / 172 N, half 13.8 kn / 367 N, in 21.7 kn / 1120 N (1.34 body
-// weights, 6.5 times the bar-out pull).
+// and at least four times the bar-out pull. With item 1 alone that could not hold together with the
+// zenith target: the board, losing speed to the viscous grip's leeway, rode the bar-in kite at 18 kn
+// and 0.79 body weights, 3.6 times the bar-out pull, and the test took 0.75 body weights and 3.5
+// times. Since item 3 the board loses nothing to leeway (the heeled board's normal force carries the
+// pull): bar in it rides at 20 kn and the kite, in the faster apparent wind, pulls 1.00 body weights
+// for this 85 kg rider, 4.3 times bar out. Bar out it does 10 kn, so "a crawl" is now half the bar-in
+// speed rather than under 10 kn.
+// Before phase 2: out 9.0 kn / 172 N, half 13.8 kn / 367 N, in 21.7 kn / 1120 N (1.34 body weights,
+// 6.5 times the bar-out pull).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfRideBarIsTheThrottle, "KiteSurf.Ride.BarIsTheThrottle", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
@@ -2096,11 +2108,11 @@ bool FKiteSurfRideBarIsTheThrottle::RunTest(const FString& Parameters)
 		SpeedKn[0], TensionN[0], SpeedKn[1], TensionN[1], SpeedKn[2], TensionN[2], TensionN[2] / FMath::Max(BoardMassKg * KiteUnits::GravityMS2, 1.0f), TensionN[2] / FMath::Max(TensionN[0], 1.0f));
 
 	const float BodyWeightN = BoardMassKg * KiteUnits::GravityMS2;
-	TestTrue(FString::Printf(TEXT("Bar right in pulls 0.75 to 1.4 body weights (%.2f; the plan's 1.0 cannot hold with the zenith target, see above)"), TensionN[2] / BodyWeightN),
+	TestTrue(FString::Printf(TEXT("Bar right in pulls 0.75 to 1.4 body weights (%.2f)"), TensionN[2] / BodyWeightN),
 		TensionN[2] >= 0.75f * BodyWeightN && TensionN[2] <= 1.4f * BodyWeightN);
-	TestTrue(FString::Printf(TEXT("Bar right in pulls at least 3.5 times as hard as bar right out (%.0f N against %.0f N)"), TensionN[2], TensionN[0]), TensionN[2] > 3.5f * TensionN[0]);
+	TestTrue(FString::Printf(TEXT("Bar right in pulls at least 4 times as hard as bar right out (%.0f N against %.0f N)"), TensionN[2], TensionN[0]), TensionN[2] > 4.0f * TensionN[0]);
 	TestTrue(FString::Printf(TEXT("Half way is in between (%.0f N)"), TensionN[1]), TensionN[1] > 1.5f * TensionN[0] && TensionN[2] > 1.5f * TensionN[1]);
-	TestTrue(FString::Printf(TEXT("Bar right out slows the rider to a crawl (%.1f kn)"), SpeedKn[0]), SpeedKn[0] < 10.0f);
+	TestTrue(FString::Printf(TEXT("Bar right out slows the rider to a crawl, half the bar-in speed (%.1f kn against %.1f kn)"), SpeedKn[0], SpeedKn[2]), SpeedKn[0] < 0.55f * SpeedKn[2]);
 	TestTrue(FString::Printf(TEXT("Bar right in is much faster (%.1f kn)"), SpeedKn[2]), SpeedKn[2] > 1.7f * SpeedKn[0] && SpeedKn[2] > 16.0f);
 	return true;
 }
@@ -2142,12 +2154,19 @@ bool FKiteSurfPhysicsDebugStepBreakdown::RunTest(const FString& Parameters)
 		KiteStep.LiftCoefficient / KiteStep.DragCoefficient, 0.05f * KiteStep.LiftCoefficient / KiteStep.DragCoefficient);
 	TestNearlyEqual(TEXT("The angle of attack is the kite's"), KiteStep.AlphaDeg, Ride.Kite->GetAngleOfAttackDeg(), 0.01f);
 
+	// The board: since plan-2 item 3 the water holds the pull across the board with the normal force
+	// of the heeled board, and the fins and rail make side force only from leeway.
 	const FBoardStepDebug& BoardStep = Ride.Board->GetLastStepDebug();
 	const FVector BoardVelocity = Ride.Board->Velocity;
-	UE_LOG(LogKiteSurf, Log, TEXT("DebugStepBreakdown: board drag %.0f N, grip %.0f N, drive %.0f N, leeway %.1f deg at %.1f kn"),
-		BoardStep.DragForceN.Size(), BoardStep.GripForceN.Size(), BoardStep.DriveForceN.Size(), BoardStep.LeewayDeg, Ride.SpeedKnots());
+	const FVector LineForceN = Ride.Kite->GetLineForce() / KiteUnits::UnrealForcePerN;
+	const FVector BoardRight = FVector::CrossProduct(FVector::UpVector, FRotator(0.0f, Ride.Pawn->GetActorRotation().Yaw, 0.0f).Vector());
+	UE_LOG(LogKiteSurf, Log, TEXT("DebugStepBreakdown: board drag %.0f N, normal force sideways %.0f N against %.0f N of pull across, side force %.0f N, heel %.1f deg, leeway %.1f deg at %.1f kn"),
+		BoardStep.DragForceN.Size(), BoardStep.NormalSideForceN.Size(), BoardStep.PullAcrossN, BoardStep.SideForceN.Size(), BoardStep.HeelDeg, BoardStep.LeewayDeg, Ride.SpeedKnots());
 	TestTrue(TEXT("Board drag opposes its motion"), FVector::DotProduct(BoardStep.DragForceN, BoardVelocity) < 0.0f);
-	TestTrue(FString::Printf(TEXT("The board grips: %.0f N sideways"), BoardStep.GripForceN.Size()), BoardStep.GripForceN.Size() > 10.0f);
+	TestTrue(FString::Printf(TEXT("The heeled board's normal force holds the pull across it: %.0f N"), BoardStep.NormalSideForceN.Size()),
+		BoardStep.NormalSideForceN.Size() > 10.0f && FVector::DotProduct(BoardStep.NormalSideForceN, BoardRight) * FVector::DotProduct(LineForceN, BoardRight) < 0.0f);
+	TestNearlyEqual(TEXT("The heel is the board's"), BoardStep.HeelDeg, Ride.Board->GetHeelDeg(), 0.01f);
+	TestNearlyEqual(TEXT("and so is the leeway"), BoardStep.LeewayDeg, Ride.Board->GetLeewayDeg(), 0.01f);
 	TestTrue(FString::Printf(TEXT("Riding, the board slips only a few degrees (%.1f)"), BoardStep.LeewayDeg), FMath::Abs(BoardStep.LeewayDeg) < 15.0f);
 	return true;
 }
@@ -2176,6 +2195,7 @@ bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Not loading to start with"), Board->GetLoadAmount(), 0.0f);
 	const float TensionBefore = Ride.Kite->GetLineTensionN();
 	const float LateralBefore = FMath::Abs(Board->GetLateralSpeed());
+	const float HeelBefore = Board->GetHeelDeg();
 
 	Ride.Pawn->SetLoadHeld(true);
 	Ride.Simulate(0.2f);
@@ -2183,16 +2203,22 @@ bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
 	Ride.Simulate(0.4f);
 	TestNearlyEqual(TEXT("and full after 0.6 s"), Board->GetLoadAmount(), 1.0f, 0.001f);
 
-	// Loaded, the edge bites: the board slips downwind less and the lines pull harder.
+	// Loaded, the rider heels the board past the balance: the water's normal force pushes it to
+	// windward of its heading, against the pull, and the lines pull harder (plan-2 item 3). Before
+	// item 3 the load multiplied a viscous grip and cut the downwind slip, 70 to 29 cm/s.
 	float PeakTension = 0.0f;
 	for (float Elapsed = 0.0f; Elapsed < 2.0f; Elapsed += RideDeltaTime)
 	{
 		Ride.Simulate(RideDeltaTime);
 		PeakTension = FMath::Max(PeakTension, Ride.Kite->GetLineTensionN());
 	}
-	const float LateralLoaded = FMath::Abs(Board->GetLateralSpeed());
-	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: tension %.0f N riding, up to %.0f N loaded; sideways slip %.0f cm/s riding, %.0f cm/s loaded"), TensionBefore, PeakTension, LateralBefore, LateralLoaded);
-	TestTrue(FString::Printf(TEXT("Loading cuts the sideways slip (%.0f cm/s to %.0f cm/s)"), LateralBefore, LateralLoaded), LateralLoaded < 0.7f * LateralBefore);
+	const FBoardStepDebug& LoadedStep = Board->GetLastStepDebug();
+	const float PullSide = LoadedStep.PullAcrossN >= 0.0f ? 1.0f : -1.0f;
+	const float WindwardSlip = -PullSide * Board->GetLateralSpeed();
+	UE_LOG(LogKiteSurf, Log, TEXT("LoadAndRelease: tension %.0f N riding, up to %.0f N loaded; heel %.1f deg riding, %.1f deg loaded; sideways %.0f cm/s riding, %.0f cm/s to windward loaded"),
+		TensionBefore, PeakTension, HeelBefore, Board->GetHeelDeg(), LateralBefore, WindwardSlip);
+	TestTrue(FString::Printf(TEXT("Loading heels the board past the balance (%.1f deg to %.1f deg)"), HeelBefore, Board->GetHeelDeg()), FMath::Abs(Board->GetHeelDeg()) > FMath::Abs(HeelBefore) + 15.0f);
+	TestTrue(FString::Printf(TEXT("and slides it to windward of its heading (%.0f cm/s)"), WindwardSlip), WindwardSlip > 10.0f);
 	TestTrue(FString::Printf(TEXT("and raises the line tension (%.0f N to %.0f N)"), TensionBefore, PeakTension), PeakTension > 1.1f * TensionBefore);
 	TestTrue(TEXT("The rider is still on the water, held down by the edge"), Board->GetBoardState() != EBoardState::Airborne);
 

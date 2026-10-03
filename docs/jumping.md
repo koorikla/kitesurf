@@ -16,7 +16,7 @@ A rider can always pop while they are up on the board on the water: no edge and 
 
 ### Load
 Holding the jump button (`AKiteRiderPawn::SetLoadHeld`, `UBoardMovementComponent::SetLoadHeld`) puts the rider into a crouch with their weight over the back of the board: the jointed rider's pelvis drops and the knees bend. `GetLoadAmount()` builds to 1 over 0.4 s (`LoadRatePerSec`) and lets go at `LoadReleaseRatePerSec`. While loaded:
-- lateral grip rises by up to `LoadGripBonus` (150%), so the board slips downwind less and the lines pull harder. How much depends on where the kite is: an edge resists a pull across the board, not one along it. Riding the 9 m in 20 kn with the kite held at its clock position, slip drops from 70 to 29 cm/s and tension rises from 479 to 542 N (`KiteSurf.Jump.LoadAndRelease`);
+- the board heels `LoadExtraHeelDeg` (25 deg) past the balance of the pull across it (up to `MaxHeelDeg`, 65), so the water's normal force pushes it to windward of its heading, the apparent wind goes aft, the kite sits deeper and the lines pull harder. How much depends on where the kite is: an edge resists a pull across the board, not one along it. Riding the 9 m in 20 kn with the kite held at its clock position, the heel goes from 33 to 62 deg, the board moves 61 cm/s to windward and tension rises from 555 to 661 N (`KiteSurf.Jump.LoadAndRelease`); on the 12 m in 15 kn 1.5 s of load raises it from 483 to 620 N (`KiteSurf.Physics.LoadingBuildsTension`);
 - the board is held down as with a full edge (see below);
 - the pop that follows is up to `LoadPopBonus` (60%) stronger: 4.0 m/s against 2.5 m/s from a tap.
 
@@ -72,7 +72,6 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 | `MaxJumpHeight` | `4000` | Maximum jump apex height clamp in cm (40 m). |
 | `MaxLandingAngle` | `30` | Maximum deviation angle in degrees between velocity and board heading for clean landing. |
 | `LoadRatePerSec` / `LoadReleaseRatePerSec` | `2.5` / `6.0` | How fast the crouch builds while the jump button is held, and lets go (1/s). |
-| `LoadGripBonus` | `1.5` | Extra lateral grip at full load, as a fraction. |
 | `LoadPopBonus` | `0.6` | Extra pop from a full load, as a fraction. |
 | `CleanLandingSpeedRetention` | `0.8` | Fraction of horizontal velocity retained on clean landing (80%). |
 | `CrashDecelDuration` | `0.5` | Duration in seconds to decelerate to zero upon crash landing. |

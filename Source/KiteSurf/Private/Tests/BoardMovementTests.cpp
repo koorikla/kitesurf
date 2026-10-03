@@ -134,45 +134,42 @@ bool FKiteSurfBoardEdgeResistsLateralForce::RunTest(const FString& Parameters)
 
 			if (BoardComp)
 			{
+				// A board planing at 8 m/s, a forward pull about its drag and 150 N sideways. Ridden flat
+				// (no auto-edge) only the fins hold the sideways force, from leeway; edged, the rider heels
+				// the board to the balance and the water's normal force carries it (plan-2 item 3). Before
+				// item 3 this compared the carve input's grip on a stopped board: 31.8 cm/s without the
+				// edge, 7.7 cm/s at full edge (24%); the carve input no longer sets the grip.
 				const float DeltaTime = 0.0333f;
-				const FVector LateralForce(0.0f, 15000.0f, 0.0f); // 150 N sideways
+				const FVector Pull(25000.0f, 15000.0f, 0.0f); // 250 N forward, 150 N sideways
+				const FVector StartVelocity(800.0f, 0.0f, 0.0f);
 
-				// This measures grip alone, so stop the stationary board pivoting to face the force.
-				BoardComp->LowSpeedPivotRate = 0.0f;
-
-				// Run 1: No Edge
-				Pawn->SetActorLocation(FVector::ZeroVector);
-				Pawn->SetActorRotation(FRotator::ZeroRotator);
-				BoardComp->Velocity = FVector::ZeroVector;
-				BoardComp->SetEdgeInput(0.0f);
-
-				for (int32 i = 0; i < 45; ++i) // 1.5 seconds
+				auto RideWithPull = [&](bool bAutoEdge, float& OutHeelDeg) -> float
 				{
-					BoardComp->AddExternalForce(LateralForce);
-					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
-				}
-				// Sideways over the water: the board heels under the load, and its own right axis would read some of the vertical motion.
-				const float LateralSpeedNoEdge = FMath::Abs(BoardComp->Velocity.Y);
-
-				// Run 2: Full Edge (EdgeInput = 1.0f)
-				Pawn->SetActorLocation(FVector::ZeroVector);
-				Pawn->SetActorRotation(FRotator::ZeroRotator);
-				BoardComp->Velocity = FVector::ZeroVector;
-				BoardComp->SetEdgeInput(1.0f);
-
-				for (int32 i = 0; i < 45; ++i) // 1.5 seconds
-				{
-					BoardComp->AddExternalForce(LateralForce);
-					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
-				}
-				const float LateralSpeedFullEdge = FMath::Abs(BoardComp->Velocity.Y);
+					Pawn->SetActorLocation(FVector::ZeroVector);
+					Pawn->SetActorRotation(FRotator::ZeroRotator);
+					BoardComp->Velocity = StartVelocity;
+					BoardComp->SetBoardState(EBoardState::Planing);
+					BoardComp->bAutoEdge = bAutoEdge;
+					for (int32 i = 0; i < 45; ++i) // 1.5 seconds
+					{
+						BoardComp->AddExternalForce(Pull);
+						BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+					}
+					OutHeelDeg = BoardComp->GetHeelDeg();
+					return FMath::Abs(BoardComp->Velocity.Y);
+				};
+				float FlatHeelDeg = 0.0f;
+				float EdgedHeelDeg = 0.0f;
+				const float LateralSpeedNoEdge = RideWithPull(false, FlatHeelDeg);
+				const float LateralSpeedFullEdge = RideWithPull(true, EdgedHeelDeg);
 
 				const float Ratio = LateralSpeedFullEdge / FMath::Max(LateralSpeedNoEdge, 0.001f);
-				UE_LOG(LogKiteSurf, Log, TEXT("EdgeResistsLateralForce: No Edge = %.1f cm/s, Full Edge = %.1f cm/s, Ratio = %.1f%%"),
-					LateralSpeedNoEdge, LateralSpeedFullEdge, Ratio * 100.0f);
+				UE_LOG(LogKiteSurf, Log, TEXT("EdgeResistsLateralForce: flat (heel %.1f deg) = %.1f cm/s, edged (heel %.1f deg) = %.1f cm/s, Ratio = %.1f%%, %.1f kn"),
+					FlatHeelDeg, LateralSpeedNoEdge, EdgedHeelDeg, LateralSpeedFullEdge, Ratio * 100.0f, KiteUnits::CmSToKnots(BoardComp->Velocity.Size2D()));
 
-				// Spec: lateral force with full edge yields < 25% of the lateral speed vs no edge
-				TestTrue(TEXT("Lateral speed with full edge is < 25% of no edge"), LateralSpeedFullEdge < 0.25f * LateralSpeedNoEdge);
+				TestTrue(FString::Printf(TEXT("Ridden flat the board heels no more than a degree (%.1f deg)"), FlatHeelDeg), FMath::Abs(FlatHeelDeg) < 1.0f);
+				TestTrue(FString::Printf(TEXT("Edged, it heels to carry the pull (%.1f deg)"), EdgedHeelDeg), FMath::Abs(EdgedHeelDeg) > 5.0f);
+				TestTrue(TEXT("Lateral speed with the edge is < 25% of riding flat"), LateralSpeedFullEdge < 0.25f * LateralSpeedNoEdge);
 			}
 		}
 

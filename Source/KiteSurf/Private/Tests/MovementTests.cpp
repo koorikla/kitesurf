@@ -209,9 +209,13 @@ bool FKiteSurfMovementNoNaNGuard::RunTest(const FString& Parameters)
 
 				Pawn->Tick(DeltaTime);
 
+				// In water contact: within 20 cm of the board's ride height, the surface while it planes and
+				// its float depth when it slows (since plan-2 item 3 the zig-zag carves with the kite slack
+				// skid and bleed speed, and the board drops off the plane; before, the grip dragged the
+				// velocity onto the heading and it kept 12 kn).
 				const FVector Vel = Pawn->GetBoardVelocity();
 				TestFalse(TEXT("Velocity does not contain NaN"), Vel.ContainsNaN());
-				TestTrue(TEXT("Planing height within +-20 cm of water height"), FMath::Abs(Pawn->GetActorLocation().Z) <= 20.0f + 0.1f);
+				TestTrue(TEXT("Within +-20 cm of the ride height"), FMath::Abs(Pawn->GetActorLocation().Z + BoardComp->GetFloatDepthCm()) <= 20.0f + 0.1f);
 			}
 		}
 	}

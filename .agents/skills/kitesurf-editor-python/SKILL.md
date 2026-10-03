@@ -101,6 +101,12 @@ For C++ classes use `unreal-cpp-gameplay`; for the input model use `unreal-enhan
   and for the lines you printed; do not rely on the exit code alone.
 - **The commandlet has no renderer.** Anything that needs a viewport (screenshots, ray
   tracing state) will not behave as it does in the game. Verify visuals in a `-game` run.
+- **A material on a static mesh needs `used_with_nanite`.** Nanite is on project-wide, so
+  imported meshes are Nanite. The editor adds a missing usage flag on the fly, but `-game`
+  and packaged builds cannot: they log `missing usage flag Nanite` and draw the default
+  material. Set `material.set_editor_property('used_with_nanite', True)` before
+  `recompile_material`. `KiteSurf.Assets.NaniteMaterialUsage` checks every mesh in
+  `/Game/Meshes`, and `scan_game_log.py` fails the GPU smoke run on the warning.
 - **Water bodies saved by a plain commandlet are invisible in game.** The Water plugin only
   builds a water body's mesh when the process can render
   (`UWaterBodyComponent::UpdateWaterBodyRenderData`), so `L_OpenWater` must be generated with

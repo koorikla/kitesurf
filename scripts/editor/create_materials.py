@@ -47,7 +47,8 @@ def make_kite_canopy(name='M_KiteCanopy', texture_name='T_KiteCanopy'):
     specular = mel.create_material_expression(material, unreal.MaterialExpressionConstant, -300, 350)
     specular.set_editor_property('r', 0.8)
     mel.connect_material_property(specular, '', unreal.MaterialProperty.MP_SPECULAR)
-    
+    # Nanite is on project-wide, so the kite meshes are Nanite; -game cannot add the flag itself.
+    material.set_editor_property('used_with_nanite', True)
     mel.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material, only_if_is_dirty=False)
     print(f'Created {name}')

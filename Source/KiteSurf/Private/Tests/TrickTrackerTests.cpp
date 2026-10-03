@@ -116,14 +116,14 @@ namespace TrickTrackerTestsLocal
 
 	/**
 	 * When the timed jump lets go of the jump button, after the send reaches the kite (s): RideLoopTests'
-	 * TimedReleaseSeconds. Since physics phase 2 the loaded rider hangs on until the lines pull up 2.5
+	 * TrackerTimedReleaseSeconds. Since physics phase 2 the loaded rider hangs on until the lines pull up 2.5
 	 * body weights, so the 0.7 s of phase 1 is a frame too late (the kite plucks them off first).
 	 */
-	constexpr float TimedReleaseSeconds = 0.66f;
+	constexpr float TrackerTimedReleaseSeconds = 0.66f;
 
 	/**
 	 * The timed send and pop of RideLoopTests' RunJump (30 kn, recommended kite): the jump button held
-	 * (crouched, loading the edge) with the weight back, let go TimedReleaseSeconds after the bar reaches
+	 * (crouched, loading the edge) with the weight back, let go TrackerTimedReleaseSeconds after the bar reaches
 	 * the kite, and held again from the apex to crouch for the landing (physics phase 2: landed standing,
 	 * a jump this big is a crash). With LoopSteer non-zero the bar is held over with the loop forced
 	 * through (SetLoopHeld) from take-off until touchdown. A HUD passed in is updated each frame as
@@ -142,7 +142,7 @@ namespace TrickTrackerTestsLocal
 
 		Ride.Pawn->SteerKite(-1.0f);
 		const float SendDeadTimeSeconds = Ride.Kite->GetSteeringDeadTimeSeconds();
-		const float ReleaseSeconds = TimedReleaseSeconds;
+		const float ReleaseSeconds = TrackerTimedReleaseSeconds;
 		Ride.Board->SetWeightShift(-1.0f);
 		Ride.Pawn->SetLoadHeld(true);
 

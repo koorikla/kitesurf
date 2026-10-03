@@ -7,6 +7,8 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "KiteRiderPawn.h"
+#include "BoardMovementComponent.h"
+#include "KiteComponent.h"
 #include "Tricks/TrickTrackerComponent.h"
 #include "WindComponent.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -137,6 +139,53 @@ public:
 					UAudioMixerBlueprintLibrary::StopRecordingOutput(World, EAudioRecordingExportType::WavFile, Name, FString());
 					UE_LOG(LogKiteSurf, Log, TEXT("Audio recording written as %s.wav"), *Name);
 				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Kite"),
+			TEXT("Rigs the player's kite at this size (m2), or the size recommended for the current wind with 0. Usage: kitesurf.Kite <m2>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				AKiteRiderPawn* Rider = FindPlayerRider();
+				UKiteComponent* Kite = Rider ? Rider->GetKite() : nullptr;
+				const UWindComponent* Wind = Rider ? Rider->GetWind() : nullptr;
+				if (!Kite)
+				{
+					return;
+				}
+				float SizeM2 = Args.IsValidIndex(0) ? FCString::Atof(*Args[0]) : 0.0f;
+				if (SizeM2 <= 0.0f && Wind)
+				{
+					SizeM2 = UKiteComponent::RecommendKiteSizeM2(KiteUnits::CmSToKnots(Wind->BaseWind.Size()));
+				}
+				Kite->SetKiteSize(SizeM2);
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Kite: %.0f m2"), SizeM2);
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.HoldKite"),
+			TEXT("Flies the player's kite at a clock position (deg, + on the right) by working the steering, as a rider holding it low to keep riding; 'off' lets go of the bar. For scripted rides. Usage: kitesurf.HoldKite <ClockDeg|off>"),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandleHoldKite),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.State"),
+			TEXT("Logs the player's ride in one line: board state, speed, height, kite position, line tension and the bar. For scripting rides."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				const AKiteRiderPawn* Rider = FindPlayerRider();
+				const UBoardMovementComponent* Board = Rider ? Rider->GetBoardMovement() : nullptr;
+				const UKiteComponent* Kite = Rider ? Rider->GetKite() : nullptr;
+				if (!Board || !Kite)
+				{
+					return;
+				}
+				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn, height %.0f cm, kite clock %.0f deg elevation %.0f deg, tension %.0f N, steer %.2f, bar %.2f"),
+					*UEnum::GetDisplayValueAsText(Board->GetBoardState()).ToString(), Board->IsFloating() ? TEXT(" floating") : TEXT(""), Board->IsCrashing() ? TEXT(" crashing") : TEXT(""),
+					KiteUnits::CmSToKnots(Board->Velocity.Size2D()), Board->GetCurrentJumpHeight(), Kite->GetClockDeg(), Kite->GetElevationDeg(), Kite->GetLineTensionN(),
+					Rider->GetCurrentSteerInput(), Rider->GetCurrentSheetInput());
 			}),
 			ECVF_Default
 		);
@@ -338,6 +387,9 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jumps"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.State"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HoldKite"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Kite"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Shot"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.CaptureFrames"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HideUI"));
@@ -370,6 +422,39 @@ private:
 			}
 		}
 		return nullptr;
+	}
+
+	FTSTicker::FDelegateHandle HoldKiteHandle;
+	float HoldKiteClockDeg = 0.0f;
+
+	void HandleHoldKite(const TArray<FString>& Args)
+	{
+		if (HoldKiteHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(HoldKiteHandle);
+			HoldKiteHandle.Reset();
+		}
+		if (!Args.IsValidIndex(0) || Args[0].Equals(TEXT("off"), ESearchCase::IgnoreCase))
+		{
+			if (AKiteRiderPawn* Rider = FindPlayerRider())
+			{
+				Rider->SteerKite(0.0f);
+			}
+			return;
+		}
+		HoldKiteClockDeg = FCString::Atof(*Args[0]);
+		HoldKiteHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
+		{
+			AKiteRiderPawn* Rider = FindPlayerRider();
+			const UKiteComponent* Kite = Rider ? Rider->GetKite() : nullptr;
+			if (Kite)
+			{
+				// A gentle hand: bar over in proportion to how far the kite is from where it should be, at most
+				// half bar, so the steering dead time does not swing it round.
+				Rider->SteerKite(FMath::Clamp((HoldKiteClockDeg - Kite->GetClockDeg()) / 40.0f, -0.5f, 0.5f));
+			}
+			return true;
+		}));
 	}
 
 	void HandleShot(const TArray<FString>& Args)

@@ -40,16 +40,30 @@ CROSSFADE_FRAMES=30
 
 # frame-from-start  command
 RIDE=(
-    "10 kitesurf.Wind 20"
     "100 kitesurf.HideUI"
-    # Send the kite up, weight on the tail, pop.
+    # Ride with the kite held low on its side of the window; left alone it climbs to the zenith
+    # and the rider stops.
+    "20 kitesurf.HoldKite 50"
+    # A windy day on a small kite, as the big jump tests ride it.
+    "10 kitesurf.Wind 30"
+    "11 kitesurf.Kite 0"
+    # The send and pop as the physics tests fly it (RunJump in RideLoopTests.cpp): bar towards
+    # the kite, weight on the tail and the jump button held to load the crouch...
+    "400 kitesurf.HoldKite off"
     "400 kitesurf.Input -1 0 0 -1 0"
-    "435 kitesurf.Input 0 0 0 -1 0"
-    "440 kitesurf.Jump"
-    "470 kitesurf.Input 0 0 0 0 0"
+    "400 kitesurf.Load 1"
+    # ...then after about 0.8 s pull (later goes higher but lands hot) the bar in and let go of the button: the pop.
+    "424 kitesurf.Input 0 1 0 -1 0"
+    "425 kitesurf.Load 0"
+    "430 kitesurf.Input 0 1 0 0 0"
+    # Bar centred in the air: the assist holds the kite overhead. Then ride on with the kite low.
+    "445 kitesurf.Input 0 0 0 0 0"
+    "560 kitesurf.HoldKite 50"
     # Loop the kite.
+    "680 kitesurf.HoldKite off"
     "680 kitesurf.Input 1 0 0 0 0"
     "770 kitesurf.Input 0 0 0 0 0"
+    "770 kitesurf.HoldKite 50"
 )
 LOOP_SHOTS=(
     "$LOOP_START kitesurf.CaptureFrames $LOOP_FRAMES loop"
@@ -75,7 +89,11 @@ INTRO_SHOTS=(
 # Plays the ride with the given shots in the game, offscreen, on a fixed timestep, holding the GPU
 # lock (common.sh) for the take.
 film() {
-    local cmds="" entry
+    local cmds="" entry frame
+    # The ride's state in the log once a second, to see what the script did.
+    for ((frame = 30; frame < 1200; frame += 30)); do
+        cmds+="kitesurf.After $frame kitesurf.State,"
+    done
     for entry in "${RIDE[@]}" "$@"; do
         cmds+="kitesurf.After ${entry},"
     done
@@ -94,11 +112,29 @@ check_take() {
     fi
 }
 
+# Films a take, and once more if it comes back short: a run can still fail to get GPU memory at
+# its first frame (Vulkan "Out Of Memory" in the log), e.g. next to a GPU program that does not
+# take the lock.
+film_take() {
+    local name="$1" frames="$2"
+    shift 2
+    local attempt
+    for attempt in 1 2; do
+        rm -rf "${OUT_DIR:?}/$name"
+        sleep 5
+        film "$@" || true
+        if (( $(find "$OUT_DIR/$name" -name 'frame_*.png' 2>/dev/null | wc -l) >= frames )); then
+            return 0
+        fi
+        echo "The $name take came back short (attempt $attempt)" >&2
+    done
+}
+
 if [[ -z "${SKIP_CAPTURE:-}" ]]; then
     echo "=== Filming the loop: $LOOP_FRAMES frames at $RES ==="
-    film "${LOOP_SHOTS[@]}"
+    film_take loop $LOOP_FRAMES "${LOOP_SHOTS[@]}"
     echo "=== Filming the intro: $INTRO_FRAMES frames at $RES ==="
-    film "${INTRO_SHOTS[@]}"
+    film_take intro $INTRO_FRAMES "${INTRO_SHOTS[@]}"
 fi
 check_take loop $LOOP_FRAMES
 check_take intro $INTRO_FRAMES

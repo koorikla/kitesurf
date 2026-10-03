@@ -111,8 +111,8 @@ namespace
 	}
 }
 
-// Every cinematic shot has the rider in the picture and the camera clear of the water and the lines,
-// whichever way the rider is going.
+// Every cinematic shot has the rider and the kite in the picture and the camera clear of the water and
+// the lines, whichever way the rider is going and wherever the kite is.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfCaptureShotsFrameTheRider, "KiteSurf.Capture.ShotsFrameTheRider",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
@@ -149,11 +149,22 @@ bool FKiteSurfCaptureShotsFrameTheRider::RunTest(const FString& Parameters)
 				TestTrue(FString::Printf(TEXT("%s at %.0f s: camera above the water (%.0f cm)"), *What, Seconds, Frame.Location.Z - WaterZ), Frame.Location.Z - WaterZ >= 100.0f);
 				const float FromLines = DistanceToSegment(Frame.Location, RiderNow, KiteNow);
 				TestTrue(FString::Printf(TEXT("%s at %.0f s: camera clear of the lines (%.0f cm)"), *What, Seconds, FromLines), FromLines > 500.0f);
-				if (Shot == EKiteSurfShot::Side || Shot == EKiteSurfShot::Orbit || Shot == EKiteSurfShot::Wide)
-				{
-					TestTrue(FString::Printf(TEXT("%s at %.0f s: kite in the picture"), *What, Seconds), IsInFrame(Frame, KiteNow));
-				}
+				TestTrue(FString::Printf(TEXT("%s at %.0f s: kite in the picture"), *What, Seconds), IsInFrame(Frame, KiteNow));
 			}
+		}
+	}
+
+	// With the kite overhead, as it flies through a jump and just after, every shot still has the rider.
+	const FVector Overhead(250.0f, 0.0f, 2390.0f); // 84 deg up on 24 m lines
+	for (EKiteSurfShot Shot : Shots)
+	{
+		for (const FVector& Rider : { FVector::ZeroVector, FVector(0.0f, 0.0f, 600.0f) })
+		{
+			const FVector Velocity(0.0f, 1500.0f, 0.0f);
+			const FVector Anchor = AKiteSurfCinematicCamera::ComputeShotAnchor(Shot, Rider, Velocity, Rider + Overhead, WaterZ);
+			const FKiteSurfShotFrame Frame = AKiteSurfCinematicCamera::ComputeShotFrame(Shot, Rider, Velocity, Rider + Overhead, 1.0f, Anchor, WaterZ);
+			TestTrue(FString::Printf(TEXT("%s, kite overhead, rider %.0f m up: rider in the picture"), *UEnum::GetValueAsString(Shot), Rider.Z / 100.0f), IsInFrame(Frame, Rider));
+			TestTrue(FString::Printf(TEXT("%s, kite overhead, rider %.0f m up: and the kite (FOV %.0f deg)"), *UEnum::GetValueAsString(Shot), Rider.Z / 100.0f, Frame.FieldOfViewDeg), IsInFrame(Frame, Rider + Overhead));
 		}
 	}
 

@@ -46,6 +46,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnResumeClicked();
 
+	/** Starts a 90 s best-three session (UTrickSessionSubsystem) for the rider and resumes the ride. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSessionClicked();
+
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnRestartClicked();
 
@@ -88,6 +92,7 @@ private:
 	FKiteMenuNavigator Navigator;
 
 	TSharedPtr<SButton> SlateResumeButton;
+	TSharedPtr<SButton> SlateSessionButton;
 	TSharedPtr<SButton> SlateRestartButton;
 	TSharedPtr<SButton> SlateGearButton;
 	TSharedPtr<SButton> SlateSettingsButton;

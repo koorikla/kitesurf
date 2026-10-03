@@ -671,7 +671,7 @@ Superseded for F1 to F6 by the trick plan in `docs/tricks.md`, which breaks them
 | F2 | Grabs and board-off | A grab can be held in the air; a board-off fails the landing if the board is not replaced | M | F1 | Slice (one grab) |
 | F3 | Trick recognition and naming | A megaloop back roll is labelled as such; loop count, loop direction, rotations and board-off compose into a name | M | F1, C6 | Depth |
 | F4 | Per-jump score from height, extremity, technicality and execution | A 20 m loop beats a 20 m straight jump; a crashed landing scores 30% or less of a clean one; a low megaloop scores under a high megaloop | M | C8, F3 | Depth |
-| F5 | Best-three session mode | A 90 s timer, the best three jumps summed, a results screen with a local best; a repeated trick does not raise the total | S | C8 | Slice (height only) |
+| F5 | Best-three session mode | A 90 s timer, the best three jumps summed, a results screen with a local best; a repeated trick does not raise the total | S | C8 | Slice (height only). Done in T2.5: `KiteSurf.Trick.Session*` (docs/tricks.md 6.8) |
 | F6 | Failure cause message | After a failed jump a one-line cause is shown, such as popped late or kite too low | S | C4, C7 | Depth |
 
 ### G. Content and retention

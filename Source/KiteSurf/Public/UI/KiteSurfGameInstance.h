@@ -128,10 +128,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SaveSettingsToDisk();
 
-	/** Takes the settings and the trick book from a loaded save: what LoadSettingsFromDisk does with the Settings slot. */
+	/** Takes the settings, the trick book and the session bests from a loaded save: what LoadSettingsFromDisk does with the Settings slot. */
 	void ApplySaveGame(const UKiteSurfSaveGame& SaveGame);
 
-	/** Writes the settings and the trick book into a save: what SaveSettingsToDisk does before writing the Settings slot. */
+	/** Writes the settings, the trick book and the session bests into a save: what SaveSettingsToDisk does before writing the Settings slot. */
 	void WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const;
 
 	/** The tricks landed so far, loaded from and saved to the Settings slot with the settings. */
@@ -143,6 +143,22 @@ public:
 	 * yet fed by the game; the trick tracker wiring will call it.
 	 */
 	bool RecordTrickLanding(const FJumpRecord& Record);
+
+	/** Whether a best-three session of this length (whole seconds) has a local best. */
+	bool HasBestSessionTotal(int32 DurationSeconds) const { return BestSessionTotalBySeconds.Contains(DurationSeconds); }
+
+	/** The local best best-three session total for this length (whole seconds); 0 when there is none. */
+	float GetBestSessionTotal(int32 DurationSeconds) const;
+
+	/**
+	 * Offers a finished best-three session's total (T2.5). True when it is a new local best for its
+	 * length (the first session of that length scoring above 0, or beating the best), which is then
+	 * kept. Does not write to disk: the caller saves through SaveSettingsToDisk.
+	 */
+	bool RecordSessionTotal(int32 DurationSeconds, float Total);
+
+	/** The local bests per session length, loaded from and saved to the Settings slot with the settings. */
+	const TMap<int32, float>& GetBestSessionTotals() const { return BestSessionTotalBySeconds; }
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetPendingWindKnots(float InKnots);
@@ -158,4 +174,6 @@ public:
 
 private:
 	FTrickBook TrickBook;
+
+	TMap<int32, float> BestSessionTotalBySeconds;
 };

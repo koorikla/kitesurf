@@ -82,6 +82,13 @@ public:
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
 	FTrickBook TrickBook;
 
+	/**
+	 * Best best-three session total per session length in whole seconds (T2.5): 90 -> the best
+	 * 90 s session. Saves made before sessions have no such property and load with no best.
+	 */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
+	TMap<int32, float> BestSessionTotalBySeconds;
+
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;
 

@@ -10,6 +10,7 @@
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "Tricks/TrickTrackerComponent.h"
+#include "Tricks/TrickSessionSubsystem.h"
 #include "WindComponent.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "UI/KiteSurfMainMenuWidget.h"
@@ -307,6 +308,22 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Session"),
+			TEXT("Starts a best-three session for the player's rider: the best three jumps in the time count, repeats are paid less. Usage: kitesurf.Session [seconds, default 90]"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const float Seconds = Args.IsValidIndex(0) ? FMath::Max(FCString::Atof(*Args[0]), 1.0f) : UTrickSessionSubsystem::DefaultSessionSeconds;
+				AKiteRiderPawn* Rider = FindPlayerRider();
+				UWorld* World = Rider ? Rider->GetWorld() : nullptr;
+				UTrickSessionSubsystem* Sessions = World ? World->GetSubsystem<UTrickSessionSubsystem>() : nullptr;
+				if (!Sessions || !Sessions->StartSession(Seconds, Rider->GetTrickTracker()))
+				{
+					UE_LOG(LogKiteSurf, Warning, TEXT("kitesurf.Session: no rider to start a session for"));
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.MenuKey"),
 			TEXT("Sends a key press through the UI, as the keyboard or gamepad would. Usage: kitesurf.MenuKey <Up|Down|Left|Right|Enter|Gamepad_DPad_Down|...>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -386,6 +403,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jumps"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Session"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.State"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HoldKite"));

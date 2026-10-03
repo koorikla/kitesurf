@@ -188,6 +188,20 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float BoardOffSeconds = 0.0f;
 
+	// --- The bar (T3.1, T3.4): the pawn's FBarState through BarStateMachine::SummariseJump. Hooked, no passes, when the pawn has none. ---
+
+	/** Hooked into the harness for the jump (a hook toggle is only allowed on the water). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	bool bHooked = true;
+
+	/** The handle passes finished in the air before the touchdown, with the rotation each carried (FBarJumpSummary::Passes). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	TArray<FTrickPass> Passes;
+
+	/** Unhooked: the stance the lines' wrap gives at the touchdown (FBarJumpSummary::LandingStance). Heelside while hooked. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickStance BarLandingStance = ETrickStance::Heelside;
+
 	/** Why the board's landing verdict graded the landing down (UBoardMovementComponent::GetLastLandingVerdict); None for a good landing. */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	ELandingCause LandingCause = ELandingCause::None;

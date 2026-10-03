@@ -91,6 +91,7 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 		In.BoardOff = GrabSource->GetBoardOff().GetFlightBoardOff();
 		In.BoardOffSeconds = GrabSource->GetBoardOff().GetFlightBoardOffSeconds();
 	}
+	In.Bar = BarSource;
 	In.TensionN = Kite->GetLineTensionN();
 	In.KiteElevationDeg = Kite->GetElevationDeg();
 	In.KiteTimeSeconds = Kite->GetSimTimeSeconds();
@@ -104,12 +105,14 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 		const float AboutUpDeg = FMath::RadiansToDegrees(static_cast<float>(Rotation.GetSpinAboutURad()));
 		const FString BoardOffText = Finished.BoardOff != ETrickBoardOff::None
 			? FString::Printf(TEXT(", board-off %s %.2f s"), *UEnum::GetValueAsString(Finished.BoardOff), Finished.BoardOffSeconds) : FString();
-		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s (cause %s), %.1f pts; %d grab(s)%s%s; rotation: %d inversion(s), spin %.0f deg (%d half turns; about up %.0f, flight turned %.0f, sigma %+.0f), heading %.0f deg, landed %s"),
+		const FString BarText = Finished.bHooked ? FString()
+			: FString::Printf(TEXT("; unhooked, %d pass(es), the lines land %s"), Finished.Passes.Num(), *UEnum::GetValueAsString(Finished.BarLandingStance));
+		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s (cause %s), %.1f pts; %d grab(s)%s%s; rotation: %d inversion(s), spin %.0f deg (%d half turns; about up %.0f, flight turned %.0f, sigma %+.0f), heading %.0f deg, landed %s%s"),
 			Finished.Index, *Finished.TrickName, *UEnum::GetValueAsString(Finished.Grade), *UEnum::GetValueAsString(Finished.LandingCause),
 			Finished.Score.Total * Finished.RepeatFactor, Finished.Grabs.Num(), Finished.bOneFooter ? TEXT(", one-footer") : TEXT(""),
 			*BoardOffText, Finished.Inversions.Num(), Finished.SpinDeg, Finished.SpinHalfTurns,
 			AboutUpDeg, AboutUpDeg - Finished.SpinDeg,
-			Rotation.GetFrame().Sigma, Finished.NetHeadingDeg, *UEnum::GetValueAsString(Finished.LandingStance));
+			Rotation.GetFrame().Sigma, Finished.NetHeadingDeg, *UEnum::GetValueAsString(Finished.LandingStance), *BarText);
 		if (UWorld* World = GetWorld())
 		{
 			if (UKiteSurfGameInstance* GameInstance = World->GetGameInstance<UKiteSurfGameInstance>())

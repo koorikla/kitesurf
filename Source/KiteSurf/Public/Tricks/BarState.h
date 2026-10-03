@@ -7,8 +7,8 @@
 
 /**
  * The bar and handle-pass state machine (docs/tricks.md 6.4, docs/tricks/T3.md section 2). Pure:
- * plain structs and free functions, no UObject. Not yet stepped by the pawn; the wiring (T3.1
- * PR 2, T3.4 PR 2) calls BarStateMachine::Step once per fixed step after the kite.
+ * plain structs and free functions, no UObject. AKiteRiderPawn::StepBar (T3.1 PR 2) calls
+ * BarStateMachine::Step once per fixed step, after the kite and before the rider attitude.
  *
  * The wrap model. W (FBarState::WrapDeg) is how far the lines have gone round the body, relative
  * to the hips, positive backside. It is geometric: the line's azimuth in the body's Front/Right
@@ -351,6 +351,9 @@ namespace BarStateMachine
 	 * Spin, inversions and the take-off stance are left to the attitude tracker.
 	 */
 	KITESURF_API void ApplyToSignature(const FBarState& State, FTrickSignature& Signature, const FBarTunables& Tunables = FBarTunables());
+
+	/** ApplyToSignature from a summary already taken (a jump record's bar fields): bHooked, and unhooked the passes and the landing stance. */
+	KITESURF_API void ApplySummaryToSignature(bool bHooked, const FBarJumpSummary& Summary, FTrickSignature& Signature);
 
 	/** The landing cause for a bar loss: PassUnfinished for an unfinished pass, BarLost otherwise, None for none. */
 	KITESURF_API ELandingCause LandingCauseOf(EBarLossCause Cause);

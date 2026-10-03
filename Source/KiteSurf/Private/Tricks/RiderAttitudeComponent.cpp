@@ -36,6 +36,7 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	HookOffsetFromComCm = FVector(12.0f, 0.0f, 20.0f);
 	ComAboveBoardCm = 75.0f;
 	LineTorqueScale = 0.1f;
+	HandsLineTorqueScale = 1.0f;
 	PreWindRollRateDegS = 250.0f;
 	PreWindFlipRateDegS = 260.0f;
 	PreWindSpinRateDegS = 360.0f;
@@ -412,10 +413,11 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	if (In.bLinesTaut)
 	{
 		// r x F at the hook about the centre of mass. It pulls Up towards the lines and does no work
-		// on rotation about them.
-		const FVector RM = Q.RotateVector(HookOffsetFromComCm) / KiteUnits::CmPerM;
+		// on rotation about them. Unhooked, the lines pull at the hands (T3.1).
+		const FVector AttachCm = In.bUseLineAttach ? In.LineAttachBodyCm : HookOffsetFromComCm;
+		const FVector RM = Q.RotateVector(AttachCm) / KiteUnits::CmPerM;
 		const FVector FN = In.LineForceUU / KiteUnits::UnrealForcePerN;
-		Debug.LineTorqueNm = LineTorqueScale * FVector::CrossProduct(RM, FN);
+		Debug.LineTorqueNm = (In.bUseLineAttach ? HandsLineTorqueScale : LineTorqueScale) * FVector::CrossProduct(RM, FN);
 		Tau += Debug.LineTorqueNm;
 	}
 
@@ -493,4 +495,81 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 
 	Debug.CommittedAxisWorld = CommittedAxisBody.IsZero() ? FVector::ZeroVector : Q.RotateVector(CommittedAxisBody);
 	LastDebug = Debug;
+}
+
+FVector LineAttach::ClampToArmCone(const FVector& DirBody, const FVector& ConeAxisBody, float HalfAngleDeg)
+{
+	const FVector Dir = DirBody.GetSafeNormal();
+	const FVector Axis = ConeAxisBody.GetSafeNormal();
+	if (Dir.IsZero())
+	{
+		return Axis;
+	}
+	if (Axis.IsZero())
+	{
+		return Dir;
+	}
+	const double Half = FMath::DegreesToRadians(FMath::Clamp(HalfAngleDeg, 0.0f, 180.0f));
+	const double Angle = FMath::Acos(FMath::Clamp(static_cast<double>(Dir | Axis), -1.0, 1.0));
+	if (Angle <= Half)
+	{
+		return Dir;
+	}
+	// The cone's edge in the plane of the axis and the direction; straight behind, any side will do.
+	FVector Perp = Dir - Axis * static_cast<double>(Dir | Axis);
+	if (Perp.IsNearlyZero())
+	{
+		Perp = FVector::CrossProduct(Axis, FVector::RightVector);
+		if (Perp.IsNearlyZero())
+		{
+			Perp = FVector::CrossProduct(Axis, FVector::UpVector);
+		}
+	}
+	Perp.Normalize();
+	return (Axis * FMath::Cos(Half) + Perp * FMath::Sin(Half)).GetSafeNormal();
+}
+
+FVector LineAttach::PassArcBody(float P, float Side, const FLineAttachTunables& T)
+{
+	const float A = UE_PI * FMath::Clamp(P, 0.0f, 1.0f);
+	const float S = Side >= 0.0f ? 1.0f : -1.0f;
+	return FVector(T.PassHipXCm + (T.PassBackXCm - T.PassHipXCm) * FMath::Sin(A), S * T.PassHipYCm * FMath::Cos(A), T.PassZCm);
+}
+
+float LineAttach::PassGivingSide(const FBarState& Bar, float NoseSideSign)
+{
+	const float Nose = NoseSideSign >= 0.0f ? 1.0f : -1.0f;
+	const float Sense = Bar.PassSense >= 0.0f ? 1.0f : -1.0f;
+	return Nose * Sense;
+}
+
+FVector LineAttach::AttachPointBody(const FBarState& Bar, const FVector& LineDirBody, float ArmExtension, float NoseSideSign, const FLineAttachTunables& T)
+{
+	if (Bar.bHooked || Bar.Place == EBarPlace::Lost)
+	{
+		return T.HookBodyCm;
+	}
+	switch (Bar.Place)
+	{
+	case EBarPlace::BehindBack:
+		return T.BehindBackBodyCm;
+	case EBarPlace::Passing:
+		return PassArcBody(Bar.PassT, PassGivingSide(Bar, NoseSideSign), T);
+	default:
+		break;
+	}
+	// In front: from between the shoulders with both hands, from that hand's shoulder with one.
+	const float Nose = NoseSideSign >= 0.0f ? 1.0f : -1.0f;
+	FVector Shoulder(T.ShoulderBodyCm.X, 0.0f, T.ShoulderBodyCm.Z);
+	if (Bar.Hands == EBarHands::FrontOnly)
+	{
+		Shoulder.Y = Nose * FMath::Abs(T.ShoulderBodyCm.Y);
+	}
+	else if (Bar.Hands == EBarHands::BackOnly)
+	{
+		Shoulder.Y = -Nose * FMath::Abs(T.ShoulderBodyCm.Y);
+	}
+	const FVector ConeAxis = FVector(1.0f, 0.0f, T.ArmConeUpTilt).GetSafeNormal();
+	const FVector Reach = Shoulder + ClampToArmCone(LineDirBody, ConeAxis, T.ArmConeDeg) * T.ArmReachCm;
+	return FMath::Lerp(T.HipHandsBodyCm, Reach, FMath::Clamp(ArmExtension, 0.0f, 1.0f));
 }

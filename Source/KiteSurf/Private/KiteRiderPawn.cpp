@@ -225,6 +225,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	TrickTracker = CreateDefaultSubobject<UTrickTrackerComponent>(TEXT("TrickTracker"));
 	TrickTracker->SetSources(BoardMovement, Kite);
 	TrickTracker->SetGrabSource(&GrabState);
+	TrickTracker->SetBarSource(&Bar);
 
 	// The rider's rotation in the air: stepped by StepSimulation before the board (it does not tick).
 	RiderAttitude = CreateDefaultSubobject<URiderAttitudeComponent>(TEXT("RiderAttitude"));
@@ -238,6 +239,13 @@ AKiteRiderPawn::AKiteRiderPawn()
 	OneFootKickStanceCm = FVector(-58.0f, -16.0f, 24.0f);
 	VerticalAccelFilterSeconds = 0.1f;
 	RiderHandoverSeconds = 0.2f;
+
+	// Unhooked riding (T3.1, docs/tricks/T3.md 1.2 and 1.3).
+	UnhookedStopperSheet = 0.45f; // T3.1 PR 3: the lowest the plan allows, the most ballistic pop with the kite at 45 deg
+	LowParkElevationDeg = 45.0f;
+	UnhookedArmExtensionDefault = 0.7f;
+	bFlickAssist = true;
+	LeashLengthCm = 160.0f;
 
 	SimStepSeconds = 1.0f / 240.0f;
 	MaxFrameSeconds = 0.1f;
@@ -459,6 +467,15 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		{
 			EnhancedInputComponent->BindAction(OneFootAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnOneFootPressed);
 			EnhancedInputComponent->BindAction(OneFootAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnOneFootReleased);
+		}
+		// Unhooked riding (T3.1): presses, kept for the next fixed step.
+		if (HookAction)
+		{
+			EnhancedInputComponent->BindAction(HookAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnHookPressed);
+		}
+		if (PassAction)
+		{
+			EnhancedInputComponent->BindAction(PassAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnPassPressed);
 		}
 	}
 
@@ -1081,10 +1098,22 @@ void AKiteRiderPawn::SheetKite(float Amount)
 void AKiteRiderPawn::ApplySheet(float Amount)
 {
 	CurrentSheetInput = FMath::Clamp(Amount, 0.0f, 1.0f);
+	// Unhooked, the chicken loop rides up to the stopper and the trim is fixed there: whatever moves
+	// the bar (the stick, the triggers, the keys, the mouse, the motion bar, the spring) moves the
+	// arms instead (docs/tricks/T3.md 1.2 and its addendum).
+	ArmExtension = ArmExtensionForBar(CurrentSheetInput, BarNeutralSheet, UnhookedArmExtensionDefault);
 	if (Kite)
 	{
-		Kite->SheetKite(CurrentSheetInput);
+		Kite->SheetKite(Bar.bHooked ? CurrentSheetInput : UnhookedStopperSheet);
 	}
+}
+
+float AKiteRiderPawn::ArmExtensionForBar(float BarPosition, float Neutral, float DefaultExtension)
+{
+	const float N = FMath::Clamp(Neutral, 0.01f, 0.99f);
+	const float B = FMath::Clamp(BarPosition, 0.0f, 1.0f);
+	const float D = FMath::Clamp(DefaultExtension, 0.0f, 1.0f);
+	return B <= N ? FMath::Lerp(1.0f, D, B / N) : FMath::Lerp(D, 0.0f, (B - N) / (1.0f - N));
 }
 
 FVector AKiteRiderPawn::GetBoardVelocity() const
@@ -1127,6 +1156,9 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	// The bar (T3.1): with the tension the kite has just made. Before the attitude, which pulls at
+	// the hands it puts the bar in, and the board, which grades a lost bar if it lands.
+	StepBar(StepSeconds);
 	// The hands and the back foot (T2.1, T2.2): before the attitude, which takes the grab's tuck, and
 	// the board, which grades the foot if it lands.
 	StepGrabs(StepSeconds);
@@ -1146,6 +1178,7 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	if (TrickTracker)
 	{
 		TrickTracker->SetGrabSource(&GrabState);
+		TrickTracker->SetBarSource(&Bar);
 		TrickTracker->StepTracker(StepSeconds);
 	}
 
@@ -1237,6 +1270,163 @@ void AKiteRiderPawn::StepGrabs(float StepSeconds)
 	}
 }
 
+FQuat AKiteRiderPawn::GetBarBodyQuat() const
+{
+	if (RiderAttitude && bUseRiderAttitude && RiderAttitude->IsSimulating())
+	{
+		return RiderAttitude->GetBodyQuat();
+	}
+	// On the water: the riding pose, with the rail the rider faces picked here for the root as it is
+	// now. The stance side is otherwise updated once a frame (UpdateRiderPose), so for the rest of a
+	// frame in which the board swaps ends under the rider the slaved pose would face the other way
+	// and the lines would seem to wrap half way round the body.
+	const float RootYawDeg = RootComponent ? static_cast<float>(RootComponent->GetComponentRotation().Yaw) : 0.0f;
+	const float Side = ChooseStanceSide(RootYawDeg, RiderFacingYawDeg);
+	const FVector Facing = FRotator(0.0f, RootYawDeg + 90.0f * Side + RiderTurnOffsetDeg, 0.0f).Vector();
+	return FRotationMatrix::MakeFromXZ(Facing, FVector::UpVector).ToQuat();
+}
+
+float AKiteRiderPawn::GetBarNoseSideSign() const
+{
+	if (RiderAttitude && bUseRiderAttitude && RiderAttitude->IsSimulating())
+	{
+		return RiderAttitude->GetStrapOffset().GetAxisX().Y >= 0.0 ? 1.0f : -1.0f;
+	}
+	// The board's nose against the body's right, both as GetBarBodyQuat has them.
+	const FVector Nose = RootComponent ? RootComponent->GetForwardVector() : FVector::ForwardVector;
+	return FVector::DotProduct(Nose, GetBarBodyQuat().GetAxisY()) >= 0.0 ? 1.0f : -1.0f;
+}
+
+void AKiteRiderPawn::ResetBar()
+{
+	const bool bWasUnhooked = !Bar.bHooked;
+	Bar = FBarState();
+	bHookPressPending = false;
+	bPassPressPending = false;
+	if (BoardMovement)
+	{
+		BoardMovement->SetRiderBarInHands(true);
+	}
+	if (bWasUnhooked)
+	{
+		// Off the leash and out of the low park; the bar's position goes back to the kite's sheet, and
+		// the motion bar takes the pad as it is held now. A reset while hooked in touches none of it.
+		if (Kite)
+		{
+			Kite->SetLeashed(false);
+			Kite->SetLowParkAssist(false, LowParkElevationDeg);
+		}
+		ApplySheet(CurrentSheetInput);
+		RecentreMotionBar();
+		++HookRecentreCount;
+	}
+}
+
+void AKiteRiderPawn::StepBar(float StepSeconds)
+{
+	if (!BoardMovement || !Kite || StepSeconds <= 0.0f)
+	{
+		return;
+	}
+	// A reset (the reset button, or the end of a crash) puts the rider back hooked in with the bar.
+	// Polled, so a pawn whose delegates are not bound (tests) does the same.
+	if (BoardMovement->GetResetCount() != SeenBarResetCount)
+	{
+		SeenBarResetCount = BoardMovement->GetResetCount();
+		ResetBar();
+	}
+
+	const bool bAirborne = BoardMovement->GetBoardState() == EBoardState::Airborne;
+	const bool bSlidingRound = !FMath::IsNearlyZero(RiderTurnOffsetDeg, 0.5f);
+	if (!Bar.bHooked && !bAirborne && (BoardMovement->IsFloating() || bSlidingRound) && Bar.Place != EBarPlace::Passing && Bar.Place != EBarPlace::Lost)
+	{
+		// Floating in the water, or sliding the board round to face the kite after riding with the back
+		// to it (UpdateRiderPose), the rider turns to face the kite: the lines come back in front rather
+		// than wrapping round them. Until T3.5 gives blind and toeside riding their own stances, this is
+		// how an unhooked rider who lands blind or toeside gets back to heelside.
+		Bar.WrapDeg = 0.0f;
+		Bar.bRouteBehind = false;
+		Bar.bHasLineAngle = false;
+		Bar.Place = EBarPlace::Front;
+	}
+
+	FBarInputs In;
+	In.TensionN = Kite->GetLineTensionN();
+	In.BodyWeightN = FMath::Max(BoardMovement->MassKg, 1.0f) * KiteUnits::GravityMS2;
+	In.LineDirWorld = (Kite->GetKiteWorldPosition() - GetActorLocation()).GetSafeNormal();
+	In.Body = GetBarBodyQuat();
+	In.NoseSideSign = GetBarNoseSideSign();
+	In.bAirborne = bAirborne;
+	In.bOnWaterRideable = !bAirborne && !BoardMovement->IsCrashing();
+	In.bHookPressed = bHookPressPending;
+	In.bPassPressed = bPassPressPending;
+	bHookPressPending = false;
+	bPassPressPending = false;
+
+	const FBarEvents Events = BarStateMachine::Step(Bar, In, BarTunables, StepSeconds);
+
+	if (Events.bUnhooked || Events.bHooked)
+	{
+		// Unhooked, the kite parks low and the sheet is held at the stopper; hooked again, the bar's
+		// position is the kite's sheet once more. Nothing jumps: the motion bar takes the pad as it is
+		// held now for the bar where it is.
+		Kite->SetLowParkAssist(Events.bUnhooked, LowParkElevationDeg);
+		ApplySheet(CurrentSheetInput);
+		RecentreMotionBar();
+		++HookRecentreCount;
+		PlayHaptic(0.3f, 0.06f, false);
+		UE_LOG(LogKiteSurf, Log, TEXT("Bar: %s (tension %.0f N, bar at %.2f, arms %.2f)"), Events.bUnhooked ? TEXT("unhooked") : TEXT("hooked in"),
+			In.TensionN, CurrentSheetInput, ArmExtension);
+	}
+	if (Events.bPassStarted)
+	{
+		if (bAirborne && bFlickAssist)
+		{
+			// The flick: the kite dips for a moment so the lines go slack for the bar to go round.
+			Kite->RequestFlick(Kite->FlickSeconds);
+		}
+		UE_LOG(LogKiteSurf, Log, TEXT("Bar: pass started (%s, wrap %.0f deg, tension %.0f N)"), bAirborne ? TEXT("air") : TEXT("water"), Bar.WrapDeg, In.TensionN);
+	}
+	if (Events.bPassDone)
+	{
+		PlayHaptic(0.25f, 0.05f, false);
+		UE_LOG(LogKiteSurf, Log, TEXT("Bar: pass done (%s), wrap now %.0f deg"), Events.PassKind == ETrickPassKind::Surface ? TEXT("surface") : TEXT("air"), Bar.WrapDeg);
+	}
+	if (Events.Lost != EBarLossCause::None)
+	{
+		// The bar is gone: the kite flags on its leash. On the water that is a crash now; in the air the
+		// rider flies on and the landing crashes them (BarLost), as TriggerCrash would stop them dead.
+		Kite->SetLowParkAssist(false, LowParkElevationDeg);
+		Kite->SetLeashed(true);
+		PlayHaptic(0.8f, 0.4f, true);
+		UE_LOG(LogKiteSurf, Log, TEXT("Bar lost (%s): tension %.0f N (%.2f body weights), %s"), *UEnum::GetValueAsString(Events.Lost),
+			In.TensionN, In.TensionN / In.BodyWeightN, bAirborne ? TEXT("in the air: crash at the touchdown") : TEXT("on the water: crash"));
+	}
+	else if (!Bar.bHooked && Bar.Place != EBarPlace::Lost && Bar.OverGripSeconds > 0.0f)
+	{
+		// Over the grip limit: a light buzz that rises as the bar slips.
+		GripHapticCooldownSeconds -= StepSeconds;
+		if (GripHapticCooldownSeconds <= 0.0f)
+		{
+			const float Slip = FMath::Clamp(Bar.OverGripSeconds / FMath::Max(BarTunables.GripLimitSeconds, 0.01f), 0.0f, 1.0f);
+			PlayHaptic(0.2f + 0.5f * Slip, 0.05f, false);
+			GripHapticCooldownSeconds = 0.05f;
+		}
+	}
+	else
+	{
+		GripHapticCooldownSeconds = 0.0f;
+	}
+	if (Bar.Place == EBarPlace::Lost && !bAirborne && !BoardMovement->IsCrashing())
+	{
+		// Without the bar the rider cannot ride: a crash on the water at once, and after a bar lost in
+		// the air on the touchdown that did not count as a landing (a skip off the surface); a counted
+		// landing has already crashed through the landing evaluator (BarLost).
+		BoardMovement->TriggerCrash();
+	}
+	BoardMovement->SetRiderBarInHands(Bar.Place != EBarPlace::Lost);
+}
+
 void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
 {
 	if (!BoardMovement)
@@ -1323,6 +1513,20 @@ void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
 		TravelSideSigma = RiderAxes::TravelSide(In.SlavedBodyQuat, Velocity, RootQuat.GetAxisX());
 	}
 	In.TravelSideSigma = TravelSideSigma;
+	// Unhooked, the lines pull at the hands (docs/tricks/T3.md 1.1): where the bar is for its state,
+	// the arm extension and the line, in the body frame as it starts the step.
+	In.bUseLineAttach = !Bar.bHooked && Bar.Place != EBarPlace::Lost;
+	if (In.bUseLineAttach && Kite)
+	{
+		const FQuat Body = RiderAttitude->GetBodyQuat();
+		const FVector LineDirBody = Body.UnrotateVector((Kite->GetKiteWorldPosition() - Location).GetSafeNormal());
+		LineAttachBodyCm = LineAttach::AttachPointBody(Bar, LineDirBody, ArmExtension, GetBarNoseSideSign(), LineAttachTunables);
+	}
+	else
+	{
+		LineAttachBodyCm = RiderAttitude->HookOffsetFromComCm;
+	}
+	In.LineAttachBodyCm = LineAttachBodyCm;
 
 	RiderAttitude->Step(StepSeconds, In);
 	BoardMovement->SetAirAttitude(RiderAttitude->GetBoardQuat(), RiderAttitude->IsSimulating(), RiderAttitude->GetBodyQuat(), RiderAttitude->GetAngularVelocity());
@@ -1922,47 +2126,125 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	HarnessHookPosition = RiderPose.Pelvis + RiderPose.Torso.RotateVector(HarnessHookOffsetCm);
 	if (Kite)
 	{
-		FVector LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : BarFacing;
-		const float MinForward = 0.15f;
-		const float Forward = FVector::DotProduct(LineDir, BarFacing);
-		if (Forward < MinForward)
-		{
-			LineDir = (LineDir + BarFacing * (MinForward - Forward)).GetSafeNormal();
-		}
-		// The bar is never further up the lines than the rider's arms reach: leaning back with the
-		// kite low, it comes in closer to the hook.
 		const float HandSpacingCm = 14.0f;
-		const float ArmReachCm = (RiderRig::UpperArmLengthCm + RiderRig::ForearmLengthCm) * 0.97f;
-		float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
-		const float MinBarReachCm = 14.0f;
-		for (int32 Try = 0; Try < 16 && BarReachCm > MinBarReachCm; ++Try)
+		FVector LineDir;
+		FVector BarCentre;
+		FVector TiltedSpan;
+		// Which hands hold the bar (rig side 0 left, 1 right) and where a free hand goes.
+		bool bHandOnBar[2] = { true, true };
+		FVector FreeHand[2] = { FVector::ZeroVector, FVector::ZeroVector };
+		bool bHandsBehind = false;
+		if (Bar.bHooked)
 		{
-			const FVector Candidate = HarnessHookPosition + LineDir * BarReachCm;
-			// The hands are either side of the bar's middle; to judge reach, level with the shoulders is near enough.
-			const FVector Across = RiderPose.Torso.GetAxisY() * HandSpacingCm;
-			const float Furthest = FMath::Max(FVector::Dist(RiderPose.Arms[0].Root, Candidate - Across), FVector::Dist(RiderPose.Arms[1].Root, Candidate + Across));
-			if (Furthest <= ArmReachCm)
+			LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : BarFacing;
+			const float MinForward = 0.15f;
+			const float Forward = FVector::DotProduct(LineDir, BarFacing);
+			if (Forward < MinForward)
 			{
+				LineDir = (LineDir + BarFacing * (MinForward - Forward)).GetSafeNormal();
+			}
+			// The bar is never further up the lines than the rider's arms reach: leaning back with the
+			// kite low, it comes in closer to the hook.
+			const float ArmReachCm = (RiderRig::UpperArmLengthCm + RiderRig::ForearmLengthCm) * 0.97f;
+			float BarReachCm = 42.0f + 25.0f * (1.0f - CurrentSheetInput);
+			const float MinBarReachCm = 14.0f;
+			for (int32 Try = 0; Try < 16 && BarReachCm > MinBarReachCm; ++Try)
+			{
+				const FVector Candidate = HarnessHookPosition + LineDir * BarReachCm;
+				// The hands are either side of the bar's middle; to judge reach, level with the shoulders is near enough.
+				const FVector Across = RiderPose.Torso.GetAxisY() * HandSpacingCm;
+				const float Furthest = FMath::Max(FVector::Dist(RiderPose.Arms[0].Root, Candidate - Across), FVector::Dist(RiderPose.Arms[1].Root, Candidate + Across));
+				if (Furthest <= ArmReachCm)
+				{
+					break;
+				}
+				BarReachCm = FMath::Max(BarReachCm - 4.0f, MinBarReachCm);
+			}
+			BarCentre = HarnessHookPosition + LineDir * BarReachCm;
+		}
+		else
+		{
+			// Unhooked (docs/tricks/T3.md 1.4): the bar is where the physics pulls (LineAttach), in the
+			// body the rig drew: in front at the arms' extension, behind the back, on the pass arc, or on
+			// the leash up the lines from the harness.
+			const FQuat Torso = RiderPose.Torso;
+			const FVector Com = RiderPose.Pelvis + Torso.RotateVector(FVector(0.0f, 0.0f, 10.0f));
+			LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - Com).GetSafeNormal() : Torso.GetAxisX();
+			const float Nose = GetBarNoseSideSign();
+			const FVector Attach = LineAttach::AttachPointBody(Bar, Torso.UnrotateVector(LineDir), ArmExtension, Nose, LineAttachTunables);
+			switch (Bar.Place)
+			{
+			case EBarPlace::Lost:
+				BarCentre = HarnessHookPosition + LineDir * LeashLengthCm;
+				bHandOnBar[0] = bHandOnBar[1] = false;
+				Kite->SetLeashAnchor(HarnessHookPosition);
+				break;
+			case EBarPlace::Passing:
+			{
+				BarCentre = Com + Torso.RotateVector(Attach);
+				// The giving hand lets go past 0.6 of the way round, the other takes it from 0.4.
+				const int32 GivingSide = LineAttach::PassGivingSide(Bar, Nose) > 0.0f ? 1 : 0;
+				bHandOnBar[GivingSide] = Bar.PassT <= 0.6f;
+				bHandOnBar[1 - GivingSide] = Bar.PassT >= 0.4f;
+				bHandsBehind = true;
 				break;
 			}
-			BarReachCm = FMath::Max(BarReachCm - 4.0f, MinBarReachCm);
+			case EBarPlace::BehindBack:
+				BarCentre = Com + Torso.RotateVector(Attach);
+				bHandsBehind = true;
+				break;
+			default:
+				BarCentre = Com + Torso.RotateVector(Attach);
+				bHandOnBar[0] = Bar.Hands != (Nose > 0.0f ? EBarHands::FrontOnly : EBarHands::BackOnly);
+				bHandOnBar[1] = Bar.Hands != (Nose > 0.0f ? EBarHands::BackOnly : EBarHands::FrontOnly);
+				break;
+			}
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				// A hand off the bar hangs out to its side at the hip.
+				FreeHand[Side] = RiderPose.Pelvis + Torso.RotateVector(FVector(15.0f, Side == 0 ? -40.0f : 40.0f, 5.0f));
+			}
 		}
-		const FVector BarCentre = HarnessHookPosition + LineDir * BarReachCm;
+		DrawnBarCentre = BarCentre;
 
-		// The bar is held square to the lines across the rider's body, and tilts with the steering.
+		// The bar is held square to the lines across the rider's body, and tilts with the steering;
+		// behind the back it lies across the back.
 		const FVector RiderRight = bBodyPose ? RiderPose.Torso.GetAxisY() : FVector::CrossProduct(FVector::UpVector, Facing);
 		FVector Span = (RiderRight - FVector::DotProduct(RiderRight, LineDir) * LineDir).GetSafeNormal();
-		if (Span.IsNearlyZero())
+		if (Span.IsNearlyZero() || bHandsBehind)
 		{
 			Span = RiderRight;
 		}
-		const float TiltRad = FMath::DegreesToRadians(CurrentSteerInput * 25.0f);
-		const FVector TiltedSpan = Span * FMath::Cos(TiltRad) + FVector::CrossProduct(LineDir, Span) * FMath::Sin(TiltRad);
+		const float TiltRad = FMath::DegreesToRadians((bHandsBehind ? 0.0f : CurrentSteerInput) * 25.0f);
+		TiltedSpan = Span * FMath::Cos(TiltRad) + FVector::CrossProduct(LineDir, Span) * FMath::Sin(TiltRad);
 		const float BarHalfWidthCm = 25.0f;
 		Kite->SetBarEnds(BarCentre - TiltedSpan * BarHalfWidthCm, BarCentre + TiltedSpan * BarHalfWidthCm);
 		if (ControlBarMesh)
 		{
 			ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotationMatrix::MakeFromXY(LineDir, TiltedSpan).ToQuat());
+		}
+		if (!Bar.bHooked)
+		{
+			// Unhooked hands: one hand alone holds the bar's middle; a hand off the bar goes free; behind
+			// the back the elbows point out and back.
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				FRiderHandInput& Hand = RigInput.Hands[Side];
+				if (!bHandOnBar[Side])
+				{
+					Hand.Target = ERiderHandTarget::Free;
+					Hand.WorldTarget = FreeHand[Side];
+				}
+				else if (!bHandOnBar[1 - Side])
+				{
+					Hand.Target = ERiderHandTarget::Free;
+					Hand.WorldTarget = BarCentre;
+				}
+				if (bHandsBehind)
+				{
+					Hand.ElbowPole = RiderRig::BehindBackElbowPole(RiderPose, Side);
+				}
+			}
 		}
 
 		// Hands on the bar, either side of its middle; the elbows bend to reach. A grabbing hand goes to

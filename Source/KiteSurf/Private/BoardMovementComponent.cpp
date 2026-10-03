@@ -988,6 +988,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				LandingInputs.BackFoot = RiderBackFoot;
 				LandingInputs.bBoardAttached = RiderBoardCatch != EBoardCatchState::NotCaught;
 				LandingInputs.bBoardCaughtLate = RiderBoardCatch == EBoardCatchState::CaughtLate;
+				LandingInputs.bBarInHands = bRiderBarInHands;
 				FLandingThresholds Thresholds = LandingThresholds;
 				Thresholds.CrashLandingG = CrashLandingG;
 				Thresholds.HotLandingSinkMS = HotLandingSinkMS;

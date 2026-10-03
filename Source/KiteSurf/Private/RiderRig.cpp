@@ -71,6 +71,11 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		Right = FVector::CrossProduct(FVector::UpVector, Facing);
 		Pose.Torso = FRotationMatrix::MakeFromXZ(Facing, BodyUp).ToQuat();
 	}
+	if (Input.PelvisUp.IsSet() && !Input.PelvisUp.GetValue().GetSafeNormal().IsNearlyZero())
+	{
+		// A hand-over between the two: the pelvis line is blended separately from the torso.
+		BodyUp = Input.PelvisUp.GetValue().GetSafeNormal();
+	}
 
 	// The feet are in the straps, one each side of the middle of the board along its length. The
 	// rider stands across the board, so which strap is under their right foot depends on which

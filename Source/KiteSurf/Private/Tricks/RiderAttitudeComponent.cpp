@@ -51,11 +51,15 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	PostureMaxTorqueNm = 60.0f;
 	AirAngularDragPerS = 0.05f;
 	AssistStrength = 1.0f;
-	AssistWindowSeconds = 0.7f;
-	AssistMaxErrorDeg = 60.0f;
+	AssistWindowSeconds = 1.0f; // 0.7 in the plan: on a real jump the lines hold a rolled rider 60 to 80 deg off upright until the last second
+	AssistMaxErrorDeg = 90.0f;  // 60 in the plan, for the same reason
 	AssistNaturalFreqHz = 1.2f;
 	AssistDampingRatio = 0.9f;
 	AssistMaxTorqueNm = 120.0f;
+	TravelAlignNaturalFreqHz = 0.8f;
+	TravelAlignDampingRatio = 1.0f;
+	TravelAlignMaxTorqueNm = 40.0f;
+	TravelAlignMinSpeedCmS = 200.0f;
 	StrapSettleSeconds = 0.3f;
 	ComOffsetSettleSeconds = 0.5f;
 
@@ -122,6 +126,7 @@ void URiderAttitudeComponent::Reset(const FQuat& Body, const FQuat& Board)
 	bControlWasFlip = false;
 	ComOffsetWorldCm = Q.GetAxisZ() * ComAboveBoardCm;
 	PrevComOffsetWorldCm = ComOffsetWorldCm;
+	AirSeconds = 0.0f;
 	LastDebug = FAttitudeDebug();
 }
 
@@ -130,6 +135,8 @@ void URiderAttitudeComponent::SetState(const FQuat& Body, const FVector& Angular
 	Q = Body.GetNormalized();
 	PrevQ = Q;
 	PrevStrapOffset = StrapOffset;
+	// No take-off runs, so the board settles flat on the side its nose already points to, as BeginAir does.
+	CanonicalStrapOffset = MakeCanonicalStrapOffset(StrapOffset.GetAxisX().Y >= 0.0 ? 1.0f : -1.0f);
 	L = AngularMomentumKgM2S;
 	const FVector Ib = GetBodyInertiaKgM2();
 	OmegaW = OmegaFrom(Ib);
@@ -283,6 +290,35 @@ FVector URiderAttitudeComponent::ComputeAssistTorque(const FAttitudeInputs& In, 
 	return OutDebug.AssistTorqueNm;
 }
 
+FVector URiderAttitudeComponent::ComputeTravelAlignTorque(const FAttitudeInputs& In) const
+{
+	if (TravelAlignNaturalFreqHz <= 0.0f || In.bRotationInput || !CommittedAxisBody.IsZero())
+	{
+		return FVector::ZeroVector;
+	}
+	const FVector Travel(In.VelocityCmS.X, In.VelocityCmS.Y, 0.0f);
+	const FVector Nose = GetBoardQuat().GetAxisX();
+	const FVector Nose2D(Nose.X, Nose.Y, 0.0f);
+	constexpr float MinNoseLength = 0.2f;
+	if (Travel.Size() < TravelAlignMinSpeedCmS || Nose2D.Size() < MinNoseLength)
+	{
+		return FVector::ZeroVector;
+	}
+	// The yaw from the nose to the travel, either end of the board: within +-90 deg.
+	double Error = FMath::Atan2(Travel.Y, Travel.X) - FMath::Atan2(Nose2D.Y, Nose2D.X);
+	Error = FMath::UnwindRadians(Error);
+	if (Error > UE_HALF_PI) { Error -= UE_PI; }
+	else if (Error < -UE_HALF_PI) { Error += UE_PI; }
+
+	const FVector Ib = GetBodyInertiaKgM2();
+	const double IUp = InertiaAbout(FVector::UpVector, Ib);
+	const double Wn = UE_TWO_PI * TravelAlignNaturalFreqHz;
+	const double Torque = IUp * (Wn * Wn * Error - 2.0 * TravelAlignDampingRatio * Wn * (OmegaW | FVector::UpVector));
+	// It comes in over the strap settle time after the take-off, while the rider is still busy with the pop.
+	const double RampIn = 1.0 - FMath::Exp(-AirSeconds / FMath::Max(StrapSettleSeconds, 0.01f));
+	return FVector::UpVector * (RampIn * FMath::Clamp(Torque, -double(TravelAlignMaxTorqueNm), double(TravelAlignMaxTorqueNm)));
+}
+
 void URiderAttitudeComponent::RotateFree(float Dt, const FVector& Ib)
 {
 	// Free rigid body with L fixed in the world: H = sum Lb_i^2 / (2 I_i), split as
@@ -339,6 +375,7 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 		bActive = false;
 		bWasAirborne = false;
 		bControlWasFlip = false;
+		AirSeconds = 0.0f;
 		LastDebug = FAttitudeDebug();
 		return;
 	}
@@ -347,6 +384,7 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	Debug.Family = LastDebug.Family;
 	if (!bWasAirborne)
 	{
+		AirSeconds = 0.0f;
 		BeginAir(In);
 		PrevQ = Q;
 		PrevStrapOffset = StrapOffset;
@@ -406,6 +444,12 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 		Tau += Debug.AssistTorqueNm;
 		CommittedAxisBody = FVector::ZeroVector;
 	}
+	else
+	{
+		// No trick going on: the rider keeps the board along the flight.
+		Debug.TravelAlignTorqueNm = ComputeTravelAlignTorque(In);
+		Tau += Debug.TravelAlignTorqueNm;
+	}
 	L += Tau * Dt;
 
 	// 2) Posture damping off the committed axis (all rotation when none is committed) and drag, as
@@ -424,6 +468,8 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	// 3) The free rotation for the step with this L.
 	RotateFree(Dt, Ib);
 	OmegaW = OmegaFrom(Ib);
+
+	AirSeconds += Dt;
 
 	// 4) The strapped board eases to flat under the feet; the visual centre of mass to above the board.
 	StrapOffset = FQuat::Slerp(StrapOffset, CanonicalStrapOffset, 1.0f - FMath::Exp(-Dt / FMath::Max(StrapSettleSeconds, 0.01f))).GetNormalized();

@@ -79,8 +79,8 @@ Updated as PRs merge.
 | Item | PR | State |
 | --- | --- | --- |
 | T0.4 trick core: types, signature, naming, scoring | #60 | Merged |
-| T1.2 PR D rider attitude pure step | #61 | Merged (not stepped by the pawn) |
-| T1.5 landing evaluator (pure) | #62 | Merged (not wired into the board) |
+| T1.2 PR D rider attitude pure step | #61 | Merged; stepped by the pawn since T1.2 PR E |
+| T1.5 landing evaluator (pure) | #62 | Merged; grades the board's landings since T1.2 PR E |
 | T0.3 kite loop tracker (pure), T2.4 loop classifier | #63 | Merged |
 | T0.2 jump recorder (pure), landing g helper | #64 | Merged |
 | T3.4 PR 1 bar state machine (pure), T3.6 freestyle heat scoring | #65 | Merged (not used in the game) |
@@ -88,5 +88,6 @@ Updated as PRs merge.
 | T2.7 trick book in the save game | #67 | Merged |
 | T1.1a visual board split from the physics root, air camera | #68 | Merged |
 | T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #69 | Merged. Polled public getters; take-off, popped, apex time, landing yaw and the loop turn were synthesised in the tracker |
-| T0.2 board events (`BeginAirborne(bool)`, `OnBoardTakeoff`, `OnBoardApex`, take-off and apex counters, landing angle), T0.3 kite hookup (`FKiteLoopTracker` stepped by the kite, `GetLoopRecords`), tracker fed from them | #73 | Open. The tracker derives nothing itself any more |
-| T2.0 rig hand targets (`FRiderRigInput::Hands`, `SolveArmsPerHand`), board grab points (`Tricks/BoardGrabPoints.h`), strap loops moved to ±30 cm in `SM_KiteBoard` | #76 | Open. Not used by the pawn yet (T2.1 grabs will); torso fold, tuck, pelvis anchor and `SolveGrab` from the T2.0 plan are not in it |
+| T0.2 board events (`BeginAirborne(bool)`, `OnBoardTakeoff`, `OnBoardApex`, take-off and apex counters, landing angle), T0.3 kite hookup (`FKiteLoopTracker` stepped by the kite, `GetLoopRecords`), tracker fed from them | #73 | Merged. The tracker derives nothing itself any more |
+| T2.0 rig hand targets (`FRiderRigInput::Hands`, `SolveArmsPerHand`), board grab points (`Tricks/BoardGrabPoints.h`), strap loops moved to ±30 cm in `SM_KiteBoard` | #76 | Merged. Not used by the pawn yet (T2.1 grabs will); torso fold, tuck, pelvis anchor and `SolveGrab` from the T2.0 plan are not in it |
+| T1.2 PR E rotation live: attitude stepped before the board, board air orientation and drawn board from it, rig body quaternion with a hand-over, travel align, `LandingEvaluator` wired into the board's landing (T1.5 wiring), scripted pre-wind, air stick and tuck | this PR | Open. No keys or sticks yet (T1.4); the tracker does not count inversions yet (T1.6) and grades from its own record, not the board's verdict |

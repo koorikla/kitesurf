@@ -87,4 +87,4 @@ Updated as PRs merge.
 | T1.3 rig takes the body quaternion | #66 | Merged |
 | T2.7 trick book in the save game | #67 | Merged |
 | T1.1a visual board split from the physics root, air camera | #68 | Merged |
-| T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #TBD | Wired. Polls public getters only; take-off, popped, sink, landing g and the loop turn are synthesised in the tracker until physics phase 2 exposes them on the board and kite |
+| T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #69 | Wired. Polls public getters only; take-off, popped, sink, landing g and the loop turn are synthesised in the tracker until physics phase 2 exposes them on the board and kite |

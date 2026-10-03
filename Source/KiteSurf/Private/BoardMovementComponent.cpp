@@ -23,6 +23,20 @@ namespace
 	// path. A board moved further than its velocity explains (put somewhere by a reset or a test) has no
 	// path to measure along; then the speed comes from the fitted slope alone.
 	constexpr float WaterTrackJumpToleranceCm = 1.0f;
+
+	// The board is in contact with the water within this height of the surface (cm): below it a
+	// touchdown starts, and above it a board in the air has no water forces. The planing lift fades in
+	// from the same height.
+	constexpr float WaterContactHeightCm = 10.0f;
+
+	// The buoyancy spring reaches this far above the ride height (cm).
+	constexpr float BuoyancyReachCm = 15.0f;
+
+	// The planing lift fades in from WaterContactHeightCm above the ride height to this far below it (cm).
+	constexpr float PlaningLiftFullDepthCm = 5.0f;
+
+	// The touchdown absorber is done once the board sinks into the water slower than this (cm/s).
+	constexpr float AbsorbDoneSinkCmS = 1.0f;
 }
 
 UBoardMovementComponent::UBoardMovementComponent()
@@ -96,6 +110,11 @@ UBoardMovementComponent::UBoardMovementComponent()
 	JumpMinEdgeInput = 0.4f;    // 0.4
 	MaxJumpHeight = 4000.0f;    // 4000 cm = 40 m
 	MaxLandingAngle = 30.0f;    // 30 deg
+	LandingAbsorbDistanceCm = 30.0f;    // research 0.2 to 0.4 m of legs and immersion
+	CrouchAbsorbBonus = 1.0f;           // a full crouch doubles it
+	CrashLandingG = 8.0f;
+	HotLandingSinkMS = 6.0f;
+	HotLandingKiteElevationDeg = 45.0f;
 	CleanLandingSpeedRetention = 0.8f; // 80%
 	CrashDecelDuration = 0.5f;  // 0.5 s
 	CrashRespawnDelay = 1.0f;   // 1.0 s (total crash-to-reset: 1.5 s)
@@ -450,7 +469,22 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const float RideHeight = WaterHeight - CurrentFloatDepthCm;
 
 		const float HeightAboveWater = Location.Z - WaterHeight;
-		bool bHydrodynamicsDisabled = bIsAirborne && (HeightAboveWater > 10.0f);
+		bool bHydrodynamicsDisabled = bIsAirborne && (HeightAboveWater > WaterContactHeightCm);
+
+		// Touchdown: the absorber takes the sink into the water out over the absorb distance (the legs
+		// and the board's immersion), and stops once the board moves with the surface. A board that left
+		// the water without a jump (over a swell, or a hop) and comes back down is absorbed the same way.
+		const bool bInWaterContact = HeightAboveWater <= WaterContactHeightCm;
+		const float RelativeSinkCmS = SurfaceVerticalSpeed - Velocity.Z; // positive sinking into the water
+		if (bAbsorbing && (RelativeSinkCmS <= AbsorbDoneSinkCmS || bIsAirborne))
+		{
+			bAbsorbing = false;
+		}
+		if (!bIsAirborne && !bAbsorbing && bInWaterContact && !bWasInWaterContact && RelativeSinkCmS > 0.0f)
+		{
+			BeginTouchdownAbsorb(RelativeSinkCmS);
+		}
+		bWasInWaterContact = bInWaterContact;
 
 		if (bIsAirborne)
 		{
@@ -491,8 +525,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		}
 
 		// The load: held, the rider sinks into a crouch with their weight over the back of the
-		// board and drives the edge in. It builds over a moment and lets go quickly.
-		const bool bCanLoad = bLoadHeld && !bIsAirborne && !bIsCrashing && !IsFloating();
+		// board and drives the edge in. It builds over a moment and lets go quickly. In the air the
+		// same crouch readies the legs for the landing: it lengthens the touchdown's absorb distance.
+		const bool bCanLoad = bLoadHeld && !bIsCrashing && !IsFloating();
 		LoadAmount = FMath::Clamp(LoadAmount + (bCanLoad ? LoadRatePerSec : -LoadReleaseRatePerSec) * DeltaTime, 0.0f, 1.0f);
 
 		// The kite lifts the rider off when it pulls up harder than they weigh: sending the kite
@@ -512,7 +547,8 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		// How far below its riding height the board is: that height is the surface when planing
 		// and the floating depth when not.
 		const float Submersion = RideHeight - Location.Z;
-		if (!bHydrodynamicsDisabled && Submersion >= -15.0f)
+		float SupportForceZ = 0.0f; // the water holding the board up, kg*cm/s^2
+		if (!bHydrodynamicsDisabled && Submersion >= -BuoyancyReachCm)
 		{
 			// A damped spring about the ride height, set by its frequency and damping ratio.
 			const float BuoyancyBalance = -GravityForceZ; // exactly balances gravity at rest
@@ -526,7 +562,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			const float MaxBuoyancyForce = KiteUnits::NToUnrealForce(BuoyancyN);
 			BuoyancyForceZ = FMath::Clamp(BuoyancyForceZ, 0.0f, MaxBuoyancyForce);
 
-			TotalForce.Z += BuoyancyForceZ;
+			SupportForceZ += BuoyancyForceZ;
 		}
 
 		// 4. Horizontal Hydrodynamics (Displacement vs Planing, Edging, Lift)
@@ -582,11 +618,24 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				DragRatePerCm = PlaningQuadraticDragKgPerCm * EdgeDragScale / EffectiveMass;
 
 				// Hydrodynamic lift raising the board with surface contact falloff
-				const float SurfaceContact = FMath::Clamp((Submersion + 10.0f) / 15.0f, 0.0f, 1.0f);
+				const float SurfaceContact = FMath::Clamp((Submersion + WaterContactHeightCm) / (WaterContactHeightCm + PlaningLiftFullDepthCm), 0.0f, 1.0f);
 				const float PlaningLift = PlaningLiftKgPerS * (Speed2D - PlaningThresholdCmS) * SurfaceContact;
-				TotalForce.Z += PlaningLift;
+				SupportForceZ += PlaningLift;
 			}
 		}
+
+		// Taking a touchdown's sink out, the water and the legs hold the board up with whatever gives
+		// the absorber's constant deceleration of the sink, and never less than the buoyancy and the
+		// planing lift would; in the last step only as much as stops it moving into the water.
+		if (bAbsorbing && !bHydrodynamicsDisabled)
+		{
+			const float DecelCmS2 = FMath::Min(AbsorbDecelCmS2, FMath::Max(RelativeSinkCmS, 0.0f) / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
+			const float AbsorberForceZ = FMath::Max(MassKg * (KiteUnits::GravityCmS2 + DecelCmS2) - ExternalForceN.Z * KiteUnits::UnrealForcePerN, 0.0f);
+			SupportForceZ = FMath::Max(SupportForceZ, AbsorberForceZ);
+		}
+		TotalForce.Z += SupportForceZ;
+		LastStepDebug.WaterVerticalForceN = KiteUnits::UnrealForceToN(SupportForceZ);
+		LastStepDebug.bAbsorbing = bAbsorbing;
 
 		// Edging is a force balance (docs/physics/plan-2.md item 3): the rider heels the board against
 		// the pull across it, and the water's normal force on the heeled board carries that pull; the
@@ -730,10 +779,12 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 		const FVector PostMoveLocation = UpdatedComponent->GetComponentLocation();
 
-		// 8. Landing detection on re-entering water
+		// 8. Landing: the board comes down to the water, sinking into it (relative to the surface,
+		// which on a swell may be rising to meet it).
 		if (bIsAirborne)
 		{
-			const bool bReenteringWater = (Velocity.Z <= 0.0f) && (PostMoveLocation.Z <= WaterHeight + 10.0f);
+			const float SinkCmS = SurfaceVerticalSpeed - Velocity.Z;
+			const bool bReenteringWater = (SinkCmS >= 0.0f) && (PostMoveLocation.Z <= WaterHeight + WaterContactHeightCm);
 			if (bReenteringWater && CurrentJumpAirtime > 0.05f)
 			{
 				const FVector Velocity2D = Velocity.GetSafeNormal2D();
@@ -745,13 +796,14 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 					const float Dot = FMath::Clamp(FMath::Abs(FVector::DotProduct(Forward2D, Velocity2D)), 0.0f, 1.0f);
 					LandingAngleDeg = FMath::RadiansToDegrees(FMath::Acos(Dot));
 				}
+				bWasInWaterContact = true;
 
 				// A skip off the surface is not a jump: carry on riding with nothing lost or scored.
 				// (Only for the kite plucking the rider off: a pop is the rider's choice and always counts.)
 				const float MinJumpApexCm = 50.0f;
 				if (CurrentJumpApexHeight < MinJumpApexCm && bLiftedByKite)
 				{
-					Velocity.Z = 0.0f;
+					BeginTouchdownAbsorb(SinkCmS);
 					const bool bStillPlaning = Velocity.Size2D() >= PlaningThresholdCmS;
 					CurrentBoardState = bStillPlaning ? EBoardState::Planing : EBoardState::Displacement;
 					CurrentDragRegime = bStillPlaning ? EBoardDragRegime::Planing : EBoardDragRegime::Displacement;
@@ -766,67 +818,69 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 					BestJumpHeight = CurrentJumpApexHeight;
 				}
 
-				if (LandingAngleDeg <= MaxLandingAngle)
+				// The landing's load (research 3.4): the sink v is taken out over the absorb distance s,
+				// the legs and the board's immersion, longer for a crouch, at 1 + v^2 / (2 g s) g. It is
+				// hot when the rider sinks fast or the kite is low (not holding them up); it is a crash if
+				// the board is not lined up with its course or the load is more than the legs can take.
+				LastLandingSinkMS = KiteUnits::CmToM(SinkCmS);
+				LastLandingAbsorbCm = LandingAbsorbDistanceCm * (1.0f + FMath::Max(CrouchAbsorbBonus, 0.0f) * LoadAmount);
+				LastLandingG = LandingGForSink(LastLandingSinkMS, LastLandingAbsorbCm);
+				float KiteElevationDeg = 90.0f;
+				if (const AActor* OwnerActor = GetOwner())
 				{
-					// Clean landing: keep 80% of speed
+					if (const UKiteComponent* KiteComp = OwnerActor->FindComponentByClass<UKiteComponent>())
+					{
+						KiteElevationDeg = KiteComp->GetElevationDeg();
+					}
+				}
+				bLastLandingHot = LastLandingSinkMS > HotLandingSinkMS || KiteElevationDeg < HotLandingKiteElevationDeg;
+
+				if (LandingAngleDeg <= MaxLandingAngle && LastLandingG <= CrashLandingG)
+				{
+					// Clean landing: the absorber takes the sink out, and the rider keeps CleanLandingSpeedRetention of their speed.
 					bLastLandingClean = true;
 					bIsCrashing = false;
-					const float VerticalSpeed = FMath::Abs(Velocity.Z);
 					Velocity.X *= CleanLandingSpeedRetention;
 					Velocity.Y *= CleanLandingSpeedRetention;
-					Velocity.Z = 0.0f;
-
-					FVector LandedLoc = PostMoveLocation;
-					LandedLoc.Z = WaterHeight;
-					UpdatedComponent->SetWorldLocation(LandedLoc);
+					BeginTouchdownAbsorb(SinkCmS);
 
 					CurrentBoardState = EBoardState::Landing;
 					LandingStateTimer = 0.25f;
 
-					const float LandingG = FMath::Clamp(VerticalSpeed / KiteUnits::GravityCmS2, 1.0f, 10.0f);
-					OnBoardLanding.Broadcast(LandingG);
+					OnBoardLanding.Broadcast(LastLandingG);
 
-					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn, LandingG: %.2f"),
-						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, KiteUnits::CmSToKnots(Velocity.Size2D()), LandingG);
+					UE_LOG(LogKiteSurf, Log, TEXT("Clean landing! Angle: %.1f deg <= %.1f deg. Apex: %.1f cm, Airtime: %.2f s, RetainedSpeed: %.1f kn, LandingG: %.2f (sink %.2f m/s over %.0f cm, kite %.0f deg up%s)"),
+						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime, KiteUnits::CmSToKnots(Velocity.Size2D()), LastLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg, bLastLandingHot ? TEXT(", HOT") : TEXT(""));
 				}
 				else
 				{
 					// Crash landing: speed drops to 0 over 0.5 s, rider respawns upright after 1.5 s
-					FVector LandedLoc = PostMoveLocation;
-					LandedLoc.Z = WaterHeight;
-					UpdatedComponent->SetWorldLocation(LandedLoc);
-
 					TriggerCrash();
 
-					UE_LOG(LogKiteSurf, Log, TEXT("Crash landing! Angle: %.1f deg > %.1f deg. Apex: %.1f cm, Airtime: %.2f s. Initiating crash sequence."),
-						LandingAngleDeg, MaxLandingAngle, LastJumpApexHeight, LastJumpAirtime);
+					UE_LOG(LogKiteSurf, Log, TEXT("Crash landing! Angle: %.1f deg (most %.1f), LandingG: %.2f (most %.1f; sink %.2f m/s over %.0f cm, kite %.0f deg up%s). Apex: %.1f cm, Airtime: %.2f s. Initiating crash sequence."),
+						LandingAngleDeg, MaxLandingAngle, LastLandingG, CrashLandingG, LastLandingSinkMS, LastLandingAbsorbCm, KiteElevationDeg, bLastLandingHot ? TEXT(", HOT") : TEXT(""), LastJumpApexHeight, LastJumpAirtime);
 				}
-			}
-		}
-
-		// Water contact constraint: keep within +/- 20 cm of water height when NOT airborne
-		if (CurrentBoardState != EBoardState::Airborne)
-		{
-			const FVector NewLocation = UpdatedComponent->GetComponentLocation();
-			const float CurrentSubmersion = RideHeight - NewLocation.Z;
-			if (FMath::Abs(CurrentSubmersion) > 20.0f)
-			{
-				FVector ClampedLocation = NewLocation;
-				ClampedLocation.Z = FMath::Clamp(NewLocation.Z, RideHeight - 19.99f, RideHeight + 19.99f);
-				UpdatedComponent->SetWorldLocation(ClampedLocation);
-				Velocity.Z = 0.0f;
-			}
-
-			if (CurrentBoardState == EBoardState::Planing)
-			{
-				ensureAlwaysMsgf(FMath::Abs(RideHeight - UpdatedComponent->GetComponentLocation().Z) <= 20.0f + KINDA_SMALL_NUMBER,
-					TEXT("BoardMovement: Planing pawn out of water contact: Submersion = %.2f cm (expected within +/- 20 cm)"),
-					RideHeight - UpdatedComponent->GetComponentLocation().Z);
 			}
 		}
 
 		UpdateComponentVelocity();
 	}
+}
+
+float UBoardMovementComponent::LandingGForSink(float SinkMS, float AbsorbDistanceCm)
+{
+	// A constant deceleration v^2 / (2 s) takes the sink out over s, on top of the rider's weight.
+	const float AbsorbM = FMath::Max(KiteUnits::CmToM(AbsorbDistanceCm), KINDA_SMALL_NUMBER);
+	return 1.0f + FMath::Square(FMath::Max(SinkMS, 0.0f)) / (2.0f * KiteUnits::GravityMS2 * AbsorbM);
+}
+
+float UBoardMovementComponent::BeginTouchdownAbsorb(float SinkCmS)
+{
+	const float AbsorbCm = FMath::Max(LandingAbsorbDistanceCm * (1.0f + FMath::Max(CrouchAbsorbBonus, 0.0f) * LoadAmount), 1.0f);
+	const float Sink = FMath::Max(SinkCmS, 0.0f);
+	bAbsorbing = Sink > 0.0f;
+	AbsorbDecelCmS2 = Sink * Sink / (2.0f * AbsorbCm);
+	return AbsorbCm;
 }
 
 float UBoardMovementComponent::DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds)
@@ -992,6 +1046,7 @@ void UBoardMovementComponent::TriggerCrash(float CrashIntensity)
 {
 	bLastLandingClean = false;
 	bIsCrashing = true;
+	bAbsorbing = false;
 	CrashTimer = 0.0f;
 	CrashInitialVelocity = Velocity;
 	Velocity.Z = 0.0f;
@@ -1050,6 +1105,8 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	Velocity = Forward2D * SpeedCmS;
 
 	// 5. Clear crash and set rideable state
+	bAbsorbing = false;
+	bWasInWaterContact = true;
 	HeelDeg = 0.0f;
 	BalanceHeelDeg = 0.0f;
 	bIsCrashing = false;

@@ -7,6 +7,7 @@
 #include "KiteSurf.h"
 #include "KiteSurfGameMode.h"
 #include "KiteSurfUnits.h"
+#include "KiteWaterSurface.h"
 #include "WindComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -1134,6 +1135,233 @@ bool FKiteSurfPhysicsHitchIsBounded::RunTest(const FString& Parameters)
 	UE_LOG(LogKiteSurf, Log, TEXT("HitchIsBounded: 5 s after the hitches: %.1f kn, %.0f N, taut %d, worst line excess %.2f cm"), Ride.SpeedKnots(), Ride.Kite->GetLineTensionN(), Ride.Kite->AreLinesTaut(), Ride.Invariants.MaxLineExcessCm);
 	TestTrue(TEXT("Still riding with tight lines after the hitches"), Ride.Board->IsPlaning() && Ride.Kite->AreLinesTaut());
 	Ride.Invariants.Assert(*this, TEXT("Hitch"));
+	return true;
+}
+
+// Riding a swell (docs/research.md C3; docs/physics/plan-2.md item 4): a board planing at 15 m/s
+// straight across a 1 m amplitude, 20 m sine swell (FKiteWaveWaterSurface), its speed held, rides over
+// it without tunnelling: it is never more than 15 cm under the local surface for longer than 0.2 s, and
+// on the water its pitch follows the slope of the surface under it. The board samples the water at five
+// points (the centre, the nose and tail, both rails), fits a plane to them and follows its height, its
+// slope and how fast it rises under the board; its vertical axis is forces only.
+//
+// At this speed the surface under the board rises and falls at up to 4.7 m/s, and following it over a
+// crest would need 2.3 g of downward pull where gravity gives 1: the board leaves the water at each
+// crest (up to 2.9 m above the trough under it) and comes down on the face of the next swell, where the
+// touchdown absorber takes its sink into the water out over LandingAbsorbDistanceCm. So it is on the
+// water only on the faces, nose up.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsRidesASwellWithoutTunnelling, "KiteSurf.Physics.RidesASwellWithoutTunnelling", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsRidesASwellWithoutTunnelling::RunTest(const FString& Parameters)
+{
+	const float AmplitudeCm = 100.0f;
+	const float WavelengthCm = 2000.0f;
+	const float SpeedCmS = 1500.0f;
+	const float SettleSeconds = 1.0f;
+	const float RideSeconds = 8.0f;       // six swells
+	const float DeepCm = 15.0f;
+	const float MaxDeepSeconds = 0.2f;
+	const float InContactCm = 10.0f;      // within this of the surface the board counts as on it, for the pitch
+	const float PitchToleranceDeg = 3.0f;
+	const float FrameSeconds = DefaultFrameSeconds;
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+	TestTrue(TEXT("Rider and board created"), Board != nullptr);
+	if (!Board)
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+		}
+		return false;
+	}
+	const TSharedPtr<FKiteWaveWaterSurface> Swell = MakeShared<FKiteWaveWaterSurface>(0.0f, AmplitudeCm, WavelengthCm, FVector2D(1.0f, 0.0f));
+	Board->SetWaterSurface(Swell);
+	Pawn->SetActorRotation(FRotator::ZeroRotator);
+	Pawn->SetActorLocation(FVector::ZeroVector);
+	Board->Velocity = FVector(SpeedCmS, 0.0f, 0.0f);
+
+	float DeepRunSeconds = 0.0f;
+	float LongestDeepSeconds = 0.0f;
+	float MostUnderCm = -BIG_NUMBER;
+	float MostOverCm = -BIG_NUMBER;
+	float WorstPitchErrorDeg = 0.0f;
+	float HighestPitchDeg = -90.0f;
+	float LowestPitchDeg = 90.0f;
+	int32 ContactFrames = 0;
+	int32 Frames = 0;
+	bool bNaN = false;
+	const int32 TotalFrames = FMath::RoundToInt((SettleSeconds + RideSeconds) / FrameSeconds);
+	const int32 SettleFrames = FMath::RoundToInt(SettleSeconds / FrameSeconds);
+	for (int32 Frame = 0; Frame < TotalFrames; ++Frame)
+	{
+		// The speed is held, as a kite would hold it; the vertical is the board's own.
+		Board->Velocity.X = SpeedCmS;
+		Board->Velocity.Y = 0.0f;
+		Board->Simulate(FrameSeconds);
+		const FVector At = Pawn->GetActorLocation();
+		bNaN |= At.ContainsNaN() || Board->Velocity.ContainsNaN();
+		if (Frame < SettleFrames)
+		{
+			continue;
+		}
+		float SurfaceCm = 0.0f;
+		FVector SurfaceNormal = FVector::UpVector;
+		Swell->SampleWaterSurface(FVector2D(At.X, At.Y), SurfaceCm, SurfaceNormal);
+		const float UnderCm = SurfaceCm - At.Z;
+		DeepRunSeconds = UnderCm > DeepCm ? DeepRunSeconds + FrameSeconds : 0.0f;
+		LongestDeepSeconds = FMath::Max(LongestDeepSeconds, DeepRunSeconds);
+		MostUnderCm = FMath::Max(MostUnderCm, UnderCm);
+		MostOverCm = FMath::Max(MostOverCm, -UnderCm);
+		++Frames;
+		if (FMath::Abs(UnderCm) <= InContactCm)
+		{
+			// Nose up is positive pitch: up the face of the swell ahead.
+			const float SlopePitchDeg = FMath::RadiansToDegrees(FMath::Atan2(-SurfaceNormal.X, SurfaceNormal.Z));
+			const float PitchDeg = Pawn->GetActorRotation().Pitch;
+			WorstPitchErrorDeg = FMath::Max(WorstPitchErrorDeg, FMath::Abs(PitchDeg - SlopePitchDeg));
+			HighestPitchDeg = FMath::Max(HighestPitchDeg, PitchDeg);
+			LowestPitchDeg = FMath::Min(LowestPitchDeg, PitchDeg);
+			++ContactFrames;
+		}
+	}
+	const float SteepestDeg = FMath::RadiansToDegrees(FMath::Atan(AmplitudeCm * 2.0f * PI / WavelengthCm));
+	UE_LOG(LogKiteSurf, Log, TEXT("RidesASwellWithoutTunnelling: %.0f m/s across a %.1f m, %.0f m swell for %.0f s: most %.1f cm under the surface, longest more than %.0f cm under %.3f s; up to %.1f cm above it; on the water %d of %d frames, pitch %.1f to %.1f deg against slopes of +-%.1f deg, worst %.2f deg off the slope"),
+		SpeedCmS / KiteUnits::CmPerM, AmplitudeCm / KiteUnits::CmPerM, WavelengthCm / KiteUnits::CmPerM, RideSeconds, MostUnderCm, DeepCm, LongestDeepSeconds, MostOverCm, ContactFrames, Frames, LowestPitchDeg, HighestPitchDeg, SteepestDeg, WorstPitchErrorDeg);
+
+	TestFalse(TEXT("Nothing went NaN"), bNaN);
+	TestTrue(FString::Printf(TEXT("The board is never more than %.0f cm under the surface for longer than %.1f s (longest %.3f s, most %.1f cm under)"), DeepCm, MaxDeepSeconds, LongestDeepSeconds, MostUnderCm),
+		LongestDeepSeconds <= MaxDeepSeconds);
+	TestTrue(FString::Printf(TEXT("It comes back to the water on every swell (%d of %d frames on it)"), ContactFrames, Frames), ContactFrames >= 6 * 3);
+	TestTrue(FString::Printf(TEXT("On the water its pitch follows the slope within %.0f deg (worst %.2f deg)"), PitchToleranceDeg, WorstPitchErrorDeg), WorstPitchErrorDeg <= PitchToleranceDeg);
+	TestTrue(FString::Printf(TEXT("and it pitches with the faces it lands on (%.1f to %.1f deg)"), LowestPitchDeg, HighestPitchDeg), HighestPitchDeg > 0.5f * SteepestDeg);
+	World->DestroyWorld(false);
+	return true;
+}
+
+
+// Landing g (docs/physics/research.md 3.4; docs/physics/plan-2.md item 4): a board coming down onto flat
+// water lined up with its course, the kite overhead, at a sink v into the water. The sink is taken out
+// at a constant deceleration over the absorb distance s (LandingAbsorbDistanceCm, 30 cm: the legs and
+// the board's immersion), and the landing's load is 1 + v^2 / (2 g s): about 1.7 g at 2 m/s, 3.7 g at
+// 4 m/s and 7.1 g at 6 m/s, the ratio of the squares. A full crouch (the jump button held in the air) doubles s
+// (CrouchAbsorbBonus 1) and lowers both. The board really does stop over s: the water's push on it peaks
+// at the landing's g and it goes s into the water. At 7 m/s the landing is hot; standing it is 9.3 g,
+// past CrashLandingG (8), and crashes; crouched it is 5.2 g and is ridden away.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsLandingGFromSink, "KiteSurf.Physics.LandingGFromSink", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsLandingGFromSink::RunTest(const FString& Parameters)
+{
+	struct FLanding
+	{
+		bool bLanded = false;
+		float SinkMS = 0.0f;
+		float LandingG = 0.0f;
+		float AbsorbCm = 0.0f;
+		bool bHot = false;
+		bool bClean = false;
+		bool bCrashed = false;
+		float PeakWaterForceG = 0.0f;  // the water's vertical push on the board over its weight
+		float StrokeCm = 0.0f;         // how far the board went on down after touching down
+		bool bRidingAfter = false;
+	};
+	const float Step = 1.0f / 240.0f;
+	const float SpeedCmS = 800.0f;
+	const float ContactCm = 10.0f; // where the water starts to act: the board touches down from here
+	auto Land = [this, Step, SpeedCmS, ContactCm](float SinkMS, bool bCrouch) -> FLanding
+	{
+		FLanding Result;
+		UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+		AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+		UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+		if (!Board)
+		{
+			if (World)
+			{
+				World->DestroyWorld(false);
+			}
+			return Result;
+		}
+		Pawn->GetWind()->BaseWind = FVector::ZeroVector;
+		Pawn->GetWind()->GustStrength = 0.0f;
+		Pawn->GetKite()->SetElevationDeg(80.0f); // overhead: the elevation does not make it hot
+		Pawn->SetActorRotation(FRotator::ZeroRotator);
+		Pawn->SetActorLocation(FVector::ZeroVector);
+		Board->Velocity = FVector(SpeedCmS, 0.0f, 0.0f);
+		if (bCrouch)
+		{
+			// Crouched on the water first: the crouch takes 0.4 s to build.
+			Board->SetLoadHeld(true);
+			Board->Simulate(0.5f);
+		}
+		Pawn->SetActorLocation(FVector(0.0f, 0.0f, ContactCm));
+		Board->Velocity = FVector(SpeedCmS, 0.0f, -KiteUnits::MToCm(SinkMS));
+		Board->SetBoardState(EBoardState::Airborne);
+		Board->SetCurrentJumpAirtime(1.0f);
+		const float WeightN = Board->MassKg * KiteUnits::GravityMS2;
+		float TouchdownZ = 0.0f;
+		float LowestZ = BIG_NUMBER;
+		for (int32 Index = 0; Index < FMath::RoundToInt(1.5f / Step); ++Index)
+		{
+			const float ZBefore = Pawn->GetActorLocation().Z;
+			Board->Velocity.X = SpeedCmS;
+			Board->Simulate(Step);
+			if (!Result.bLanded && Board->GetBoardState() != EBoardState::Airborne)
+			{
+				Result.bLanded = true;
+				TouchdownZ = ZBefore;
+			}
+			if (Result.bLanded && !Board->IsCrashing())
+			{
+				Result.PeakWaterForceG = FMath::Max(Result.PeakWaterForceG, Board->GetLastStepDebug().WaterVerticalForceN / WeightN);
+				LowestZ = FMath::Min(LowestZ, static_cast<float>(Pawn->GetActorLocation().Z));
+			}
+		}
+		Result.SinkMS = Board->GetLastLandingSinkMS();
+		Result.LandingG = Board->GetLastLandingG();
+		Result.AbsorbCm = Board->GetLastLandingAbsorbCm();
+		Result.bHot = Board->WasLastLandingHot();
+		Result.bClean = Board->WasLastLandingClean();
+		Result.bCrashed = !Result.bClean;
+		Result.StrokeCm = LowestZ < BIG_NUMBER ? TouchdownZ - LowestZ : 0.0f;
+		Result.bRidingAfter = !Board->IsCrashing() && Board->IsPlaning() && FMath::Abs(Pawn->GetActorLocation().Z) < 10.0f;
+		World->DestroyWorld(false);
+		return Result;
+	};
+
+	const FLanding Soft = Land(2.0f, false);
+	const FLanding Middle = Land(4.0f, false);
+	const FLanding Hard = Land(6.0f, false);
+	const FLanding SoftCrouched = Land(2.0f, true);
+	const FLanding HardCrouched = Land(6.0f, true);
+	const FLanding Hot = Land(7.0f, false);
+	const FLanding HotCrouched = Land(7.0f, true);
+	for (const FLanding* L : { &Soft, &Middle, &Hard, &SoftCrouched, &HardCrouched, &Hot, &HotCrouched })
+	{
+		UE_LOG(LogKiteSurf, Log, TEXT("LandingGFromSink: sink %.2f m/s over %.0f cm: %.2f g (formula %.2f), water's push peaked at %.2f body weights, went %.1f cm on into the water, hot %d, clean %d, riding after %d"),
+			L->SinkMS, L->AbsorbCm, L->LandingG, UBoardMovementComponent::LandingGForSink(L->SinkMS, L->AbsorbCm), L->PeakWaterForceG, L->StrokeCm, L->bHot, L->bClean, L->bRidingAfter);
+		TestTrue(FString::Printf(TEXT("A landing at %.0f m/s happened"), L->SinkMS), L->bLanded);
+	}
+
+	TestNearlyEqual(TEXT("At 2 m/s the landing is about 1.7 g"), Soft.LandingG, 1.7f, 0.05f);
+	TestNearlyEqual(TEXT("At 4 m/s about 3.7 g (research 3.4: 4 m/s into 0.3 m)"), Middle.LandingG, 3.7f, 0.1f);
+	TestNearlyEqual(TEXT("At 6 m/s about 7.1 g"), Hard.LandingG, 7.1f, 0.15f);
+	TestNearlyEqual(TEXT("Each is 1 + v^2 / (2 g s) for its sink (g)"), Hard.LandingG, UBoardMovementComponent::LandingGForSink(Hard.SinkMS, 30.0f), 0.001f);
+	TestNearlyEqual(TEXT("so above 1 g they go as the square of the sink"), (Hard.LandingG - 1.0f) / (Soft.LandingG - 1.0f), FMath::Square(Hard.SinkMS / Soft.SinkMS), 0.01f);
+	TestNearlyEqual(TEXT("Standing, the sink is taken out over 30 cm"), Hard.AbsorbCm, 30.0f, 0.01f);
+	TestNearlyEqual(TEXT("Crouched over 60 cm"), HardCrouched.AbsorbCm, 60.0f, 0.5f);
+	TestTrue(FString::Printf(TEXT("A crouch lowers both (%.2f and %.2f g against %.2f and %.2f)"), SoftCrouched.LandingG, HardCrouched.LandingG, Soft.LandingG, Hard.LandingG),
+		SoftCrouched.LandingG < Soft.LandingG && HardCrouched.LandingG < Hard.LandingG);
+	TestNearlyEqual(TEXT("The water's push on the board peaks at the landing's g at 6 m/s (body weights)"), Hard.PeakWaterForceG, Hard.LandingG, 0.05f * Hard.LandingG);
+	TestNearlyEqual(TEXT("and the board goes the absorb distance into the water (cm)"), Hard.StrokeCm, Hard.AbsorbCm, 3.0f);
+	TestNearlyEqual(TEXT("Crouched, it goes twice as far (cm)"), HardCrouched.StrokeCm, HardCrouched.AbsorbCm, 3.0f);
+	TestTrue(TEXT("The 2 and 6 m/s landings are clean and ridden away"), Soft.bClean && Hard.bClean && Soft.bRidingAfter && Hard.bRidingAfter);
+	TestFalse(TEXT("They are not hot"), Soft.bHot || Hard.bHot);
+	TestTrue(FString::Printf(TEXT("At 7 m/s the landing is hot (%.2f m/s)"), Hot.SinkMS), Hot.bHot && HotCrouched.bHot);
+	TestTrue(FString::Printf(TEXT("Standing it is a crash (%.2f g)"), Hot.LandingG), Hot.bCrashed && Hot.LandingG > 8.0f);
+	TestTrue(FString::Printf(TEXT("Crouched it is landed and ridden away (%.2f g)"), HotCrouched.LandingG), HotCrouched.bClean && HotCrouched.bRidingAfter && HotCrouched.LandingG < 8.0f);
 	return true;
 }
 

@@ -530,9 +530,20 @@ bool FKiteSurfJumpCleanLanding::RunTest(const FString& Parameters)
 				TestEqual(TEXT("Board enters Landing state"), BoardComp->GetBoardState(), EBoardState::Landing);
 
 				const float PostLandSpeed = BoardComp->GetForwardSpeed();
-				UE_LOG(LogKiteSurf, Log, TEXT("CleanLanding: PostLandSpeed = %.1f, Expected ≈ %.1f"), PostLandSpeed, PreLandSpeed * 0.8f);
+				const float SinkAfterFrameCmS = -BoardComp->Velocity.Z;
+				// The sink is taken out by the water over the absorb distance (plan-2 item 4), no longer
+				// zeroed on the spot: a 0.5 m/s touchdown is 1.04 g, ridden away at the surface.
+				for (int32 i = 0; i < 15; ++i)
+				{
+					BoardComp->TickComponent(DeltaTime, LEVELTICK_All, nullptr);
+				}
+				UE_LOG(LogKiteSurf, Log, TEXT("CleanLanding: PostLandSpeed = %.1f, Expected ≈ %.1f; landing %.2f g at %.2f m/s, sinking %.1f cm/s a frame later and %.1f cm/s 0.5 s later at %.1f cm"),
+					PostLandSpeed, PreLandSpeed * 0.8f, BoardComp->GetLastLandingG(), BoardComp->GetLastLandingSinkMS(), SinkAfterFrameCmS, -BoardComp->Velocity.Z, Pawn->GetActorLocation().Z);
 				TestNearlyEqual(TEXT("Speed retained ~80% on clean landing"), PostLandSpeed, PreLandSpeed * 0.8f, 25.0f);
-				TestNearlyEqual(TEXT("Vertical velocity reset to 0"), (float)BoardComp->Velocity.Z, 0.0f, 1.0f);
+				TestTrue(FString::Printf(TEXT("A frame after touchdown the water is taking the sink out (%.1f cm/s, touched down at 50)"), SinkAfterFrameCmS), SinkAfterFrameCmS < 50.0f);
+				TestNearlyEqual(TEXT("The landing's load is 1 + v^2 / (2 g s) for its sink (g)"), BoardComp->GetLastLandingG(), UBoardMovementComponent::LandingGForSink(BoardComp->GetLastLandingSinkMS(), BoardComp->LandingAbsorbDistanceCm), 0.001f);
+				TestNearlyEqual(TEXT("Half a second later the board rides the surface (cm/s)"), (float)BoardComp->Velocity.Z, 0.0f, 10.0f);
+				TestFalse(TEXT("and is not crashing"), BoardComp->IsCrashing());
 			}
 		}
 

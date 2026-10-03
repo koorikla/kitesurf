@@ -66,8 +66,13 @@ struct FBoardStepDebug
 	FVector WaterNormal = FVector::UpVector;
 	/** How fast the surface under the board is rising (cm/s): its height change per step along the board's path. */
 	float SurfaceVerticalSpeedCmS = 0.0f;
+	/** The water's vertical force on the board (N): the buoyancy spring and the planing lift, or the touchdown absorber while it is taking a sink out. */
+	float WaterVerticalForceN = 0.0f;
+	/** True while the touchdown absorber is taking the board's sink out. */
+	bool bAbsorbing = false;
 };
 
+/** A clean landing, with its load in g: 1 + v^2 / (2 g s), v the sink into the water, s the absorb distance (UBoardMovementComponent::GetLastLandingG). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
@@ -181,6 +186,39 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	bool WasLastLandingClean() const { return bLastLandingClean; }
+
+	/**
+	 * The last landing's load (g): 1 + v^2 / (2 g s), v the board's sink into the water as it touched
+	 * down and s the distance the legs and the board's immersion took it out over,
+	 * LandingAbsorbDistanceCm softened by the crouch (docs/physics/research.md 3.4). Set on every
+	 * landing from a jump, clean or not; 1 before the first.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingG() const { return LastLandingG; }
+
+	/** The last landing's sink into the water (m/s), relative to the surface. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingSinkMS() const { return LastLandingSinkMS; }
+
+	/** The distance the last landing's sink was taken out over (cm): LandingAbsorbDistanceCm times 1 + CrouchAbsorbBonus * the crouch. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingAbsorbCm() const { return LastLandingAbsorbCm; }
+
+	/**
+	 * True if the last landing was hot: the rider sank faster than HotLandingSinkMS or the kite was
+	 * under HotLandingKiteElevationDeg as they touched down (docs/research.md C7). Not a crash by
+	 * itself; a crash is CrashLandingG or MaxLandingAngle.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	bool WasLastLandingHot() const { return bLastLandingHot; }
+
+	/** The load of a landing at this sink into the water (m/s) taken out over this distance (cm), in g: 1 + v^2 / (2 g s). */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	static float LandingGForSink(float SinkMS, float AbsorbDistanceCm);
+
+	/** True while the touchdown absorber is taking a sink into the water out (the legs and the board's immersion). */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	bool IsAbsorbingTouchdown() const { return bAbsorbing; }
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	bool IsCrashing() const { return bIsCrashing; }
@@ -532,8 +570,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float MaxJumpHeight;
 
+	/** Most angle between the board's axis and its course over the water at touchdown for a clean landing (deg); past it the rider crashes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float MaxLandingAngle;
+
+	/**
+	 * Distance over which a touchdown's sink into the water is taken out (cm): the legs bending and the
+	 * board's immersion. The water then decelerates the sink v at a constant v^2 / (2 s), and the
+	 * landing's load is 1 + v^2 / (2 g s) (docs/physics/research.md 3.4: 0.2 to 0.4 m; 4 m/s into 0.3 m
+	 * is 3.7 g, 7 m/s is 9 g).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "1.0"))
+	float LandingAbsorbDistanceCm;
+
+	/** How much longer a full crouch (GetLoadAmount 1, the jump button held) makes the absorb distance, as a fraction: 1 doubles it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0"))
+	float CrouchAbsorbBonus;
+
+	/** A landing harder than this (g) is a crash, however well the board is lined up. Research: measured landings 4.2 to 5.5 g. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "1.0"))
+	float CrashLandingG;
+
+	/** A landing sinking faster than this into the water (m/s) is hot (research: 3 to 6 m/s with the kite overhead, 8 to 12 with it low). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0"))
+	float HotLandingSinkMS;
+
+	/** A landing with the kite under this elevation above the rider (deg) is hot: the kite is not holding them up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float HotLandingKiteElevationDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float CleanLandingSpeedRetention;
@@ -609,6 +673,23 @@ private:
 	bool bHasWaterTrack = false;
 	FVector LastWaterTrackLocation = FVector::ZeroVector;
 	float LastWaterTrackHeightCm = 0.0f;
+
+	/**
+	 * Starts the touchdown absorber for a sink into the water of SinkCmS (relative to the surface): a
+	 * constant deceleration of SinkCmS^2 / (2 s) over s = LandingAbsorbDistanceCm softened by the
+	 * crouch, until the board moves with the surface. Returns s (cm).
+	 */
+	float BeginTouchdownAbsorb(float SinkCmS);
+
+	/** The touchdown absorber: on, its deceleration of the sink (cm/s^2), and whether the board was in contact with the water at the last step. */
+	bool bAbsorbing = false;
+	float AbsorbDecelCmS2 = 0.0f;
+	bool bWasInWaterContact = true;
+
+	float LastLandingG = 1.0f;
+	float LastLandingSinkMS = 0.0f;
+	float LastLandingAbsorbCm = 0.0f;
+	bool bLastLandingHot = false;
 
 	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
 	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);

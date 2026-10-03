@@ -131,4 +131,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetMasterVolume(float InVolume);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	FString PendingMapName = TEXT("L_OpenWater");
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetPendingMapName(const FString& InMapName) { PendingMapName = InMapName; }
 };

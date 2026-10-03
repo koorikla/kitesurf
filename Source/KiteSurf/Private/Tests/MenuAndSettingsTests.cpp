@@ -693,8 +693,8 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
     if (Gear)
     {
         FKiteMenuNavigator& Navigator = Gear->GetNavigator();
-        TestEqual(TEXT("The gear screen has ten items"), Navigator.Num(), 10);
-        TestEqual(TEXT("and opens on RIDE, so accept starts the ride"), Navigator.GetSelected(), 8);
+        TestEqual(TEXT("The gear screen has eleven items"), Navigator.Num(), 11);
+        TestEqual(TEXT("and opens on RIDE, so accept starts the ride"), Navigator.GetSelected(), 9);
 
         Navigator.Select(0);
         Gear->SetWindKnots(20.0f);
@@ -722,7 +722,7 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         Navigator.HandleKey(EKeys::Enter);
         TestNotEqual(TEXT("Accept on KITE changes the model"), Gear->CurrentKiteModel, ModelBefore);
 
-        Navigator.Select(7);
+        Navigator.Select(8);
         const bool bSharksBefore = Gear->bSharks;
         Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);
         TestNotEqual(TEXT("Accept on SHARKS switches them"), Gear->bSharks, bSharksBefore);

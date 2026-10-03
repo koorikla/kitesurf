@@ -351,6 +351,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
 	float HandsLineTorqueScale;
 
+	/**
+	 * Batch B (docs/tricks/review.md section 4, problem 2): while hooked in and an axis is committed
+	 * to a trick (the take-off's pre-wind or a held control, never a bare SetState), the hooked line
+	 * torque's component along that axis is capped at this, so a lighter or heavier pull on the
+	 * lines does not change how a held roll feels; the swing off that axis, towards the lines, is
+	 * untouched. Never applied unhooked: the raley and the S-bend are that torque. Default
+	 * LineTorqueScale * |HookOffsetFromComCm| (m) * the 800 N hang tension BackRollFromPreWind is
+	 * calibrated at, about 19 N*m. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float CommittedLineTorqueMaxNm;
+
 	/** Roll rate from a full pre-wind at full load (deg/s). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
 	float PreWindRollRateDegS;
@@ -435,6 +447,18 @@ public:
 	float AssistMaxErrorDeg;
 
 	/**
+	 * Batch B (docs/tricks/review.md section 4, problem 2): letting go of a held, hooked rotation
+	 * (no rotation input, an axis still committed) keeps it turning forward at no less than this,
+	 * capped the same way as the air control, until the body is within AssistMaxErrorDeg of the next
+	 * upright attitude ahead; the ordinary landing assist lands it from there. So a rider no longer
+	 * hangs 60 to 80 deg off upright or stops at horizontal. Never applied unhooked (the raley and
+	 * the S-bend finish on their own line torque) or with no committed family (a bare SetState).
+	 * Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float FinishMinRateDegS;
+
+	/**
 	 * T3.2: with the raley's arms out (FAttitudeInputs::bRaleyArms) the landing assist waits while the
 	 * body swings out away from upright, so it does not cancel the raley the line makes; it acts as the
 	 * body swings back under. False: the assist acts as it does hooked.
@@ -444,7 +468,9 @@ public:
 
 	/**
 	 * Scale on a flip pre-wind (stick Y) while hooked in (T3.3; docs/tricks/T3.md). Unhooked it is 1, a
-	 * full tantrum or front flip. Estimate.
+	 * full tantrum or front flip. Batch B (docs/tricks/review.md section 4, problem 3) takes this to 0:
+	 * the harness holds the hips to the lines too firmly for a hooked flip to be anything but a crash
+	 * (HookedFlipUnderRotates), so flips stay unhooked tricks (tantrum, front flip). Estimate.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HookedFlipScale;
@@ -535,6 +561,14 @@ private:
 	bool bWasAirborne = false;
 	bool bControlWasFlip = false;
 	bool bTookOffRotating = false;
+	/**
+	 * Batch B (docs/tricks/review.md section 4, item 3): the current committed axis has carried the
+	 * body more than AssistMaxErrorDeg from the nearest upright attitude at least once since it was
+	 * committed. Reset on a fresh commitment (BeginAir, or the control picking a new axis from none).
+	 * Lets letting-go-after-the-roll hand off to posture damping instead of coasting round again,
+	 * while not doing that at the take-off itself, before the body has gone anywhere.
+	 */
+	bool bRotationLeftUpright = false;
 	FVector ComOffsetWorldCm = FVector::ZeroVector;
 	FVector PrevComOffsetWorldCm = FVector::ZeroVector;
 	FAttitudeDebug LastDebug;

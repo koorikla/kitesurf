@@ -89,6 +89,56 @@ rises and turns forward and up, the sink slows, and the rider lands moving forwa
   required. `KiteOverheadInTheAir` keeps its 50 deg floor until the redirect starts.
 - Document in the changelog what the redirect changed against `b7f9ac6`.
 
+
+## 3. The harness limits how far the board can point from the pull
+
+**Report (user, 2026-10-03).** Riding on the left tack and holding the stick fully left, the
+board keeps turning and the rider ends up rotating round under the kite in the water. A rider
+cannot rotate about the lines like that: the harness hook is on the front of the waist and the
+feet are in the straps, so the board can only point so far upwind of the pull before the body
+cannot twist further. Past that, more stick should be lean against the harness, and pointing
+that high bleeds speed until the rider stalls off the plane, with no rotation.
+
+**Today.** The carve input yaws the board kinematically at `CarveTurnRate` (60 deg/s at full
+input) with no reference to the lines (`BoardMovementComponent.cpp`, the carve branch in
+`StepBoard`), so holding the stick turns the board through any angle. The pawn's
+"back to the kite, slide round after 0.4 s" logic then spins the rider's stance.
+
+**Change** (in the board's step, on the water, lines taut; nothing changes in the air):
+- The pull direction `P` is the horizontal unit vector of the line force. The beam-reach
+  heading on the current tack is perpendicular to `P` on the side the board is travelling; the
+  heading's angle upwind of it, `UpwindOfBeamDeg`, is signed so that turning away from the kite
+  raises it. The same rule on both tacks and in both stances (heelside and toeside), so a kite
+  flown to the other side does not yank the board round: it only moves the beam heading.
+- `MaxUpwindHeadingDeg` (default 50; tune 40 to 60): the carve input cannot yaw the heading past
+  it. The requested yaw beyond the limit becomes harness lean instead: `HarnessLeanAmount`
+  (0 to 1) builds at `HarnessLeanRatePerS` (1.0) while the stick is held against the limit and
+  decays at `HarnessLeanReleaseRatePerS` (3.0) when it is not. The lean adds heel towards the
+  kite, `HarnessLeanHeelDeg` (20) times the amount, into the force balance (like loading), so
+  the hump pressure drag and the heel slow the board; the rider mesh leans back with it
+  (expose `GetHarnessLeanAmount()` for the pose and the debug text).
+- If the heading is outside the limit because the pull moved (the kite was flown somewhere
+  else), the harness turns the board back inside it at `HarnessYawRateDegPerS` (90), on the
+  water with taut lines only. With slack lines, floating, crashing or airborne there is no
+  limit, as now.
+- Carving towards the kite (downwind) is unchanged, including riding tail-first and the
+  twin-tip's switch of ends.
+
+**Targets and tests.**
+- `KiteSurf.Physics.HarnessStopsOverRotation`: riding on the left tack in 15 and 20 kn with the
+  stick held fully left for 6 s, the board's heading never passes `MaxUpwindHeadingDeg` upwind
+  of the beam reach, the rider's stance side never flips, `HarnessLeanAmount` reaches 1, and the
+  board slows (and may drop off the plane) instead of turning; releasing the stick lets the
+  heading come back and the rider ride on. Mirrored on the right tack.
+- `KiteSurf.Physics.HarnessBringsTheBoardBack`: with the board pointed 70 deg upwind of the
+  beam by hand on the water, taut lines bring it back inside the limit within 1 s.
+- `Ride.CarveIsSymmetric`, `Physics.CarveFollowsTheHeading`, `Movement.UpwindAngle`,
+  `Physics.UpwindAtEdgeAngle`, `Physics.CourseTheorem` and `Physics.PointingTooHighDropsOffThePlane`
+  re-based to the limit where they pointed higher than it (the drop-off test rides at the
+  limit); `Rider.SpinsWithBoard` keeps its hand-posed spin in the air; the in-water
+  "slide round to face the kite" in the pawn keeps working for the stance.
+- Record in the changelog what moved against `b7f9ac6`.
+
 ## Order
 
 Item 1 first (the bug), then item 2. One commit per step, built and tested green. Then merge

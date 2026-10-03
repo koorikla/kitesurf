@@ -407,7 +407,7 @@ assets test.
 | --- | --- | --- | --- |
 | Load and pop (exists) | A, hold and release | Space | |
 | Pre-wind | Left stick held while loading | A/D and W/S held while loading | Direction picks the rotation, the hold sets its size. It builds over about 0.5 s up to a cap |
-| Rotation in the air | Left stick | A/D, W/S | X alone: roll, back or front, with about 45° of inversion by default. X plus Y: Y tilts the axis, down towards inverted, up towards a flat spin. Y alone: flip (pull for a backflip, push for a front flip). Rider-relative, so the stick towards the tail on screen is a back roll |
+| Rotation in the air | Left stick | A/D, W/S | X alone: roll, back or front, with about 45° of inversion by default. X plus Y: Y tilts the axis, down towards inverted, up towards a flat spin. Y alone: flip (pull for a backflip, push for a front flip). Full flips are unhooked: hooked in, a Y pre-wind is scaled by `HookedFlipScale` (0.35, T3.3), and unhooked a pulled Y is the tantrum (the back hand comes off at take-off). Rider-relative, so the stick towards the tail on screen is a back roll |
 | Grab, front hand | LB | Q | While held, the left stick picks the zone: nose, toe edge, heel edge or tail. The rotation keeps its momentum |
 | Grab, back hand | RB | E | As above |
 | Board-off | LB + RB held | Q + E | Left stick picks the variant: plain, superman, tic tac. Letting go starts the re-catch, which takes about 0.3 s (**estimate**). Not caught by touchdown is a crash |

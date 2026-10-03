@@ -115,6 +115,25 @@ enum class ETrickInversion : uint8
 };
 
 /**
+ * The take-off move a freestyle name is keyed on (TrickNaming::FreestyleMove from a signature; the
+ * jump recorder sets FJumpRecord::TakeoffMove from what it recognised, T3.2).
+ */
+UENUM(BlueprintType)
+enum class ETrickMove : uint8
+{
+	/** No inversion, raley or S-bend. */
+	Pop       UMETA(DisplayName = "Pop"),
+	BackRoll  UMETA(DisplayName = "Back roll"),
+	/** From a toeside take-off this is the crow mobe and dum dum move. */
+	FrontRoll UMETA(DisplayName = "Front roll"),
+	FrontFlip UMETA(DisplayName = "Front flip"),
+	/** Unhooked, the tantrum. */
+	BackFlip  UMETA(DisplayName = "Backflip"),
+	Raley     UMETA(DisplayName = "Raley"),
+	SBend     UMETA(DisplayName = "S-bend")
+};
+
+/**
  * What kind of kite loop was flown during a jump (docs/tricks.md 6.6; the rules and their
  * thresholds are in FLoopClassifySettings and TrickRecognition::ClassifyLoops).
  */

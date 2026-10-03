@@ -190,6 +190,8 @@ namespace
 		{ ETS::Toeside,  ETM::FrontRoll, ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Dum dum"),        nullptr,      ENumberStyle::None, EGF::ToesideBlind, 4.0f, 4.0f },
 		{ ETS::Heelside, ETM::BackFlip,  ESe::Backside,  2, ELandingRule::Heelside, EPassRule::Required, TEXT("Moby dick"),      nullptr,      ENumberStyle::None, EGF::Mobes,       4.5f, 4.5f },
 		{ ETS::Heelside, ETM::BackFlip,  ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Tantrum"),        nullptr,      ENumberStyle::None, EGF::KgbSlim,     3.0f, 3.0f },
+		// T3.3: the unhooked front flip on its own (the slim chance is it with a pass). Difficulty an estimate.
+		{ ETS::Heelside, ETM::FrontFlip, ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Front flip"),     nullptr,      ENumberStyle::None, EGF::KgbSlim,     3.0f, 3.0f },
 		{ ETS::Heelside, ETM::Raley,     ESe::None,      0, ELandingRule::Heelside, EPassRule::NoPass,   TEXT("Raley"),          nullptr,      ENumberStyle::None, EGF::RaleyBased,  2.0f, 2.0f },
 		{ ETS::Heelside, ETM::Pop,       ESe::Frontside, 1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Frontside"), ENumberStyle::Suffix, EGF::Combos,      3.0f, 3.0f },
 		{ ETS::Heelside, ETM::Pop,       ESe::Backside,  1, ELandingRule::Any,      EPassRule::Required, nullptr,                TEXT("Backside"),  ENumberStyle::Suffix, EGF::Combos,      3.0f, 3.0f },

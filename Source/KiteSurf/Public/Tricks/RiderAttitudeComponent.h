@@ -159,6 +159,26 @@ struct KITESURF_API FAttitudeInputs
 
 	/** Where the lines pull (cm, body frame, from the centre of mass): LineAttach::AttachPointBody. Read with bUseLineAttach. */
 	FVector LineAttachBodyCm = FVector::ZeroVector;
+
+	/**
+	 * Hooked into the harness (T3.3). A flip pre-wind (stick Y in the flip sector) is then scaled by
+	 * HookedFlipScale: the hook holds the hips to the lines, so a full flip is an unhooked trick.
+	 */
+	bool bHookedIn = true;
+
+	/**
+	 * Unhooked with both hands on the bar in front and the arms out (the pawn's RaleyArmExtension or
+	 * more, T3.2): the line swings the body out as a raley. While set, the landing assist leaves the
+	 * swing out alone (it acts again once the body swings back under), and the roll input and a roll
+	 * pre-wind turn the body about the lines (LineDirWorld) instead of the roll axis: the S-bend.
+	 */
+	bool bRaleyArms = false;
+
+	/** How far the arms are out past the unhooked default, 0..1: the inertia goes towards InertiaExtendedKgM2. 0 hooked. */
+	float ArmsOut = 0.0f;
+
+	/** Unit direction from the rider to the kite (world), for the S-bend's line axis. Read with bRaleyArms. */
+	FVector LineDirWorld = FVector::ZeroVector;
 };
 
 /** What the last step did, for debug drawing, telemetry and the landing evaluator. Torques in N*m, world. */
@@ -250,8 +270,18 @@ public:
 	/** Angular momentum about the centre of mass (kg*m^2/s, world). */
 	FVector GetAngularMomentum() const { return L; }
 
-	/** Principal inertia in the body frame (Front, Right, Up) for the current tuck (kg*m^2). */
+	/** Principal inertia in the body frame (Front, Right, Up) for the current tuck and arms (kg*m^2). */
 	FVector GetBodyInertiaKgM2() const;
+
+	/**
+	 * The S-bend's axis in body coordinates (T3.2): the line direction, signed so that a back roll's
+	 * stick (StickSign +1) turns backside about it, as the backside spin turns about -Sigma x Up. Zero
+	 * when the line direction is.
+	 */
+	static FVector LineRollAxisBody(const FQuat& Body, const FVector& LineDirWorld, float Sigma, float StickSign);
+
+	/** The body is tilting further from world up (the swing out of a raley): dTilt/dt > 0 for this Up and omega (world). */
+	static bool IsTiltingAway(const FVector& BodyUp, const FVector& OmegaW);
 
 	/** The current tuck, 0..1, after its smoothing spring. */
 	float GetTuckAmount() const { return TuckNow; }
@@ -404,6 +434,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float AssistMaxErrorDeg;
 
+	/**
+	 * T3.2: with the raley's arms out (FAttitudeInputs::bRaleyArms) the landing assist waits while the
+	 * body swings out away from upright, so it does not cancel the raley the line makes; it acts as the
+	 * body swings back under. False: the assist acts as it does hooked.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation")
+	bool bAssistWaitsForRaleySwing;
+
+	/**
+	 * Scale on a flip pre-wind (stick Y) while hooked in (T3.3; docs/tricks/T3.md). Unhooked it is 1, a
+	 * full tantrum or front flip. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HookedFlipScale;
+
+	/**
+	 * Principal inertia with the arms out along the lines (T3.2, the raley extension), rider plus strapped
+	 * board (kg*m^2): Front, Right, Up. Blended in by FAttitudeInputs::ArmsOut. Estimate (docs/tricks/T3.md).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation")
+	FVector InertiaExtendedKgM2;
+
 	/** Natural frequency of the landing assist PD (Hz). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
 	float AssistNaturalFreqHz;
@@ -475,6 +527,8 @@ private:
 	FVector CommittedAxisBody = FVector::ZeroVector;
 	float TuckNow = 0.0f;
 	float TuckVel = 0.0f;
+	/** FAttitudeInputs::ArmsOut of the last step, 0..1. */
+	float ArmsOutNow = 0.0f;
 	/** Time since the take-off (s); SetState leaves it where it is. */
 	float AirSeconds = 0.0f;
 	bool bActive = false;

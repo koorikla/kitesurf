@@ -153,6 +153,32 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float RollStartSinceTakeoffSeconds = -1.0f;
 
+	// --- The raley and the S-bend (T3.2): FRaleyRecognizer over the attitude and the lines. ---
+
+	/** Unhooked, the line swung the body out past FRaleyRecognizerSettings::RaleyMinTiltDeg towards the kite, with no inversion: a raley. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	bool bRaley = false;
+
+	/** A raley with a turn of 270 deg or more about the lines and no pass. Its inversions are part of it and are not listed. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	bool bSBend = false;
+
+	/** Backside: the S-bend; frontside: the hinterberger. None with no S-bend. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickSense SBendSense = ETrickSense::None;
+
+	/** Largest tilt of the body's Up from world up in the air (deg). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float MaxTiltDeg = 0.0f;
+
+	/** The turn about the lines with the raley's arms out (deg, + backside). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float LineSpinDeg = 0.0f;
+
+	/** The take-off move the freestyle name is keyed on, as recognised: S-bend, raley, the first inversion, or a pop. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickMove TakeoffMove = ETrickMove::Pop;
+
 	// --- Grabs and the one-footer (T2.1, T2.2): the pawn's FGrabState. Empty when the pawn has none. ---
 
 	/**

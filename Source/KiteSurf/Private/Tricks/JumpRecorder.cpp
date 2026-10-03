@@ -82,11 +82,14 @@ void FJumpRecorder::Open(const FJumpRecorderInput& In)
 	// The rotation is measured from the riding pose at the take-off; the attitude takes over on the
 	// next step.
 	Rotation = FRotationRecognizer();
+	Raley = FRaleyRecognizer();
 	bRotationStepped = false;
 	LastStepTimeSeconds = In.BoardTimeSeconds;
 	if (In.bHasAttitude)
 	{
-		Rotation.Begin(FRotationTakeoffFrame::Make(In.BodyQuat, In.Velocity, In.BoardForward), In.BodyQuat);
+		const FRotationTakeoffFrame Frame = FRotationTakeoffFrame::Make(In.BodyQuat, In.Velocity, In.BoardForward);
+		Rotation.Begin(Frame, In.BodyQuat);
+		Raley.Begin(Frame.Sigma);
 	}
 }
 
@@ -132,13 +135,62 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	if (Rotation.HasBegun() && In.bHasAttitude && In.bAttitudeActive && StepSeconds > 0.0f)
 	{
 		Rotation.Step(In.BodyQuat, In.AngularVelocityRadS, StepSeconds, In.Velocity);
+		Raley.Step(In.BodyQuat, In.AngularVelocityRadS, In.LineDirWorld, In.bRaleyArms, StepSeconds);
 		bRotationStepped = true;
 	}
 	if (bRotationStepped)
 	{
 		// The live view: what has been credited so far, for the ticker.
 		ApplyRotation(Rotation.GetCurrent(), Live);
+		ApplyRaley(Live);
 	}
+}
+
+ETrickMove FJumpRecorder::TakeoffMoveOf(const FJumpRecord& Record)
+{
+	if (Record.bSBend)
+	{
+		return ETrickMove::SBend;
+	}
+	if (Record.bRaley)
+	{
+		return ETrickMove::Raley;
+	}
+	if (Record.Inversions.Num() > 0)
+	{
+		switch (Record.Inversions[0])
+		{
+		case ETrickInversion::BackRoll:  return ETrickMove::BackRoll;
+		case ETrickInversion::FrontRoll: return ETrickMove::FrontRoll;
+		case ETrickInversion::FrontFlip: return ETrickMove::FrontFlip;
+		case ETrickInversion::BackFlip:  return ETrickMove::BackFlip;
+		default: break;
+		}
+	}
+	return ETrickMove::Pop;
+}
+
+void FJumpRecorder::ApplyRaley(FJumpRecord& Record) const
+{
+	if (Raley.HasBegun())
+	{
+		const FRaleyResult Result = Raley.Get(!Record.bHooked, Record.Inversions.Num(), Record.Passes.Num());
+		Record.bRaley = Result.bRaley;
+		Record.bSBend = Result.bSBend;
+		Record.SBendSense = Result.SBendSense;
+		Record.MaxTiltDeg = Result.MaxTiltDeg;
+		Record.LineSpinDeg = Result.LineSpinDeg;
+		if (Result.bSBend)
+		{
+			// The S-bend is the overhead rotation: its turn about the lines is the body spin the naming
+			// table reads (S-bend backside, hinterberger frontside), and any inversion it made is its own.
+			Record.Inversions.Reset();
+			Record.RollStartSinceTakeoffSeconds = -1.0f;
+			Record.SpinHalfTurns = FMath::Max(2, FMath::RoundToInt(FMath::Abs(Result.LineSpinDeg) / 180.0f));
+			Record.SpinSense = Result.SBendSense;
+		}
+	}
+	Record.TakeoffMove = TakeoffMoveOf(Record);
 }
 
 void FJumpRecorder::ApplyRotation(const FRotationResult& Result, FJumpRecord& Record)
@@ -174,6 +226,7 @@ void FJumpRecorder::Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecor
 	{
 		// The touchdown step's body: the attitude stepped before the board landed.
 		ApplyRotation(Rotation.Finish(In.BodyQuat), Record);
+		ApplyRaley(Record);
 	}
 
 	FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade,

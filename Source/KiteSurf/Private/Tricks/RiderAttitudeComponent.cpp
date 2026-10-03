@@ -36,7 +36,7 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	HookOffsetFromComCm = FVector(12.0f, 0.0f, 20.0f);
 	ComAboveBoardCm = 75.0f;
 	LineTorqueScale = 0.1f;
-	HandsLineTorqueScale = 1.0f;
+	HandsLineTorqueScale = 1.4f;
 	PreWindRollRateDegS = 250.0f;
 	PreWindFlipRateDegS = 260.0f;
 	PreWindSpinRateDegS = 360.0f;
@@ -55,6 +55,9 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	AssistStrength = 1.0f;
 	AssistWindowSeconds = 1.0f; // 0.7 in the plan: on a real jump the lines hold a rolled rider 60 to 80 deg off upright until the last second
 	AssistMaxErrorDeg = 90.0f;  // 60 in the plan, for the same reason
+	bAssistWaitsForRaleySwing = true;
+	HookedFlipScale = 0.35f;
+	InertiaExtendedKgM2 = FVector(12.0f, 12.0f, 1.2f);
 	AssistNaturalFreqHz = 1.2f;
 	AssistDampingRatio = 0.9f;
 	AssistMaxTorqueNm = 120.0f;
@@ -81,7 +84,28 @@ FQuat URiderAttitudeComponent::MakeCanonicalStrapOffset(float NoseSideSign)
 
 FVector URiderAttitudeComponent::GetBodyInertiaKgM2() const
 {
-	return FMath::Lerp(InertiaStretchedKgM2, InertiaTuckedKgM2, FMath::Clamp(TuckNow, 0.0f, 1.0f));
+	const FVector Open = FMath::Lerp(InertiaStretchedKgM2, InertiaExtendedKgM2, FMath::Clamp(ArmsOutNow, 0.0f, 1.0f));
+	return FMath::Lerp(Open, InertiaTuckedKgM2, FMath::Clamp(TuckNow, 0.0f, 1.0f));
+}
+
+FVector URiderAttitudeComponent::LineRollAxisBody(const FQuat& Body, const FVector& LineDirWorld, float Sigma, float StickSign)
+{
+	const FVector Dir = Body.UnrotateVector(LineDirWorld).GetSafeNormal();
+	if (Dir.IsZero())
+	{
+		return FVector::ZeroVector;
+	}
+	// A backside spin turns about -Sigma x Up (RiderAxes::BackRollAxisBody at no tilt); about the lines
+	// it is -Sigma x the line, so a back roll's stick is a backside S-bend.
+	const float S = Sigma >= 0.0f ? 1.0f : -1.0f;
+	const float K = StickSign >= 0.0f ? 1.0f : -1.0f;
+	return Dir * (-S * K);
+}
+
+bool URiderAttitudeComponent::IsTiltingAway(const FVector& BodyUp, const FVector& OmegaW)
+{
+	// dUp/dt = omega x Up, so d(Up . z)/dt = omega . (Up x z): the tilt grows when that is negative.
+	return FVector::DotProduct(OmegaW, FVector::CrossProduct(BodyUp, FVector::UpVector)) < 0.0;
 }
 
 double URiderAttitudeComponent::InertiaAbout(const FVector& AxisWorld, const FVector& Ib) const
@@ -123,6 +147,7 @@ void URiderAttitudeComponent::Reset(const FQuat& Body, const FQuat& Board)
 	CommittedAxisBody = FVector::ZeroVector;
 	TuckNow = 0.0f;
 	TuckVel = 0.0f;
+	ArmsOutNow = 0.0f;
 	bActive = false;
 	bWasAirborne = false;
 	bControlWasFlip = false;
@@ -174,10 +199,27 @@ void URiderAttitudeComponent::BeginAir(const FAttitudeInputs& In)
 
 	// Pre-wind: a target rate on the chosen axis (not L along it, which would make the light Up
 	// axis whip round), scaled by how far it was built and by the load at the pop.
-	const RiderAxes::FRotationAxisChoice Choice = ChooseAxis(In.PreWindStick, In.TravelSideSigma, false, DefaultRollAxisTiltDeg);
+	RiderAxes::FRotationAxisChoice Choice = ChooseAxis(In.PreWindStick, In.TravelSideSigma, false, DefaultRollAxisTiltDeg);
 	const float Amount = FMath::Clamp(In.PreWindAmount, 0.0f, 1.0f);
 	const float Load = FMath::Clamp(In.TakeoffLoad, 0.0f, 1.0f);
-	const float Rate = Amount * Choice.Magnitude * (PreWindLoadFloor + (1.0f - PreWindLoadFloor) * Load) * FullRateRadS(Choice.Family);
+	float Rate = Amount * Choice.Magnitude * (PreWindLoadFloor + (1.0f - PreWindLoadFloor) * Load) * FullRateRadS(Choice.Family);
+	if (Choice.Family == RiderAxes::ERotationFamily::Flip && In.bHookedIn)
+	{
+		// T3.3: hooked in, the harness holds the hips to the lines; a full flip is unhooked.
+		Rate *= FMath::Clamp(HookedFlipScale, 0.0f, 1.0f);
+	}
+	else if (In.bRaleyArms && (Choice.Family == RiderAxes::ERotationFamily::Roll || Choice.Family == RiderAxes::ERotationFamily::Spin))
+	{
+		// T3.2: with the raley's arms out the roll pre-wind turns the body about the lines (the S-bend),
+		// at the roll's rate.
+		const FVector LineAxis = LineRollAxisBody(Q, In.LineDirWorld, In.TravelSideSigma, In.PreWindStick.X);
+		if (!LineAxis.IsZero())
+		{
+			Choice.AxisBody = LineAxis;
+			Choice.Family = RiderAxes::ERotationFamily::Roll;
+			Rate = Amount * Choice.Magnitude * (PreWindLoadFloor + (1.0f - PreWindLoadFloor) * Load) * FullRateRadS(Choice.Family);
+		}
+	}
 	if (Rate > UE_KINDA_SMALL_NUMBER && !Choice.AxisBody.IsZero())
 	{
 		const FVector Ib = GetBodyInertiaKgM2();
@@ -275,7 +317,10 @@ FVector URiderAttitudeComponent::ComputeAssistTorque(const FAttitudeInputs& In, 
 	const FVector OmegaHat = OmegaW.GetSafeNormal();
 	OutDebug.ErrorAlongSpin = OmegaHat.IsZero() || ErrAxis.IsZero() ? 0.0f : float(ErrAxis | OmegaHat);
 
-	const bool bActiveNow = AssistStrength > 0.0f && !In.bRotationInput
+	// T3.2: with the raley's arms out the assist waits while the line swings the body out, and acts as
+	// it swings back under.
+	const bool bRaleySwingOut = bAssistWaitsForRaleySwing && In.bRaleyArms && IsTiltingAway(Q.GetAxisZ(), OmegaW);
+	const bool bActiveNow = AssistStrength > 0.0f && !In.bRotationInput && !bRaleySwingOut
 		&& OutDebug.TimeToContactSeconds < AssistWindowSeconds
 		&& OutDebug.LandingErrorDeg < AssistMaxErrorDeg;
 	OutDebug.bAssistActive = bActiveNow;
@@ -403,7 +448,8 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	const FQuat QStart = Q;
 	const FVector LStart = L;
 
-	// Pose -> inertia, through a critically damped tuck.
+	// Pose -> inertia, through a critically damped tuck and the arms out along the lines.
+	ArmsOutNow = FMath::Clamp(In.ArmsOut, 0.0f, 1.0f);
 	StepCriticalSpring(TuckNow, TuckVel, FMath::Clamp(In.Tuck, 0.0f, 1.0f), 2.0f / FMath::Max(TuckSmoothSeconds, 0.01f), Dt);
 	TuckNow = FMath::Clamp(TuckNow, 0.0f, 1.0f);
 	const FVector Ib = GetBodyInertiaKgM2();
@@ -432,9 +478,19 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	{
 		// Capped torque towards a target rate on the stick's axis; while held, that axis is committed
 		// so posture damping does not fight it. Released, nothing brakes the rotation.
-		if (!Control.AxisBody.IsZero())
+		FVector ControlAxisBody = Control.AxisBody;
+		if (In.bRaleyArms && (Control.Family == RiderAxes::ERotationFamily::Roll || Control.Family == RiderAxes::ERotationFamily::Spin))
 		{
-			const FVector AxisW = Q.RotateVector(Control.AxisBody);
+			// T3.2: the raley's arms out, the roll input turns the body about the lines (the S-bend).
+			const FVector LineAxis = LineRollAxisBody(Q, In.LineDirWorld, In.TravelSideSigma, In.RotationStick.X);
+			if (!LineAxis.IsZero())
+			{
+				ControlAxisBody = LineAxis;
+			}
+		}
+		if (!ControlAxisBody.IsZero())
+		{
+			const FVector AxisW = Q.RotateVector(ControlAxisBody);
 			const double IAxis = InertiaAbout(AxisW, Ib);
 			const double Full = FullRateRadS(Control.Family);
 			const double TargetRate = Control.Magnitude * Full;
@@ -442,7 +498,7 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 			const double TauAlong = FMath::Clamp(IAxis * (TargetRate - (OmegaW | AxisW)) / double(FMath::Max(AirControlResponseSeconds, 0.01f)), -TauMax, TauMax);
 			Debug.ControlTorqueNm = AxisW * TauAlong;
 			Tau += Debug.ControlTorqueNm;
-			CommittedAxisBody = Control.AxisBody;
+			CommittedAxisBody = ControlAxisBody;
 			bControlWasFlip = Control.Family == RiderAxes::ERotationFamily::Flip;
 			Debug.Family = Control.Family;
 		}

@@ -4,6 +4,7 @@
 #include "BoardMovementComponent.h"
 #include "Tricks/JumpRecord.h"
 #include "Tricks/KiteLoopRecord.h"
+#include "Tricks/RaleyRecognizer.h"
 #include "Tricks/RotationRecognizer.h"
 #include "Tricks/TrickRecognition.h"
 #include "Tricks/TrickScoring.h"
@@ -113,6 +114,14 @@ struct FJumpRecorderInput
 
 	/** Body angular velocity (rad/s, world): URiderAttitudeComponent::GetAngularVelocity. */
 	FVector AngularVelocityRadS = FVector::ZeroVector;
+
+	// --- The lines and the arms (T3.2; read by the raley recogniser) ---
+
+	/** Unit direction from the rider to the kite (world); zero when there is no kite. */
+	FVector LineDirWorld = FVector::ZeroVector;
+
+	/** The raley's arms are out: AKiteRiderPawn::HasRaleyArms (unhooked, both hands, arms out). */
+	bool bRaleyArms = false;
 
 	// --- Grabs and the one-footer (T2.1, T2.2): the pawn's FGrabState ---
 
@@ -239,6 +248,12 @@ public:
 	/** The rotation recogniser of the jump in progress (or of the last jump). */
 	const FRotationRecognizer& GetRotation() const { return Rotation; }
 
+	/** The raley recogniser of the jump in progress (or of the last jump). */
+	const FRaleyRecognizer& GetRaley() const { return Raley; }
+
+	/** The take-off move of a record's recognised fields: S-bend, then raley, then the first inversion, otherwise a pop. */
+	static ETrickMove TakeoffMoveOf(const FJumpRecord& Record);
+
 	/** Drops any open jump, forgets the board counters (the next step only reads them again) and restarts Index at 0. */
 	void Reset();
 
@@ -266,8 +281,13 @@ private:
 	float HighestZCm = 0.0f;
 	float HighestZTimeSeconds = 0.0f;
 
+	/** Copies the raley recogniser's result into a record, after its rotation and bar fields: the raley, the S-bend (its inversions dropped, its turn as body spin) and the take-off move. */
+	void ApplyRaley(FJumpRecord& Record) const;
+
 	/** The rider's rotation in this jump, and whether any attitude step was counted. */
 	FRotationRecognizer Rotation;
+	/** The raley and the S-bend in this jump (T3.2), stepped with the rotation. */
+	FRaleyRecognizer Raley;
 	bool bRotationStepped = false;
 	/** Board time of the last step seen while open (s), for the recogniser's step length. */
 	float LastStepTimeSeconds = 0.0f;

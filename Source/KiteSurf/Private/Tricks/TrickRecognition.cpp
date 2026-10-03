@@ -149,6 +149,9 @@ FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, c
 	Signature.SpinHalfTurns = FMath::Max(Record.SpinHalfTurns, 0);
 	Signature.SpinSense = Signature.SpinHalfTurns > 0 ? Record.SpinSense : ETrickSense::None;
 	Signature.LandingStance = Record.LandingStance;
+	// The raley and the S-bend (T3.2), as the raley recogniser found them.
+	Signature.bRaley = Record.bRaley;
+	Signature.bSBend = Record.bSBend;
 
 	// Grabs and the one-footer (T2.1, T2.2): a grab counts once it has been held long enough.
 	for (const FTrickGrab& Grab : Record.Grabs)

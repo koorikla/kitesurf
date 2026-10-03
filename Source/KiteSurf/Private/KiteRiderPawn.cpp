@@ -244,6 +244,11 @@ AKiteRiderPawn::AKiteRiderPawn()
 	UnhookedStopperSheet = 0.45f; // T3.1 PR 3: the lowest the plan allows, the most ballistic pop with the kite at 45 deg
 	LowParkElevationDeg = 45.0f;
 	UnhookedArmExtensionDefault = 0.7f;
+	// Freestyle hands (T3.2, T3.3).
+	RaleyArmExtension = 0.85f;
+	FlipArmExtension = 0.15f;
+	bTantrumBackHandOff = true;
+	RegrabBeforeContactSeconds = 0.4f;
 	bFlickAssist = true;
 	LeashLengthCm = 160.0f;
 
@@ -1156,6 +1161,8 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	// The flip's arms in and the tantrum's back hand (T3.3), which the bar reads.
+	StepFreestyleHands();
 	// The bar (T3.1): with the tension the kite has just made. Before the attitude, which pulls at
 	// the hands it puts the bar in, and the board, which grades a lost bar if it lands.
 	StepBar(StepSeconds);
@@ -1179,6 +1186,7 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		TrickTracker->SetGrabSource(&GrabState);
 		TrickTracker->SetBarSource(&Bar);
+		TrickTracker->SetRaleyArms(HasRaleyArms());
 		TrickTracker->StepTracker(StepSeconds);
 	}
 
@@ -1303,6 +1311,9 @@ void AKiteRiderPawn::ResetBar()
 	Bar = FBarState();
 	bHookPressPending = false;
 	bPassPressPending = false;
+	bFlipArmsIn = false;
+	bFlipArmsOverridden = false;
+	bTantrumHandOff = false;
 	if (BoardMovement)
 	{
 		BoardMovement->SetRiderBarInHands(true);
@@ -1319,6 +1330,84 @@ void AKiteRiderPawn::ResetBar()
 		ApplySheet(CurrentSheetInput);
 		RecentreMotionBar();
 		++HookRecentreCount;
+	}
+}
+
+bool AKiteRiderPawn::HasRaleyArms() const
+{
+	return !Bar.bHooked && Bar.Place == EBarPlace::Front && Bar.Hands == EBarHands::Both && GetArmExtension() >= RaleyArmExtension;
+}
+
+bool AKiteRiderPawn::IsFlipPreWind(bool* OutBack) const
+{
+	if (OutBack)
+	{
+		*OutBack = false;
+	}
+	if (PreWindAmount <= 0.0f || PreWindDirection.IsNearlyZero() || !RiderAttitude)
+	{
+		return false;
+	}
+	// The attitude's own stick mapping, so the flip sector is the one the take-off will use.
+	const RiderAxes::FRotationAxisChoice Choice = RiderAxes::ChooseAxisBody(PreWindDirection, 1.0f, RiderAttitude->DefaultRollAxisTiltDeg,
+		RiderAttitude->RollAxisTiltRangeDeg, RiderAttitude->FlipSectorDeg, RiderAttitude->SpinAxisTiltMaxDeg, RiderAttitude->FlipSectorHysteresisDeg, false);
+	if (Choice.Family != RiderAxes::ERotationFamily::Flip)
+	{
+		return false;
+	}
+	if (OutBack)
+	{
+		*OutBack = PreWindDirection.Y < 0.0f;
+	}
+	return true;
+}
+
+void AKiteRiderPawn::StepFreestyleHands()
+{
+	const bool bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+	const bool bTakeoff = bAirborne && !bFreestyleHandsWasAirborne;
+	bFreestyleHandsWasAirborne = bAirborne;
+	const bool bUnhookedWithBar = !Bar.bHooked && Bar.Place != EBarPlace::Lost;
+	bool bBackFlip = false;
+	const bool bFlip = IsFlipPreWind(&bBackFlip);
+
+	// The flip's arms in: wound up on the water with a flip pre-wind, kept to the touchdown. Moving the
+	// bar from where it was takes the arms back for the rest of the jump.
+	if (!bUnhookedWithBar || (!bAirborne && !(BoardMovement && BoardMovement->IsLoadHeld())))
+	{
+		bFlipArmsIn = false;
+		bFlipArmsOverridden = false;
+	}
+	else if (!bAirborne && bFlip && !bFlipArmsIn && !bFlipArmsOverridden)
+	{
+		bFlipArmsIn = true;
+		FlipArmsBarAtStart = CurrentSheetInput;
+	}
+	else if (!bAirborne && !bFlip && bFlipArmsIn)
+	{
+		// The stick left the flip sector during the wind-up.
+		bFlipArmsIn = false;
+	}
+	if (bFlipArmsIn && FMath::Abs(CurrentSheetInput - FlipArmsBarAtStart) > 0.05f)
+	{
+		bFlipArmsIn = false;
+		bFlipArmsOverridden = true;
+	}
+
+	// The tantrum: the back hand comes off as the rider leaves the water on a backflip pre-wind, and
+	// goes back on the bar when the touchdown is near.
+	if (!bAirborne || !bUnhookedWithBar)
+	{
+		bTantrumHandOff = false;
+	}
+	else if (bTakeoff && bTantrumBackHandOff && bFlip && bBackFlip)
+	{
+		bTantrumHandOff = true;
+	}
+	if (bTantrumHandOff && RiderAttitude && RiderAttitude->IsSimulating()
+		&& RiderAttitude->GetLastStepDebug().TimeToContactSeconds < RegrabBeforeContactSeconds)
+	{
+		bTantrumHandOff = false;
 	}
 }
 
@@ -1362,6 +1451,15 @@ void AKiteRiderPawn::StepBar(float StepSeconds)
 	In.bPassPressed = bPassPressPending;
 	bHookPressPending = false;
 	bPassPressPending = false;
+	// One hand off the bar in the air (T3.3): a grab button takes that hand off first (a one-hand
+	// grab, with the hand on its way back after the button is let go), and the tantrum's back hand.
+	// Hooked in, the bar machine keeps both hands on it.
+	if (bAirborne && !Bar.bHooked)
+	{
+		const bool bGrabHandOff = GrabState.IsHandOffBar();
+		In.bReleaseFront = bGrabFrontHeld || (bGrabHandOff && GrabState.GetHand() == ETrickHand::Front);
+		In.bReleaseBack = bGrabBackHeld || (bGrabHandOff && GrabState.GetHand() == ETrickHand::Back) || bTantrumHandOff;
+	}
 
 	const FBarEvents Events = BarStateMachine::Step(Bar, In, BarTunables, StepSeconds);
 
@@ -1376,7 +1474,7 @@ void AKiteRiderPawn::StepBar(float StepSeconds)
 		++HookRecentreCount;
 		PlayHaptic(0.3f, 0.06f, false);
 		UE_LOG(LogKiteSurf, Log, TEXT("Bar: %s (tension %.0f N, bar at %.2f, arms %.2f)"), Events.bUnhooked ? TEXT("unhooked") : TEXT("hooked in"),
-			In.TensionN, CurrentSheetInput, ArmExtension);
+			In.TensionN, CurrentSheetInput, GetArmExtension());
 	}
 	if (Events.bPassStarted)
 	{
@@ -1516,17 +1614,26 @@ void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
 	// Unhooked, the lines pull at the hands (docs/tricks/T3.md 1.1): where the bar is for its state,
 	// the arm extension and the line, in the body frame as it starts the step.
 	In.bUseLineAttach = !Bar.bHooked && Bar.Place != EBarPlace::Lost;
+	const FVector LineDirWorld = Kite ? (Kite->GetKiteWorldPosition() - Location).GetSafeNormal() : FVector::ZeroVector;
 	if (In.bUseLineAttach && Kite)
 	{
 		const FQuat Body = RiderAttitude->GetBodyQuat();
-		const FVector LineDirBody = Body.UnrotateVector((Kite->GetKiteWorldPosition() - Location).GetSafeNormal());
-		LineAttachBodyCm = LineAttach::AttachPointBody(Bar, LineDirBody, ArmExtension, GetBarNoseSideSign(), LineAttachTunables);
+		const FVector LineDirBody = Body.UnrotateVector(LineDirWorld);
+		LineAttachBodyCm = LineAttach::AttachPointBody(Bar, LineDirBody, GetArmExtension(), GetBarNoseSideSign(), LineAttachTunables);
 	}
 	else
 	{
 		LineAttachBodyCm = RiderAttitude->HookOffsetFromComCm;
 	}
 	In.LineAttachBodyCm = LineAttachBodyCm;
+	// Freestyle (T3.2, T3.3): hooked in a flip pre-wind is scaled down; unhooked with the arms out the
+	// line swings the body out (the raley) and the roll input turns it about the lines (the S-bend).
+	In.bHookedIn = Bar.bHooked;
+	In.bRaleyArms = HasRaleyArms();
+	In.LineDirWorld = LineDirWorld;
+	In.ArmsOut = (In.bUseLineAttach && Bar.Place == EBarPlace::Front)
+		? FMath::Clamp((GetArmExtension() - UnhookedArmExtensionDefault) / FMath::Max(1.0f - UnhookedArmExtensionDefault, 0.01f), 0.0f, 1.0f)
+		: 0.0f;
 
 	RiderAttitude->Step(StepSeconds, In);
 	BoardMovement->SetAirAttitude(RiderAttitude->GetBoardQuat(), RiderAttitude->IsSimulating(), RiderAttitude->GetBodyQuat(), RiderAttitude->GetAngularVelocity());
@@ -2171,7 +2278,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 			const FVector Com = RiderPose.Pelvis + Torso.RotateVector(FVector(0.0f, 0.0f, 10.0f));
 			LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - Com).GetSafeNormal() : Torso.GetAxisX();
 			const float Nose = GetBarNoseSideSign();
-			const FVector Attach = LineAttach::AttachPointBody(Bar, Torso.UnrotateVector(LineDir), ArmExtension, Nose, LineAttachTunables);
+			const FVector Attach = LineAttach::AttachPointBody(Bar, Torso.UnrotateVector(LineDir), GetArmExtension(), Nose, LineAttachTunables);
 			switch (Bar.Place)
 			{
 			case EBarPlace::Lost:
@@ -2230,6 +2337,11 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 			for (int32 Side = 0; Side < 2; ++Side)
 			{
 				FRiderHandInput& Hand = RigInput.Hands[Side];
+				if (bGrabDrawn && Side == GrabRigSide)
+				{
+					// A one-hand grab (T3.3): the hand is on its way to the board or on it, set above and below.
+					continue;
+				}
 				if (!bHandOnBar[Side])
 				{
 					Hand.Target = ERiderHandTarget::Free;

@@ -58,6 +58,9 @@ public:
 	/** The rider's bar (AKiteRiderPawn's FBarState, T3.1): hooked or not, the handle passes and the wrap. Null for none (every jump hooked). */
 	void SetBarSource(const FBarState* InBar) { BarSource = InBar; }
 
+	/** The raley's arms are out this step (AKiteRiderPawn::HasRaleyArms, T3.2): the S-bend counts the turn about the lines only then. */
+	void SetRaleyArms(bool bOut) { bRaleyArms = bOut; }
+
 	/** One fixed step, after the kite's and the board's: reads them and steps the jump session. */
 	void StepTracker(float StepSeconds);
 
@@ -108,6 +111,7 @@ private:
 
 	/** Owned by the pawn, which outlives this component. */
 	const FBarState* BarSource = nullptr;
+	bool bRaleyArms = false;
 
 	FJumpSession Session;
 	FJumpRecord LiveJump;

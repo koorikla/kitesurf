@@ -3,21 +3,6 @@
 #include "CoreMinimal.h"
 #include "Tricks/TrickSignature.h"
 
-/** The take-off move a freestyle name is keyed on, derived from a signature. */
-enum class ETrickMove : uint8
-{
-	/** No inversion, raley or S-bend. */
-	Pop,
-	BackRoll,
-	/** From a toeside take-off this is the crow mobe and dum dum move. */
-	FrontRoll,
-	FrontFlip,
-	/** Unhooked, the tantrum. */
-	BackFlip,
-	Raley,
-	SBend
-};
-
 /**
  * Names a jump from its signature (docs/tricks.md 3.3 and 6.6). Pure functions, sentence case:
  * only the first letter of a name is a capital, except names that are written otherwise (KGB, 313).

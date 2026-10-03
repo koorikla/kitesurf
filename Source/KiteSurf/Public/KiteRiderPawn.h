@@ -284,7 +284,23 @@ public:
 	 * kite's own sheet stays at UnhookedStopperSheet. Hooked it follows the bar too, unused.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Rider|Bar")
-	float GetArmExtension() const { return ArmExtension; }
+	float GetArmExtension() const { return bFlipArmsIn ? FlipArmExtension : ArmExtension; }
+
+	/** The arm extension the bar's position gives (ArmExtensionForBar), before the flip's arms in (T3.3). */
+	float GetBarArmExtension() const { return ArmExtension; }
+
+	/** Unhooked, a flip pre-wind has pulled the arms in to FlipArmExtension for this jump (T3.3), and the player has not moved the bar since. */
+	bool AreFlipArmsIn() const { return bFlipArmsIn; }
+
+	/**
+	 * The raley's arms (T3.2): unhooked, both hands on the bar in front, and the arms out at
+	 * RaleyArmExtension or more. The rider attitude then lets the line swing the body out and turns
+	 * the roll input about the lines (the S-bend; FAttitudeInputs::bRaleyArms).
+	 */
+	bool HasRaleyArms() const;
+
+	/** The tantrum's back hand is off the bar (T3.3): from a backflip pre-wind's take-off until RegrabBeforeContactSeconds before contact. */
+	bool IsTantrumHandOff() const { return bTantrumHandOff; }
 
 	/**
 	 * The arm extension a bar position gives unhooked: the bar's middle (Neutral) is DefaultExtension,
@@ -323,6 +339,30 @@ public:
 	/** Unhooked, the arm extension with the bar in the middle (BarNeutralSheet). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float UnhookedArmExtensionDefault;
+
+	/**
+	 * Unhooked, arms out at least this far (GetArmExtension) is the raley's extension (T3.2): the bar
+	 * pushed out past the middle's UnhookedArmExtensionDefault. Below it a roll pre-wind is the roll it
+	 * is hooked in (the KGB's back roll). Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RaleyArmExtension;
+
+	/**
+	 * Unhooked, a flip pre-wind (stick Y) pulls the bar in to this arm extension for the jump, a short
+	 * lever so the line does not fight the flip (T3.3; docs/tricks/T3.md 1.2), unless the player moves
+	 * the bar. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FlipArmExtension;
+
+	/** The tantrum (T3.3): unhooked, a backflip pre-wind takes the back hand off the bar at take-off. On by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
+	bool bTantrumBackHandOff;
+
+	/** The tantrum's back hand is back on the bar when the time to contact is under this (s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0"))
+	float RegrabBeforeContactSeconds;
 
 	/** The flick assist: a pass started in the air dips the kite for slack (UKiteComponent::RequestFlick). On by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
@@ -1087,6 +1127,16 @@ private:
 	/** Back to hooked in with the bar in both hands: the kite off its leash and low park, the bar's sheet back on the kite. */
 	void ResetBar();
 
+	/**
+	 * T3.3, before the bar: the flip's arms in (a flip pre-wind while unhooked, kept to the touchdown
+	 * unless the bar moves) and the tantrum's back hand (off at a backflip take-off, back on before
+	 * contact).
+	 */
+	void StepFreestyleHands();
+
+	/** The pre-wind wound up is a flip (stick Y in the attitude's flip sector); OutBack is set for a backflip. */
+	bool IsFlipPreWind(bool* OutBack = nullptr) const;
+
 	/** The body frame the bar and the line attach use: the attitude's body (slaved on the water). */
 	FQuat GetBarBodyQuat() const;
 
@@ -1097,6 +1147,13 @@ private:
 	bool bHookPressPending = false;
 	bool bPassPressPending = false;
 	float ArmExtension = 0.7f;
+	/** T3.3: the flip's arms in, and the bar position when they went in (moving the bar from there ends it). */
+	bool bFlipArmsIn = false;
+	bool bFlipArmsOverridden = false;
+	float FlipArmsBarAtStart = 0.5f;
+	/** T3.3: the tantrum's back hand is off the bar; the board's air state on the last StepFreestyleHands. */
+	bool bTantrumHandOff = false;
+	bool bFreestyleHandsWasAirborne = false;
 	FVector LineAttachBodyCm = FVector::ZeroVector;
 	FVector DrawnBarCentre = FVector::ZeroVector;
 	int32 SeenBarResetCount = 0;

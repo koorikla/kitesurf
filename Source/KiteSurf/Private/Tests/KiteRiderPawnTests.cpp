@@ -625,13 +625,13 @@ bool FKiteSurfMotionBarOnThePawn::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("Left side well down is full left"), Pawn->GetCurrentSteerInput(), -1.0f, 0.05f);
 	TestNearlyEqual(TEXT("Tipped well away the bar is right out"), Pawn->GetCurrentSheetInput(), 0.0f, 0.02f);
 
-	// The stick's and keys' sheet input is ignored while the motion bar has the bar.
+	// The stick's and keys' sheet input adjusts the bar even while the motion bar has it.
 	Controller->Hold(8.0f, 30.0f);
 	Tick(240);
 	const float SheetHeld = Pawn->GetCurrentSheetInput();
 	Pawn->SetSheetRateInput(1.0f);
 	Tick(30);
-	TestNearlyEqual(TEXT("Sheet input from the stick or keys does not move the bar"), Pawn->GetCurrentSheetInput(), SheetHeld, 0.01f);
+	TestTrue(TEXT("Sheet input from the stick or keys moves the bar"), Pawn->GetCurrentSheetInput() > SheetHeld + 0.1f);
 	Pawn->SetSheetRateInput(0.0f);
 
 	// Re-centring takes the current hold as level.

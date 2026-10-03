@@ -89,12 +89,42 @@ void AKiteSurfGameMode::InitializeRide(AKiteRiderPawn* RiderPawn, float InitialS
 	}
 }
 
+float AKiteSurfGameMode::GetPlayerStartSheet(const AKiteRiderPawn* RiderPawn, bool bBarReturnsToMiddle)
+{
+	if (bBarReturnsToMiddle && RiderPawn)
+	{
+		return FMath::Clamp(RiderPawn->BarNeutralSheet, 0.0f, 1.0f);
+	}
+	return StartSheet;
+}
+
+void AKiteSurfGameMode::InitializePlayerRide(AKiteRiderPawn* RiderPawn, float InitialSpeedCmPerSec, float TackSide)
+{
+	if (!RiderPawn)
+	{
+		return;
+	}
+	InitializeRide(RiderPawn, InitialSpeedCmPerSec, TackSide);
+
+	bool bBarReturnsToMiddle = RiderPawn->GetBarReturnsToMiddle();
+	if (const UWorld* World = RiderPawn->GetWorld())
+	{
+		if (const UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			bBarReturnsToMiddle = GI->bBarReturnsToMiddle;
+		}
+	}
+	// Held there as a scripted position: the player's spring takes the bar from the first touch of
+	// the sheet input, and with the bar already at the middle that touch does not move it.
+	RiderPawn->SheetKite(GetPlayerStartSheet(RiderPawn, bBarReturnsToMiddle));
+}
+
 void AKiteSurfGameMode::RestartPlayer(AController* NewPlayer)
 {
 	Super::RestartPlayer(NewPlayer);
 	if (NewPlayer)
 	{
-		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
+		InitializePlayerRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }
 
@@ -103,7 +133,7 @@ void AKiteSurfGameMode::RestartPlayerAtPlayerStart(AController* NewPlayer, AActo
 	Super::RestartPlayerAtPlayerStart(NewPlayer, StartSpot);
 	if (NewPlayer)
 	{
-		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
+		InitializePlayerRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }
 
@@ -112,7 +142,7 @@ void AKiteSurfGameMode::RestartPlayerAtTransform(AController* NewPlayer, const F
 	Super::RestartPlayerAtTransform(NewPlayer, SpawnTransform);
 	if (NewPlayer)
 	{
-		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
+		InitializePlayerRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
 	}
 }
 

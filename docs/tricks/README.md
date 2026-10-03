@@ -39,7 +39,7 @@ These reconcile the four plans.
    rider attitude is stepped before `StepBoard` (T1 section 2.10).
 6. **Landing g.** `LandingAbsorbDistanceCm` (30) and `ComputeLandingG` keep the names from physics
    phase 2 item 4. T1.5's evaluator owns the grade. Phase 2 only supplies the inputs.
-   Since the grade-from-verdict PR the evaluator's verdict is also the only source of a jump's grade:
+   Since #90 the evaluator's verdict is also the only source of a jump's grade:
    the tracker feeds the board's `GetLastLandingVerdict()` grade to the recorder, which sets
    `FJumpRecord::Grade` from it (`TrickScoring::GradeFromVerdict`; a crashed jump stays Crash), so
    the score's execution and the trick card follow the verdict, and the card shows the verdict's

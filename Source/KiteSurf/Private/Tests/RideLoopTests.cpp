@@ -838,8 +838,9 @@ bool FKiteSurfRideCarveIsSymmetric::RunTest(const FString& Parameters)
 }
 
 // The carve's lean is part of the force balance (docs/physics/plan-2.md item 3c): carving, the rider
-// leans into the turn by CarveHeelDeg at full input, the water's normal force on the board tilts into
-// the turn, and the velocity comes round with the heading. A full carve towards the kite for 1.5 s from
+// leans into the turn, the water's normal force on the board tilts into the turn, and the velocity
+// comes round with the heading. Since plan-3 item 3 the lean is the one the turn needs, tan = v w / g,
+// up to CarveHeelDeg (until then CarveHeelDeg times the input at any speed). A full carve towards the kite for 1.5 s from
 // the 15 kn ride (about 14 kn after 3 s) turns the course by at least 50 deg, within a few degrees of
 // the heading. With the lean out of the balance (CarveHeelDeg 0, the model before item 3c) the board
 // skids: the heading turns, the course lags far behind it.
@@ -851,7 +852,9 @@ bool FKiteSurfRideCarveIsSymmetric::RunTest(const FString& Parameters)
 // (45 deg, 19%) got under 20%, by turning the velocity past the heading. Since item 3b the hull also
 // pays the pressure drag of the trim for the weight it carries, larger on the 39 deg heel of the
 // carve and as the board slows towards the planing hump, where the trim rises: 27% (13.0 to 9.5 kn).
-// The bound is 30%.
+// With the lean the turn needs (plan-3 item 3), 35 deg at the start and less as the board slows, the
+// course comes round 79 deg with the heading at 80 and the board loses 28% (13.0 to 9.3 kn), ending on
+// a 31 deg heel. The bound is 30%.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsCarveFollowsTheHeading, "KiteSurf.Physics.CarveFollowsTheHeading", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsCarveFollowsTheHeading::RunTest(const FString& Parameters)
@@ -1222,8 +1225,10 @@ bool FKiteSurfRideFloatsUntilPlaning::RunTest(const FString& Parameters)
 // A floating rider is slow through the water (docs/physics/plan-2.md item 3d): a body sitting in the
 // water and a sunk board drag in every direction, 0.5 rho_w FloatingDragAreaM2 v^2 at full depth. Under
 // a kite parked at 12 with the bar out in 15 kn they drift at under 1 kn; without that drag (the model
-// since plan-2 item 3 took the board's base grip away) they drift at over 2 kn. The kite can still pull
-// them out: in 20 kn with the bar in and the kite at the window edge the rider is planing within 20 s.
+// since plan-2 item 3 took the board's base grip away) they drift more than twice as fast: 1.95 kn since
+// plan-3 item 1, where the kite's pull lifts them part way onto the board and its edge holds a little
+// (2.2 kn before). The kite can still pull them out: in 20 kn with the bar in and the kite at the window
+// edge the rider is planing within 20 s.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater, "KiteSurf.Physics.FloatingRiderIsSlowThroughTheWater", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater::RunTest(const FString& Parameters)
@@ -1286,8 +1291,267 @@ bool FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater::RunTest(const FString& 
 	TestTrue(TEXT("Rides created"), WithDrag.bValid && WithoutDrag.bValid && StrongDrift.bValid);
 	TestTrue(TEXT("The rider is floating"), WithDrag.bFloating);
 	TestTrue(FString::Printf(TEXT("Under a kite parked at 12 in 15 kn the floating rider drifts at under 1 kn (%.2f kn, fastest %.2f)"), WithDrag.Knots, WithDrag.FastestKnots), WithDrag.FastestKnots < 1.0f);
-	TestTrue(FString::Printf(TEXT("Without the floating drag they drift at over 2 kn (%.2f kn)"), WithoutDrag.Knots), WithoutDrag.Knots > 2.0f);
+	TestTrue(FString::Printf(TEXT("Without the floating drag they drift more than twice as fast (%.2f kn against %.2f)"), WithoutDrag.Knots, WithDrag.Knots), WithoutDrag.Knots > 2.0f * WithDrag.Knots);
 	TestTrue(FString::Printf(TEXT("In 20 kn with the bar in the kite pulls the floating rider onto the plane within 20 s (%.1f s)"), PlaningAfterSeconds), PlaningAfterSeconds > 0.0f);
+	return true;
+}
+
+// A crash does not save up the kite's pull (docs/physics/plan-3.md item 1). Through a crash the board's
+// scripted stop moves the rider, and until plan-3 the lines' pull in that time was never spent: 1.5 s of
+// a powered kite came out in the first step after the reset as one impulse. With the bar in and the kite
+// deep in the window in 25 kn that was 34 m/s in one step: the rider was thrown 30 m up and 80 m away. Now
+// the reset puts them back on the board at its 8 kn and they ride on from there.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsCrashedRiderIsNotFlung, "KiteSurf.Physics.CrashedRiderIsNotFlung", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsCrashedRiderIsNotFlung::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 25.0f;
+	const float ResetKnots = 8.0f;                  // UBoardMovementComponent's crash recovery puts the rider back at this
+	const float MaxHeightAboveWaterCm = 50.0f;
+	const float ResetSpeedToleranceMS = 1.0f;
+	FRideFixture Ride(WindKnots);
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(WindKnots));
+	Ride.Simulate(6.0f);
+
+	// The bar in and the kite deep in the window as the rider goes down.
+	Ride.Pawn->SheetKite(1.0f);
+	Ride.Kite->SetWindowPosition(30.0f, 40.0f);
+	Ride.Simulate(0.2f);
+	Ride.Board->TriggerCrash(1.0f);
+	const int32 ResetsBefore = Ride.Board->GetResetCount();
+
+	float PeakTensionN = 0.0f;
+	float HighestCm = -BIG_NUMBER;
+	bool bAirborne = false;
+	float SpeedAfterResetMS = -1.0f;
+	float FastestAfterResetMS = 0.0f;
+	float SecondsAfterReset = -1.0f;
+	for (int32 Frame = 0, Frames = FMath::RoundToInt(3.0f / RideDeltaTime); Frame < Frames; ++Frame)
+	{
+		Ride.Simulate(RideDeltaTime);
+		PeakTensionN = FMath::Max(PeakTensionN, Ride.Kite->GetLineTensionN());
+		HighestCm = FMath::Max(HighestCm, static_cast<float>(Ride.Pawn->GetActorLocation().Z - Ride.Board->GetWaterSurfaceHeightCm()));
+		bAirborne |= Ride.Board->GetBoardState() == EBoardState::Airborne;
+		if (SecondsAfterReset < 0.0f && Ride.Board->GetResetCount() > ResetsBefore)
+		{
+			SecondsAfterReset = 0.0f;
+			SpeedAfterResetMS = KiteUnits::CmToM(Ride.Board->Velocity.Size());
+		}
+		else if (SecondsAfterReset >= 0.0f)
+		{
+			SecondsAfterReset += RideDeltaTime;
+			if (SecondsAfterReset <= 1.0f)
+			{
+				FastestAfterResetMS = FMath::Max(FastestAfterResetMS, static_cast<float>(KiteUnits::CmToM(Ride.Board->Velocity.Size())));
+			}
+		}
+	}
+	const float ResetSpeedMS = KiteUnits::CmToM(KiteUnits::KnotsToCmS(ResetKnots));
+	UE_LOG(LogKiteSurf, Log, TEXT("CrashedRiderIsNotFlung: crashed in %.0f kn with the kite pulling up to %.0f N; reset %d, at %.2f m/s in the frame after it (the reset's %.2f), fastest %.2f m/s in the second after; highest %.0f cm above the water, airborne %d"),
+		WindKnots, PeakTensionN, SecondsAfterReset >= 0.0f, SpeedAfterResetMS, ResetSpeedMS, FastestAfterResetMS, HighestCm, bAirborne);
+
+	TestTrue(FString::Printf(TEXT("The kite pulled hard through the crash (%.0f N)"), PeakTensionN), PeakTensionN > 1500.0f);
+	TestTrue(TEXT("The crash ended in a reset"), SecondsAfterReset >= 0.0f);
+	TestTrue(FString::Printf(TEXT("Straight after the reset the rider moves at the reset's speed (%.2f m/s against %.2f)"), SpeedAfterResetMS, ResetSpeedMS), FMath::Abs(SpeedAfterResetMS - ResetSpeedMS) < ResetSpeedToleranceMS);
+	TestTrue(FString::Printf(TEXT("and gathers speed on the board, not in one step (fastest %.2f m/s in the first second)"), FastestAfterResetMS), FastestAfterResetMS < 2.0f * ResetSpeedMS);
+	TestFalse(TEXT("The rider is never thrown into the air"), bAirborne);
+	TestTrue(FString::Printf(TEXT("and stays on the water (at most %.0f cm above it)"), HighestCm), HighestCm < MaxHeightAboveWaterCm);
+	return true;
+}
+
+namespace
+{
+	/** Rides on the recommended kite for the wind, then stops under it parked at 12 with the bar out until the rider is floating. */
+	void FloatUnderTheZenith(FRideFixture& Ride, float WindKnots)
+	{
+		Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(WindKnots));
+		Ride.Simulate(2.0f);
+		Ride.Pawn->SheetKite(0.0f);
+		Ride.Kite->SetWindowPosition(0.0f, 10.0f);
+		Ride.Simulate(12.0f);
+	}
+
+	/** How a floating rider moved while the kite did something to them. */
+	struct FDragged
+	{
+		float FastestMS = 0.0f;            // over the water
+		float FastestSunkMS = 0.0f;        // while more than half sunk: through the water
+		float MovedM = 0.0f;
+		float BiggestFrameChangeMS = 0.0f;
+		float PeakTensionN = 0.0f;
+		bool bAirborne = false;
+		bool bStartedFloating = false;
+		bool bPlaned = false;
+	};
+
+	FDragged MeasureDragged(FRideFixture& Ride, float Seconds)
+	{
+		FDragged Dragged;
+		Dragged.bStartedFloating = Ride.Board->IsFloating();
+		const FVector Start = Ride.Pawn->GetActorLocation();
+		FVector LastVelocity = Ride.Board->Velocity;
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(Seconds / RideDeltaTime); Frame < Frames; ++Frame)
+		{
+			Ride.Simulate(RideDeltaTime);
+			const FVector Velocity = Ride.Board->Velocity;
+			const float SpeedMS = KiteUnits::CmToM(Velocity.Size2D());
+			Dragged.FastestMS = FMath::Max(Dragged.FastestMS, SpeedMS);
+			if (Ride.Board->IsFloating())
+			{
+				Dragged.FastestSunkMS = FMath::Max(Dragged.FastestSunkMS, SpeedMS);
+			}
+			Dragged.BiggestFrameChangeMS = FMath::Max(Dragged.BiggestFrameChangeMS, static_cast<float>(KiteUnits::CmToM((Velocity - LastVelocity).Size())));
+			LastVelocity = Velocity;
+			Dragged.PeakTensionN = FMath::Max(Dragged.PeakTensionN, Ride.Kite->GetLineTensionN());
+			Dragged.bAirborne |= Ride.Board->GetBoardState() == EBoardState::Airborne;
+			Dragged.bPlaned |= Ride.Board->IsPlaning();
+		}
+		Dragged.MovedM = KiteUnits::CmToM(FVector::Dist2D(Ride.Pawn->GetActorLocation(), Start));
+		return Dragged;
+	}
+}
+
+// A floating rider is not flung by their kite (docs/physics/plan-3.md item 1). A body in the water keeps
+// the water's drag at any speed (until plan-3 it faded out by 2 m/s) and loses it only as it rises, so a
+// sunk rider pulled through the water has a speed limit, sqrt(T / (0.5 rho_w A)): about 3 m/s for the
+// 1.6 kN of a kite looped through the power zone in 25 kn.
+//
+// The plan's target, from a float with the bar let go and the kite looped through the power zone in 25 kn
+// for 5 s: never faster than 4 m/s through the water, and under 15 m (0.9 m/s through it while sunk and
+// 10.6 m; in 20 kn 2.5 m/s and 8.1 m). The loop's pull, up to 1.8 kN, lifts the rider onto the board.
+// Until plan-3 item 3 the board then took whichever end was nearer to the pull, often the tail, and the
+// rider was pulled along at a walk, never faster than 3.7 m/s over the water. With the harness the
+// lifted rider's board turns nose first to the pull (an end pointed straight away from the kite is
+// further round than the body twists), so at the end of the 25 kn loop the pull starts them riding:
+// planing for the last second at up to 4.2 m/s over the water. That is a slow water start, not a drag,
+// so the bound on the speed is the plan's, through the water (in every case), and with the bar let go
+// the loop gets the rider going slower than with it in.
+// With the bar in the same loop is a downloop water start: its pull lifts the rider onto the board within a
+// second (FloatRiseTensionN) and they ride away downwind, planing (7.6 m/s and 22 m in 25 kn), so it is
+// measured as a ride, not against the 15 m: they come through the water slowly while sunk, never leave
+// it, and gather speed on the board rather than in a jerk. Before plan-3 the same loops went through the
+// water at up to 3.9 m/s while sunk, the drag fading out by 2 m/s.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsFloatingRiderIsNotFlung, "KiteSurf.Physics.FloatingRiderIsNotFlung", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsFloatingRiderIsNotFlung::RunTest(const FString& Parameters)
+{
+	const float WindowSeconds = 5.0f;
+	const float MaxDraggedDistanceM = 15.0f;
+	const float MaxThroughTheWaterMS = 4.0f;       // plan-3 item 1, in 25 kn with the bar let go; here in every case
+	const float MaxFrameChangeMS = 0.5f;           // a pull, not a jerk: 30 m/s^2 for a frame
+	for (const float WindKnots : { 20.0f, 25.0f })
+	{
+		float BarOutFastestMS = 0.0f;
+		for (const float Sheet : { 0.0f, 1.0f })
+		{
+			FRideFixture Ride(WindKnots);
+			if (!Ride.IsValid())
+			{
+				return false;
+			}
+			FloatUnderTheZenith(Ride, WindKnots);
+			Ride.Pawn->SheetKite(Sheet);
+			Ride.Kite->SetLoopHeld(true);
+			Ride.Pawn->SteerKite(1.0f);
+			const FDragged Dragged = MeasureDragged(Ride, WindowSeconds);
+			const FString What = FString::Printf(TEXT("%.0f kn, bar %s, the kite looped through the power zone from 12 for %.0f s (up to %.0f N)"), WindKnots, Sheet > 0.5f ? TEXT("in") : TEXT("out"), WindowSeconds, Dragged.PeakTensionN);
+			UE_LOG(LogKiteSurf, Log, TEXT("FloatingRiderIsNotFlung: %s: fastest %.2f m/s over the water, %.2f m/s through it while sunk; moved %.1f m; biggest change in a frame %.2f m/s; planed %d, airborne %d"),
+				*What, Dragged.FastestMS, Dragged.FastestSunkMS, Dragged.MovedM, Dragged.BiggestFrameChangeMS, Dragged.bPlaned, Dragged.bAirborne);
+
+			TestTrue(What + TEXT(": the rider started out floating"), Dragged.bStartedFloating);
+			TestFalse(What + TEXT(": the rider never leaves the water"), Dragged.bAirborne);
+			TestTrue(FString::Printf(TEXT("%s: they are pulled, not jerked (at most %.2f m/s in a frame)"), *What, Dragged.BiggestFrameChangeMS), Dragged.BiggestFrameChangeMS < MaxFrameChangeMS);
+			TestTrue(FString::Printf(TEXT("%s: through the water while sunk at most %.1f m/s (%.2f)"), *What, MaxThroughTheWaterMS, Dragged.FastestSunkMS), Dragged.FastestSunkMS < MaxThroughTheWaterMS);
+			if (Sheet < 0.5f)
+			{
+				BarOutFastestMS = Dragged.FastestMS;
+				TestTrue(FString::Printf(TEXT("%s: and under %.0f m (%.1f m)"), *What, MaxDraggedDistanceM, Dragged.MovedM), Dragged.MovedM < MaxDraggedDistanceM);
+			}
+			else
+			{
+				TestTrue(FString::Printf(TEXT("%s: with the bar in the loop pulls the rider up onto the board and away"), *What), Dragged.bPlaned);
+				TestTrue(FString::Printf(TEXT("%.0f kn: with the bar let go the loop gets the rider going slower than with it in (%.2f m/s against %.2f)"), WindKnots, BarOutFastestMS, Dragged.FastestMS),
+					BarOutFastestMS < Dragged.FastestMS);
+			}
+		}
+	}
+	return true;
+}
+
+// A water start is the kite lifting the rider onto the board, then the board planing (docs/physics/
+// plan-3.md item 1). Floating under the kite at 12 in 20 kn with the bar out, the rider pulls the bar in
+// and dives the kite to the side: its pull lifts them out of the water before they are moving (the float
+// depth falls with the tension through FloatRiseTensionN), and the board then gets up to planing speed.
+// Out of the water 0.15 s after the bar comes in, at 0.7 m/s under 550 N, and planing after 3.2 s (2.8 s
+// until plan-3 item 3: the harness now turns the lifted rider's board nose first to the pull, where it
+// used to take whichever end was nearer).
+// Without the lift (FloatRiseTensionN 0) the depth follows the speed alone and the sunk body keeps its
+// drag at any speed: the kite drags the rider at the drag's limit, about 1.75 m/s for 550 N, just short of
+// the 1.8 m/s the speed lifts them from, and only the dive's stronger moments get them up (after 4.6 s,
+// planing after 7.5 s). Until plan-3 the deadlock was got round by fading the drag out by 2 m/s, so a
+// dragged rider had nothing holding them back.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsWaterStartIsTheKiteLiftingTheRider, "KiteSurf.Physics.WaterStartIsTheKiteLiftingTheRider", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsWaterStartIsTheKiteLiftingTheRider::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 20.0f;
+	const float PlanesWithinSeconds = 10.0f;     // plan-3 item 1
+	const float DiveToClockDeg = 50.0f;
+	struct FStart { float UpAtSeconds = -1.0f; float SpeedWhenUpMS = 0.0f; float TensionWhenUpN = 0.0f; float PlaningAtSeconds = -1.0f; bool bStartedFloating = false; bool bValid = false; };
+	auto WaterStart = [&](float RiseTensionN) -> FStart
+	{
+		FStart Start;
+		FRideFixture Ride(WindKnots);
+		if (!Ride.IsValid())
+		{
+			return Start;
+		}
+		Ride.Board->FloatRiseTensionN = RiseTensionN;
+		FloatUnderTheZenith(Ride, WindKnots);
+		Start.bStartedFloating = Ride.Board->IsFloating();
+		Start.bValid = true;
+		// The bar in and the kite dived to the side, then held there.
+		Ride.Pawn->SheetKite(1.0f);
+		Ride.Pawn->SteerKite(1.0f);
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(20.0f / RideDeltaTime); Frame < Frames && Start.PlaningAtSeconds < 0.0f; ++Frame)
+		{
+			Ride.Simulate(RideDeltaTime);
+			const float Seconds = (Frame + 1) * RideDeltaTime;
+			if (Ride.Kite->GetClockDeg() > DiveToClockDeg)
+			{
+				Ride.Pawn->SteerKite(0.0f);
+			}
+			if (Start.UpAtSeconds < 0.0f && !Ride.Board->IsFloating())
+			{
+				Start.UpAtSeconds = Seconds;
+				Start.SpeedWhenUpMS = KiteUnits::CmToM(Ride.Board->Velocity.Size2D());
+				Start.TensionWhenUpN = Ride.Kite->GetLineTensionN();
+			}
+			if (Ride.Board->IsPlaning() && !Ride.Board->IsFloating())
+			{
+				Start.PlaningAtSeconds = Seconds;
+			}
+		}
+		return Start;
+	};
+
+	const float DefaultRiseN = GetDefault<UBoardMovementComponent>()->FloatRiseTensionN;
+	const FStart Lifted = WaterStart(DefaultRiseN);
+	const FStart SpeedOnly = WaterStart(0.0f);
+	const float RisesFromSpeedMS = KiteUnits::CmToM(GetDefault<UBoardMovementComponent>()->PlaningThresholdCmS * GetDefault<UBoardMovementComponent>()->FloatUntilSpeedFraction);
+	UE_LOG(LogKiteSurf, Log, TEXT("WaterStartIsTheKiteLiftingTheRider: %.0f kn, bar in, the kite dived: out of the water after %.2f s at %.2f m/s under %.0f N (the speed alone lifts from %.2f m/s), planing after %.2f s; without the lift (FloatRiseTensionN 0) up after %.2f s, planing after %.2f s"),
+		WindKnots, Lifted.UpAtSeconds, Lifted.SpeedWhenUpMS, Lifted.TensionWhenUpN, RisesFromSpeedMS, Lifted.PlaningAtSeconds, SpeedOnly.UpAtSeconds, SpeedOnly.PlaningAtSeconds);
+
+	TestTrue(TEXT("Rides created, the rider floating at the start"), Lifted.bValid && SpeedOnly.bValid && Lifted.bStartedFloating && SpeedOnly.bStartedFloating);
+	TestTrue(FString::Printf(TEXT("The kite lifts the rider out of the water (%.2f s)"), Lifted.UpAtSeconds), Lifted.UpAtSeconds > 0.0f);
+	TestTrue(FString::Printf(TEXT("before they are moving fast enough for the board to carry them (%.2f m/s, the speed alone lifts from %.2f)"), Lifted.SpeedWhenUpMS, RisesFromSpeedMS), Lifted.SpeedWhenUpMS < RisesFromSpeedMS);
+	TestTrue(FString::Printf(TEXT("and then the board planes, within %.0f s (%.2f s)"), PlanesWithinSeconds, Lifted.PlaningAtSeconds), Lifted.PlaningAtSeconds > 0.0f && Lifted.PlaningAtSeconds <= PlanesWithinSeconds);
+	TestTrue(FString::Printf(TEXT("Without the lift the sunk rider's drag holds them in the water at least twice as long (planing after %.2f s, -1 for not in 20 s)"), SpeedOnly.PlaningAtSeconds), SpeedOnly.PlaningAtSeconds < 0.0f || SpeedOnly.PlaningAtSeconds > 2.0f * FMath::Max(Lifted.PlaningAtSeconds, 0.0f));
 	return true;
 }
 
@@ -2160,7 +2424,10 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("so it is on the surface at a speed the 138 is still coming up at"), Board->GetFloatDepthForSpeed(0.9f * ReferencePlaning), 0.0f, 0.01f);
 	TestTrue(TEXT("and has more rail to grip with but turns slower"), Board->RailAreaM2 > ReferenceRail && Board->CarveTurnRate < ReferenceTurn);
 
-	// Light wind, starting slow: the big board gets up and planes where the small one stays sunk.
+	// Light wind, starting slow: the big board gets up and planes where the small one stays off the plane.
+	// Since plan-3 item 1 the kite's pull lifts the rider onto the board before it is moving
+	// (FloatRiseTensionN), so on the small board they stand on it pushing water (12 cm deep at 7.2 kn)
+	// where before they sat sunk in it (42 cm at 6.8 kn).
 	float SpeedKn[2] = { 0.0f, 0.0f };
 	float DepthCm[2] = { 0.0f, 0.0f };
 	bool bPlaning[2] = { false, false };
@@ -2179,7 +2446,7 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: 30 s after a slow start in 12 kn the small board does %.1f kn (planing %d, %.0f cm deep) and the big board %.1f kn (planing %d, %.0f cm deep)"),
 		SpeedKn[0], bPlaning[0], DepthCm[0], SpeedKn[1], bPlaning[1], DepthCm[1]);
 	TestTrue(FString::Printf(TEXT("In 12 kn the big board gets up and planes (%.1f kn)"), SpeedKn[1]), bPlaning[1] && DepthCm[1] < 5.0f);
-	TestTrue(FString::Printf(TEXT("while the small board stays sunk and slow (%.1f kn, %.0f cm deep)"), SpeedKn[0], DepthCm[0]), !bPlaning[0] && DepthCm[0] > 20.0f && SpeedKn[0] < SpeedKn[1]);
+	TestTrue(FString::Printf(TEXT("while the small board stays off the plane and slow (%.1f kn, %.0f cm deep)"), SpeedKn[0], DepthCm[0]), !bPlaning[0] && SpeedKn[0] < SpeedKn[1]);
 	return true;
 }
 

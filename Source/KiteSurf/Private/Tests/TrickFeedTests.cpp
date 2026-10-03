@@ -122,7 +122,7 @@ namespace TrickFeedTestsLocal
 	};
 
 	/** RideLoopTests' TimedReleaseSeconds: the release of the jump button after the send reaches the kite (s). */
-	constexpr float TimedReleaseSeconds = 0.66f;
+	constexpr float FeedTimedReleaseSeconds = 0.66f;
 
 	/** One loop flown with the bar held over and the loop forced through, until the kite has a new completed record. */
 	struct FFlownLoop
@@ -309,7 +309,7 @@ bool FKiteSurfTrickJumpRecordMatchesTrajectory::RunTest(const FString& Parameter
 			Ride.Pawn->SetLoadHeld(false);
 			Ride.Pawn->SheetKite(1.0f);
 		}
-		if (!bLeftWater && Elapsed >= TrickFeedTestsLocal::TimedReleaseSeconds + SendDeadTimeSeconds)
+		if (!bLeftWater && Elapsed >= FeedTimedReleaseSeconds + SendDeadTimeSeconds)
 		{
 			Ride.Board->SetWeightShift(-1.0f);
 			Ride.Pawn->SheetKite(1.0f);

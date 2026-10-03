@@ -43,7 +43,6 @@ These reconcile the four plans.
    rotation in the air). There is no new `IA_Rotate`. LeftShift and RB are guarded by
    `KiteSurfHUDTests.cpp`: that guard is narrowed to "not bound to IA_Steer" in the same PR that
    first binds them.
-
 8. **Rider rotation goes before the board.** The attitude step runs before `StepBoard` (T1),
    not after it (T2 addendum).
 9. **Every rider can do tricks.** Since #54 the robot also uses the jointed rig, so the robot

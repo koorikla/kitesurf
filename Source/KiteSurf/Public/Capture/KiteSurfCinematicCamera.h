@@ -81,4 +81,7 @@ private:
 	FVector ShotAnchor = FVector::ZeroVector;
 	FVector SmoothedLookAt = FVector::ZeroVector;
 	FVector SmoothedLocation = FVector::ZeroVector;
+	FVector SmoothedLocationOffset = FVector::ZeroVector;
+	FVector SmoothedLookAtOffset = FVector::ZeroVector;
+	float SmoothedFieldOfViewDeg = 70.0f;
 };

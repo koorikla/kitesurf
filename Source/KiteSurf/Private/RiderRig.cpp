@@ -71,6 +71,11 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		Right = FVector::CrossProduct(FVector::UpVector, Facing);
 		Pose.Torso = FRotationMatrix::MakeFromXZ(Facing, BodyUp).ToQuat();
 	}
+	if (Input.PelvisUp.IsSet() && !Input.PelvisUp.GetValue().GetSafeNormal().IsNearlyZero())
+	{
+		// A hand-over between the two: the pelvis line is blended separately from the torso.
+		BodyUp = Input.PelvisUp.GetValue().GetSafeNormal();
+	}
 
 	// The feet are in the straps, one each side of the middle of the board along its length. The
 	// rider stands across the board, so which strap is under their right foot depends on which
@@ -131,15 +136,91 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 
 void RiderRig::SolveArms(FRiderRigPose& Pose, const FVector& LeftHand, const FVector& RightHand)
 {
-	const FVector BodyUp = Pose.Torso.GetAxisZ();
-	const FVector Right = Pose.Torso.GetAxisY();
+	// Elbows down and out.
+	SolveArm(Pose, 0, LeftHand, DefaultElbowPole(Pose, 0));
+	SolveArm(Pose, 1, RightHand, DefaultElbowPole(Pose, 1));
+}
+
+FVector RiderRig::ShoulderPosition(const FRiderRigPose& Pose, int32 Side)
+{
+	const float SideSign = Side == 0 ? -1.0f : 1.0f;
+	return Pose.Pelvis + Pose.Torso.RotateVector(FVector(ShoulderOffsetCm.X, ShoulderOffsetCm.Y * SideSign, ShoulderOffsetCm.Z));
+}
+
+void RiderRig::SolveArm(FRiderRigPose& Pose, int32 Side, const FVector& Hand, const FVector& ElbowPole)
+{
+	FRiderLimbPose& Arm = Pose.Arms[Side == 0 ? 0 : 1];
+	Arm.Root = ShoulderPosition(Pose, Side);
+	Arm.Pole = ElbowPole;
+	// SolveTwoBone keeps both bones their length and, out of reach, stops the hand on the line to Hand.
+	Arm.Joint = SolveTwoBone(Arm.Root, Hand, Arm.Pole, UpperArmLengthCm, ForearmLengthCm, Arm.End);
+}
+
+FVector RiderRig::DefaultElbowPole(const FRiderRigPose& Pose, int32 Side)
+{
+	const float SideSign = Side == 0 ? -1.0f : 1.0f;
+	return -Pose.Torso.GetAxisZ() + Pose.Torso.GetAxisY() * (0.6f * SideSign);
+}
+
+FVector RiderRig::GrabElbowPole(const FRiderRigPose& Pose, int32 Side)
+{
+	const float SideSign = Side == 0 ? -1.0f : 1.0f;
+	return Pose.Torso.GetAxisY() * SideSign + Pose.Torso.GetAxisX() * 0.3f;
+}
+
+FVector RiderRig::BehindBackElbowPole(const FRiderRigPose& Pose, int32 Side)
+{
+	const float SideSign = Side == 0 ? -1.0f : 1.0f;
+	return Pose.Torso.GetAxisY() * SideSign - Pose.Torso.GetAxisX() * 0.5f;
+}
+
+FVector RiderRig::BehindBackHand(const FRiderRigPose& Pose, int32 Side)
+{
+	const float SideSign = Side == 0 ? -1.0f : 1.0f;
+	return Pose.Pelvis + Pose.Torso.RotateVector(FVector(-22.0f, 6.0f * SideSign, 12.0f));
+}
+
+FVector RiderRig::HandTarget(const FRiderRigPose& Pose, const FRiderRigInput& Input, int32 Side, const FVector& BarHand)
+{
+	const FRiderHandInput& Hand = Input.Hands[Side == 0 ? 0 : 1];
+	switch (Hand.Target)
+	{
+	case ERiderHandTarget::BoardSocket:
+		return (Hand.SocketBoard.IsSet() ? Hand.SocketBoard.GetValue() : Input.Board).TransformPosition(Hand.BoardSocket);
+	case ERiderHandTarget::Free:
+		return Hand.WorldTarget;
+	case ERiderHandTarget::BehindBack:
+		return BehindBackHand(Pose, Side);
+	case ERiderHandTarget::Bar:
+	default:
+		return BarHand;
+	}
+}
+
+FVector RiderRig::HandElbowPole(const FRiderRigPose& Pose, const FRiderRigInput& Input, int32 Side)
+{
+	const FRiderHandInput& Hand = Input.Hands[Side == 0 ? 0 : 1];
+	if (Hand.ElbowPole.IsSet())
+	{
+		return Hand.ElbowPole.GetValue();
+	}
+	switch (Hand.Target)
+	{
+	case ERiderHandTarget::BoardSocket:
+		return GrabElbowPole(Pose, Side);
+	case ERiderHandTarget::BehindBack:
+		return BehindBackElbowPole(Pose, Side);
+	case ERiderHandTarget::Bar:
+	case ERiderHandTarget::Free:
+	default:
+		return DefaultElbowPole(Pose, Side);
+	}
+}
+
+void RiderRig::SolveArmsPerHand(FRiderRigPose& Pose, const FRiderRigInput& Input, const FVector& BarLeft, const FVector& BarRight)
+{
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		const float SideSign = Side == 0 ? -1.0f : 1.0f;
-		FRiderLimbPose& Arm = Pose.Arms[Side];
-		Arm.Root = Pose.Pelvis + Pose.Torso.RotateVector(FVector(ShoulderOffsetCm.X, ShoulderOffsetCm.Y * SideSign, ShoulderOffsetCm.Z));
-		// Elbows down and out.
-		Arm.Pole = -BodyUp + Right * (0.6f * SideSign);
-		Arm.Joint = SolveTwoBone(Arm.Root, Side == 0 ? LeftHand : RightHand, Arm.Pole, UpperArmLengthCm, ForearmLengthCm, Arm.End);
+		SolveArm(Pose, Side, HandTarget(Pose, Input, Side, Side == 0 ? BarLeft : BarRight), HandElbowPole(Pose, Input, Side));
 	}
 }

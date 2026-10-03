@@ -388,7 +388,7 @@ bool FKiteSurfTrickJumpRecordMatchesTrajectory::RunTest(const FString& Parameter
 	TestNearlyEqual(TEXT("and is the board's"), R.LandingG, Ride.Board->GetLastLandingG(), 1e-4f);
 	TestTrue(TEXT("At least one g"), R.LandingG >= 1.0f);
 	TestNearlyEqual(TEXT("The landing yaw is the board's landing angle (deg)"), R.LandingYawDeg, Ride.Board->GetLastLandingAngleDeg(), 1e-4f);
-	TestTrue(FString::Printf(TEXT("and under the board's crash angle for a clean landing (%.1f deg)"), R.LandingYawDeg), R.LandingYawDeg >= 0.0f && R.LandingYawDeg <= Ride.Board->MaxLandingAngle);
+	TestTrue(FString::Printf(TEXT("and within the clean grade's yaw (%.1f deg)"), R.LandingYawDeg), R.LandingYawDeg >= 0.0f && R.LandingYawDeg <= Ride.Board->LandingThresholds.Clean.MaxYawDeg);
 	TestTrue(FString::Printf(TEXT("Peak tension at least the highest sampled in the air (%.0f vs %.0f N)"), R.PeakTensionN, MaxAirTensionN), R.PeakTensionN >= MaxAirTensionN - 1.0f);
 	TestTrue(TEXT("and within the cap"), R.PeakTensionN <= Ride.Kite->MaxLineTensionN + 0.1f);
 

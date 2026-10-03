@@ -8,6 +8,7 @@
 
 class AKiteRiderPawn;
 class UTrickTrackerComponent;
+class FBestThreeSession;
 struct FJumpRecord;
 
 UCLASS()
@@ -195,7 +196,42 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetTrickTickerText() const { return TickerText; }
 
+	/** A session clock: seconds left rounded up, as "1:30", "0:09" or "0:00". */
+	static FString FormatSessionClock(float SecondsLeft);
+
+	/**
+	 * One counting jump in the session panel (T2.5): its points to 1 dp, with " x0.75" when the
+	 * session paid it as a repeat. Only the score, so the row stays narrow; the results card names
+	 * the jumps.
+	 */
+	static FString FormatSessionSlot(const FJumpRecord& Counting);
+
+	/**
+	 * The session panel while a best-three session runs: the clock ("SESSION 1:12", or
+	 * "SESSION 0:00  OVERTIME" while a jump that took off before the horn is in the air), then
+	 * one line per counting slot, "1  <slot>" or "1  --" while it is empty.
+	 */
+	static TArray<FString> FormatSessionPanel(const FBestThreeSession& Session);
+
+	/**
+	 * The results card: "SESSION OVER  (90 s)", "TOTAL  <total to 1 dp>", "NEW BEST" when it
+	 * beat the local best, one line per counting jump ("1  <Name>  <height> m  <points> pts") or
+	 * "No jumps counted", then the local best: "Local best  <best>" when it was not beaten,
+	 * "Previous best  <best>" when it was, "First <N> s session" when there was none.
+	 */
+	static TArray<FString> FormatSessionResults(const FBestThreeSession& Session, float PreviousBest, bool bHadPreviousBest, bool bNewBest);
+
+	/**
+	 * What the session part of the HUD shows now, from the world's UTrickSessionSubsystem: the
+	 * panel while a session runs, the results card while it is up, otherwise nothing. DrawHUD draws
+	 * these lines; tests read them with no Canvas.
+	 */
+	TArray<FString> GetSessionLines() const;
+
 protected:
+	/** Draws GetSessionLines: the panel as one row at the top centre, above the jump readout and trick card; the results card in the middle. */
+	void DrawSession(float ScreenW, float ScreenH);
+
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	FString JumpRejectionText;
 

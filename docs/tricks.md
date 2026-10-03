@@ -18,6 +18,9 @@ Confidence tags as in `research.md`: **sourced**, **typical** (coaching text), *
 (from sourced numbers with ballistics), **estimate** (a tuning starting point, not a
 requirement).
 
+Code-level plans per milestone, and the decisions that reconcile them, are in `docs/tricks/`
+(start with `docs/tricks/README.md`).
+
 ## 1. How the disciplines differ
 
 | | Big air | Freestyle | Strapless |

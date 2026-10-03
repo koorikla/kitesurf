@@ -116,7 +116,8 @@ namespace TrickRecognition
 	 * completed loop that is not a heli loop (PeakTensionSinceTakeoffSeconds).
 	 *
 	 * Grabs (T2.1): the record's grabs held at least MinGrabHoldSeconds, in order, so a grab let go
-	 * too soon is neither named nor scored. The one-footer (T2.2): the record's bOneFooter.
+	 * too soon is neither named nor scored. The one-footer (T2.2): the record's bOneFooter. The
+	 * board-off (T2.3): the record's BoardOff and BoardOffSeconds.
 	 */
 	KITESURF_API FTrickSignature SignatureFromJump(const FJumpRecord& Record,
 		const FLoopClassifySettings& Settings = FLoopClassifySettings(),

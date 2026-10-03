@@ -101,9 +101,15 @@ FLandingVerdict LandingEvaluator::Evaluate(const FLandingInputs& In, const FLand
 		const ELandingCause Cause = bKiteLow ? ELandingCause::KiteTooLow
 			: bTooHard ? ELandingCause::TooHard
 			: ELandingCause::KiteTooLow;
-		// A foot coming back into its strap is named before the kite and the g (the foot is what the
-		// rider did wrong; docs/tricks/T2.md T2.6 priority).
-		return Finish(ELandingGrade::Sketchy, In.BackFoot == EFootStrapState::Returning ? ELandingCause::FootLate : Cause);
+		// A board caught late, then a foot coming back into its strap, are named before the kite and
+		// the g (they are what the rider did wrong; docs/tricks/T2.md T2.6 priority).
+		return Finish(ELandingGrade::Sketchy, In.bBoardCaughtLate ? ELandingCause::BoardCaughtLate
+			: In.BackFoot == EFootStrapState::Returning ? ELandingCause::FootLate : Cause);
+	}
+	if (In.bBoardCaughtLate)
+	{
+		// The board-off's re-catch was in its grace (T2.3): the board is under the feet, just.
+		return Finish(ELandingGrade::Sketchy, ELandingCause::BoardCaughtLate);
 	}
 	if (In.BackFoot == EFootStrapState::Returning)
 	{

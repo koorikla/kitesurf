@@ -112,6 +112,8 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	}
 	Live.bOneFooter = In.bOneFooter;
 	Live.OneFootSeconds = In.OneFootSeconds;
+	Live.BoardOff = In.BoardOff;
+	Live.BoardOffSeconds = In.BoardOffSeconds;
 
 	const float StepSeconds = In.BoardTimeSeconds - LastStepTimeSeconds;
 	LastStepTimeSeconds = In.BoardTimeSeconds;

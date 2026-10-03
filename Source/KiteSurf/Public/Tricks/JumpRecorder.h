@@ -123,6 +123,12 @@ struct FJumpRecorderInput
 	/** FGrabState::GetOneFootSeconds (s). */
 	float OneFootSeconds = 0.0f;
 
+	/** The flight's board-off (T2.3): FBoardOffState::GetFlightBoardOff, None until a board has been held long enough. */
+	ETrickBoardOff BoardOff = ETrickBoardOff::None;
+
+	/** FBoardOffState::GetFlightBoardOffSeconds (s). */
+	float BoardOffSeconds = 0.0f;
+
 	// --- Kite ---
 
 	/** Line tension (N). */
@@ -187,7 +193,8 @@ struct FJumpRecorderSettings
  * - Skip: a jump is open, the board is no longer airborne, not crashing, and JumpCount did not
  *   change: the board treated it as a skip off the surface, and it is dropped.
  * - While open: the peak tension, the lowest kite elevation and the highest board position, the
- *   grabs and the one-footer as the snapshot has them (Grabs, bOneFooter, OneFootSeconds), and
+ *   grabs, the one-footer and the board-off as the snapshot has them (Grabs, bOneFooter,
+ *   OneFootSeconds, BoardOff, BoardOffSeconds), and
  *   the rider's rotation: an FRotationRecognizer begun at the take-off (frame from the velocity,
  *   the board's nose and the body) and stepped on every step with bAttitudeActive. The live
  *   record carries the rotation credited so far (GetCurrent); the finalised record the result at

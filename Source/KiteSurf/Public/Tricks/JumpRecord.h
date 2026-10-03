@@ -173,6 +173,21 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float OneFootSeconds = 0.0f;
 
+	// --- The board-off (T2.3): the pawn's FBoardOffState (FGrabState::GetBoardOff). None when the pawn has none. ---
+
+	/**
+	 * The board-off of the jump, once the board was held off FBoardOffTuning::MinOffSeconds (0.2 s):
+	 * Plain, Superman, TicTac or BoardPass, as credited (a tic tac short of its 345 deg or a pass short
+	 * of 0.95 of the way round is Plain). A board not caught by the touchdown still names the jump; the
+	 * landing verdict makes it a crash (BoardOff).
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	ETrickBoardOff BoardOff = ETrickBoardOff::None;
+
+	/** How long the board was held off the feet in this jump, from the hands reaching it to letting go (s). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float BoardOffSeconds = 0.0f;
+
 	/** Why the board's landing verdict graded the landing down (UBoardMovementComponent::GetLastLandingVerdict); None for a good landing. */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	ELandingCause LandingCause = ELandingCause::None;

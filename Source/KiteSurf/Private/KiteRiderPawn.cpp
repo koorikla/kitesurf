@@ -1225,9 +1225,15 @@ void AKiteRiderPawn::StepGrabs(float StepSeconds)
 		// The hand closes on the board.
 		PlayHaptic(0.2f, 0.05f, false);
 	}
+	if (GrabState.GetBoardOff().DidCatchThisStep())
+	{
+		// The feet are back in the straps (T2.3).
+		PlayHaptic(0.35f, 0.08f, false);
+	}
 	if (BoardMovement)
 	{
 		BoardMovement->SetRiderBackFoot(GrabState.GetFootAtTouchdown());
+		BoardMovement->SetRiderBoardCatch(GrabState.GetBoardOff().GetCatchAtTouchdown());
 	}
 }
 
@@ -1817,11 +1823,20 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 
 	// Grabs and the one-footer (T2.1, T2.2), drawn between the last two steps. The nose is on the side
 	// of the body the drawn board's +X points to, and the front hand and foot are on that side.
+	// The board-off (T2.3) takes over the hands and the feet from the grab and the one-footer.
+	const FBoardOffState& BoardOff = GrabState.GetBoardOff();
+	const float BoardOffWeight = FMath::Lerp(BoardOff.GetPrevOffWeight(), BoardOff.GetOffWeight(), LastRenderAlpha);
+	const bool bBoardOffDrawn = BoardOffWeight > 0.0f;
+	if (BoardOff.GetVariant() != ETrickBoardOff::None)
+	{
+		// Kept for the last frames of a catch, when the state is already back on the feet.
+		DrawnBoardOffVariant = BoardOff.GetVariant();
+	}
 	const float GrabWeight = FMath::Lerp(GrabState.GetPrevReachWeight(), GrabState.GetReachWeight(), LastRenderAlpha);
-	const float FootWeight = FMath::SmoothStep(0.0f, 1.0f, FMath::Lerp(GrabState.GetPrevFootOut(), GrabState.GetFootOut(), LastRenderAlpha));
+	const float FootWeight = bBoardOffDrawn ? 0.0f : FMath::SmoothStep(0.0f, 1.0f, FMath::Lerp(GrabState.GetPrevFootOut(), GrabState.GetFootOut(), LastRenderAlpha));
 	const float NoseSideSign = FVector::DotProduct(RigInput.Board.GetUnitAxis(EAxis::X), RiderPose.Torso.GetAxisY()) >= 0.0f ? 1.0f : -1.0f;
 	const int32 FrontRigSide = NoseSideSign > 0.0f ? 1 : 0;
-	const bool bGrabDrawn = GrabState.IsHandOffBar() && GrabWeight > 0.0f;
+	const bool bGrabDrawn = !bBoardOffDrawn && GrabState.IsHandOffBar() && GrabWeight > 0.0f;
 	const ETrickHand GrabHand = GrabState.GetHand();
 	const ETrickGrabZone GrabZone = GrabState.GetZone();
 	const int32 GrabRigSide = GrabHand == ETrickHand::Front ? FrontRigSide : 1 - FrontRigSide;
@@ -1860,6 +1875,39 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 			const FVector Strap = TrickInput.Board.TransformPosition(BoardGrabPoints::ToBoardLocal(BoardGrabPoints::BackStrap, NoseSideSign));
 			const FVector Kicked = TrickInput.Board.TransformPosition(BoardGrabPoints::ToBoardLocal(OneFootKickStanceCm, NoseSideSign));
 			TrickInput.Feet[BackFootSide].AnkleTarget = FMath::Lerp(Strap, Kicked, FootWeight);
+		}
+		RigInput = TrickInput;
+		RiderPose = RiderRig::SolveBody(RigInput);
+	}
+	FBoardOffPose BoardOffDrawnPose;
+	FTransform BoardOffDrawnBoard = RigInput.Board;
+	if (bBoardOffDrawn)
+	{
+		// The board-off, drawn between the last two steps: the held board in the rider frame (the
+		// pelvis and the body as the riding pose put them), blended from the strapped board by the
+		// eased removal or catch. The body holds still (the pelvis anchored) and folds at the hips as
+		// the variant asks; the feet leave the straps for the variant's ankles. Only the drawn board
+		// moves, and only while the attitude draws it; the physics root does not.
+		const float TicTacDeg = FMath::Lerp(BoardOff.GetPrevTicTacDeg(), BoardOff.GetTicTacDeg(), LastRenderAlpha);
+		const float PassPhase = FMath::Lerp(BoardOff.GetPrevPassPhase(), BoardOff.GetPassPhase(), LastRenderAlpha);
+		BoardOffDrawnPose = BoardOffPose::Evaluate(DrawnBoardOffVariant, TicTacDeg, PassPhase, NoseSideSign);
+		const FTransform Frame = BoardOffPose::RiderFrame(RiderPose.Pelvis, RiderPose.Torso);
+		if (bAttitudeOwnsBoardVisual && BoardVisual)
+		{
+			BoardOffDrawnBoard = BoardOffPose::BlendBoard(RigInput.Board, BoardOffDrawnPose.BoardInRider * Frame, BoardOffWeight);
+			SetBoardVisualWorldRotation(BoardOffDrawnBoard.GetRotation());
+			BoardVisual->SetWorldLocation(BoardOffDrawnBoard.GetLocation());
+		}
+		FRiderRigInput TrickInput = RigInput;
+		TrickInput.Board = BoardOffDrawnBoard;
+		TrickInput.PelvisAnchor = RiderPose.Pelvis;
+		TrickInput.TorsoPitchDeg = BoardOffWeight * BoardOffDrawnPose.TorsoPitchDeg;
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			// Out of the straps of the board as it is drawn (so they leave it, and come back to it, smoothly).
+			const FBoardStancePointCm& StrapPoint = Side == FrontRigSide ? BoardGrabPoints::FrontStrap : BoardGrabPoints::BackStrap;
+			const FVector Strap = BoardOffDrawnBoard.TransformPosition(BoardGrabPoints::ToBoardLocal(StrapPoint, NoseSideSign));
+			TrickInput.Feet[Side].AnkleTarget = FMath::Lerp(Strap, Frame.TransformPosition(BoardOffDrawnPose.AnkleInRider[Side]), BoardOffWeight);
 		}
 		RigInput = TrickInput;
 		RiderPose = RiderRig::SolveBody(RigInput);
@@ -1928,6 +1976,26 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 			GrabbingHand.Target = ERiderHandTarget::Free;
 			GrabbingHand.WorldTarget = FMath::Lerp(BarHands[GrabRigSide], Socket, GrabWeight);
 			GrabbingHand.ElbowPole = Pole;
+		}
+		if (bBoardOffDrawn)
+		{
+			// The board-off's hands go from the bar to their grips on the drawn board as it comes off,
+			// and back as it is caught; a hand the variant leaves on the bar stays there.
+			for (int32 HandIndex = 0; HandIndex < 2; ++HandIndex)
+			{
+				const float W = BoardOffWeight * BoardOffDrawnPose.HandOnBoard[HandIndex];
+				if (W <= 0.0f)
+				{
+					continue;
+				}
+				const int32 Side = HandIndex == static_cast<int32>(ETrickHand::Front) ? FrontRigSide : 1 - FrontRigSide;
+				const FVector Grip = BoardOffDrawnBoard.TransformPosition(BoardOffDrawnPose.GripLocal[HandIndex]);
+				const FVector OnBoardPole = FMath::Lerp(RiderRig::GrabElbowPole(RiderPose, Side), RiderRig::BehindBackElbowPole(RiderPose, Side), BoardOffDrawnPose.HandBehind[HandIndex]);
+				FRiderHandInput& BoardHand = RigInput.Hands[Side];
+				BoardHand.Target = ERiderHandTarget::Free;
+				BoardHand.WorldTarget = FMath::Lerp(BarHands[Side], Grip, W);
+				BoardHand.ElbowPole = FMath::Lerp(RiderRig::DefaultElbowPole(RiderPose, Side), OnBoardPole, W);
+			}
 		}
 		RiderRig::SolveArmsPerHand(RiderPose, RigInput, BarHands[0], BarHands[1]);
 	}

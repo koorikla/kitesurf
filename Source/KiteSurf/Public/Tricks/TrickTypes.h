@@ -45,7 +45,9 @@ enum class ELandingCause : uint8
 	/** One-footer (T2.2): the back foot was still out of its strap at contact. */
 	FootOutOfStrap  UMETA(DisplayName = "Back foot out"),
 	/** One-footer (T2.2): the back foot was on its way back into the strap at contact. */
-	FootLate        UMETA(DisplayName = "Back foot in late")
+	FootLate        UMETA(DisplayName = "Back foot in late"),
+	/** Board-off (T2.3): the board was in the last moment of its re-catch at contact (the grace). */
+	BoardCaughtLate UMETA(DisplayName = "Board caught late")
 };
 
 /**
@@ -61,6 +63,21 @@ enum class EFootStrapState : uint8
 	Returning UMETA(DisplayName = "Returning"),
 	/** Half way out or more: the landing is a crash (FootOutOfStrap). */
 	Out       UMETA(DisplayName = "Out")
+};
+
+/**
+ * Where the board is relative to the feet (T2.3, the board-off), as the landing evaluator reads it at
+ * contact (FBoardOffState::GetCatchAtTouchdown).
+ */
+UENUM(BlueprintType)
+enum class EBoardCatchState : uint8
+{
+	/** Under the feet, in the straps. */
+	Attached   UMETA(DisplayName = "Attached"),
+	/** In the last RecatchGraceSeconds of its re-catch: the landing is at best sketchy (BoardCaughtLate). */
+	CaughtLate UMETA(DisplayName = "Caught late"),
+	/** Off the feet, or too early in the re-catch: the landing is a crash (BoardOff). */
+	NotCaught  UMETA(DisplayName = "Not caught")
 };
 
 /** Which way the body faces the kite while riding, at take-off or landing. */

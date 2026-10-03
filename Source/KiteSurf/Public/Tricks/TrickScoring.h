@@ -53,8 +53,19 @@ struct FTrickScoringSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
 	float OneFooter = 0.2f;
 
+	/** Technicality of a plain board-off (and of a board flip until it has its own value). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
 	float BoardOff = 0.6f;
+
+	/** Technicality of a superman, a tic tac and a board pass (docs/tricks/T2.md T2.3). Estimates. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
+	float BoardOffSuperman = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
+	float BoardOffTicTac = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")
+	float BoardOffPass = 1.0f;
 
 	/** Technicality per handle pass. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks")

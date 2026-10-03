@@ -158,6 +158,9 @@ FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, c
 		}
 	}
 	Signature.bOneFooter = Record.bOneFooter;
+	// The board-off (T2.3), as the board-off state credited it.
+	Signature.BoardOff = Record.BoardOff;
+	Signature.BoardOffSeconds = Record.BoardOff != ETrickBoardOff::None ? Record.BoardOffSeconds : 0.0f;
 
 	// Early or late roll: the first inversion's start against the yank of the first completed kite or
 	// megaloop, given to every kite and megaloop entry so a chain still names as one.

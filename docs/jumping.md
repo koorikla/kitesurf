@@ -75,8 +75,8 @@ Upon coming down to the water (sinking into it relative to its surface, which on
 | :--- | :--- | :--- | :--- | :--- |
 | Stomped | ≤ 15° | ≤ 20° | Kite at 45° or higher, landing g ≤ 4 | 85% |
 | Clean | ≤ 30° | ≤ 45° | | 80% |
-| Sketchy | ≤ 50° | ≤ 75° | Or a hot landing (kite under 45°, sink over 6 m/s) or over 8 g | 60% |
-| Crash | Beyond | Beyond | Or board off, bar lost, pass unfinished, rider inverted, over 10 g | 0 |
+| Sketchy | ≤ 50° | ≤ 75° | Or a hot landing (kite under 45°, sink over 6 m/s), over 8 g, a board caught late or a back foot in late | 60% |
+| Crash | Beyond | Beyond | Or board not caught, bar lost, pass unfinished, back foot out, rider inverted, over 10 g | 0 |
 
 The yaw is folded to 0..90°, so a switch landing (tail first) grades the same as a forward one (`KiteSurf.Trick.SwitchLandingIsCleanOnBoard`). Each verdict carries a cause for the failure message: under- or over-rotated (tilt past 50°, by the direction of the spin), sideways, inverted, kite too low, too hard, board not caught, bar lost, pass not finished.
 
@@ -129,6 +129,9 @@ Under-rotated: commit the roll earlier
 | `BarLost` | Bar lost |
 | `PassUnfinished` | Pass not finished |
 | `BoardNotAligned` | Board not lined up with the feet |
+| `FootOutOfStrap` | Back foot still out of the strap |
+| `FootLate` | Back foot back in too late |
+| `BoardCaughtLate` | Board caught late: let go sooner |
 
 A stomped or clean card has no cause line, because the verdict names no cause for those. The timed 30 kn jump's verdict is sketchy, too hard (a sink over 6 m/s), and its card now says SKETCHY with the too-hard line; before the grade came from the verdict, the card said CLEAN and hid the cause. While a jump is in the air and has something to name, a **ticker** names it live in the same place: a completed kite loop ("Kiteloop", then "Double kiteloop") and the rotation as it is credited ("Back roll" from the moment the rider is inverted, then "Double back roll"; a flat spin as "Backside 180", then "Backside 360"). Landing replaces it with the card. A scripted pre-wind back roll on the timed jump is "Back roll" in the ticker, the record and the card (`KiteSurf.Trick.CardNamesBackRoll`), the same jump with no rotation input stays "Straight air" (`KiteSurf.Trick.StraightJumpStaysStraightAir`), and a roll coming down 80 deg short crashes with the under-rotated line (`KiteSurf.Trick.UnderRotatedCrashShowsCause`).
 
@@ -215,7 +218,7 @@ T2.1 and T2.2 in `docs/tricks.md` and `docs/tricks/T2.md`. `FGrabState` (`Tricks
 
 - **Only a press in the air grabs.** A button held from the water into the air does nothing until pressed again, as with the tuck.
 - **The stick picks the zone, not the rotation.** While either grab button is held in the air, the stick's rotation input is ignored: no control torque, and the rotation keeps its momentum. The zone uses the same screen-side mapping as the air stick (`GetScreenBackSign`): the stick towards the side of the screen the chest is on is the toe edge. The strongest push during the reach picks the zone; it is latched when the hand reaches the board. Inside the deadzone (0.5) the zone is the toe edge: Mute for the front hand, Indy for the back.
-- **One hand at a time.** Both grab buttons together are kept for the board-off (T2.3): pressing both at once starts nothing, and a press while the other button is held is ignored, so it never becomes a double grab.
+- **One hand at a time.** Both grab buttons together are the board-off (T2.3, below), never a double grab: pressing both at once, or one while the other is held, takes the board off the feet, and a grab in progress ends there (logged with its hold so far).
 - **Names** (`TrickNaming::GrabName`): front hand Nose, Mute, Melon, Seatbelt; back hand Crail, Indy, Stalefish, Tail (nose, toe edge, heel edge, tail).
 
 **Timing.** The hand reaches the board over `ReachSeconds` (0.2 s); the hold counts from the step it gets there. Letting go (or landing) ends the grab and the hand goes back to the bar over `ReturnSeconds` (0.15 s). Every grab goes into the jump record as an `FTrickGrab` (hand, zone, hold seconds; a release during the reach logs a hold of 0). `TrickRecognition::SignatureFromJump` keeps only grabs held at least `GrabMinHoldSeconds` (0.3 s), so a shorter grab is neither named nor scored; a counted grab scores 0.2 plus up to 0.2 more for a hold up to 1.5 s (`TrickScoring`). A jump with one counted grab and nothing else is named after it ("Indy"), and the ticker names it as soon as it counts.
@@ -236,7 +239,45 @@ The plan (`T2.md` T2.2) reads it this way: a foot nearly back is a sketchy landi
 
 **Scripted path.** `SetTrickInput(bFront, bBack, bOneFoot, ZoneStick)` holds the buttons and the zone stick in rotation axes (X -1 toe edge, +1 heel edge, Y +1 nose, -1 tail), with no screen-side mapping; from the console `kitesurf.Trick <front 0|1> <back 0|1> <one foot 0|1> [<zone x> <zone y>]`. The player's handlers are `OnGrabFrontPressed` and so on.
 
-Not yet: steering with fewer hands on the bar (the plan's steer authority), through-the-legs grabs, the board-off (T2.3), a hold timer on the HUD and a grab sound.
+Not yet: steering with fewer hands on the bar (the plan's steer authority), through-the-legs grabs, a hold timer on the HUD and a grab sound.
+
+## Board-off
+
+T2.3 in `docs/tricks.md` (3.1, 6.3) and `docs/tricks/T2.md`. `FBoardOffState` (`Tricks/BoardOffState.h`) is a pure class owned by `FGrabState` (`GetBoardOff()`) and stepped with it in `AKiteRiderPawn::StepGrabs`, from the chord of the two grab buttons. No new input action: the chord of `IA_GrabFront` and `IA_GrabBack`.
+
+**Controls** (in the air only):
+
+| Action | Keyboard | Gamepad |
+| --- | --- | --- |
+| Take the board off the feet (hold both) | Q + E | LB + RB |
+| Pick the variant as it comes off | W: superman; S: tic tac; A / D: board pass; centred: board-off | Left stick, same directions |
+| Catch it again | Let go of either | Let go of either |
+
+- **Only a press in the air starts it**: both buttons held, made by a fresh press of either in the air (a chord held from the water does nothing, as with the grabs). A grab in progress ends; no grab starts while the board is off the feet.
+- **Phases and timing** (every value an *estimate*, `FBoardOffTuning`): the board comes off over `RemoveSeconds` (0.25 s), is held, and letting go of either button starts the re-catch, `RecatchSeconds` (0.3 s) back to the straps from wherever the removal had got to. Pressing the chord again during a catch takes it off again.
+- **The variant**: the strongest push of the stick during the removal (rotation axes, the same screen-side mapping as the grab zone; deadzone 0.5), latched when the board reaches the hands: up `Superman`, down `TicTac`, sideways `BoardPass`, centred `Plain`. While both buttons are held the stick does not rotate the rider.
+- **Tic tac and board pass** play out over the hold: the tic tac turns the board 360 deg about its long axis in the hand over `TicTacSpinSeconds` (0.5 s, eased), the pass carries it round the back over `BoardPassSeconds` (0.9 s, eased). Let go short of `TicTacMinDeg` (345 deg) or `BoardPassMinPhase` (0.95 of the way round) and the jump is credited as a plain board-off.
+
+**The catch and the landing.** The pawn hands the board `FBoardOffState::GetCatchAtTouchdown()` every step (`UBoardMovementComponent::SetRiderBoardCatch`, as `SetRiderBackFoot`), and the landing grades it (`FLandingInputs::bBoardAttached`, `bBoardCaughtLate`). With t the time from letting go to the touchdown:
+- t of 0.3 s or more: caught, no change to the landing;
+- 0.18 to 0.3 s (the last `RecatchGraceSeconds`, 0.12 s, of the catch): at best **sketchy**, cause `BoardCaughtLate` ("Board caught late: let go sooner"), named before a late foot, the kite and the g;
+- under 0.18 s, still coming off, or held to the water: a **crash**, cause `BoardOff` ("Board not caught"), before anything else.
+So "0.3 s plus 0.12 s of grace" reads as the plan's window: the grace is the end of the 0.3 s catch, not time added after it. On the water a board still off goes back to the feet on its own (the landing has been graded). On the timed 30 kn jump: let go 0.57 s before the touchdown, caught in the air and landed (sketchy, too hard, as without the trick); 0.22 s before, sketchy, `BoardCaughtLate`; held to the water, a crash with "Board not caught" on the card, crashing 0.5 s later (`KiteSurf.Trick.BoardOffCaughtLands`, `KiteSurf.Trick.BoardOffNotCaughtCrashes`).
+
+**The record.** `FJumpRecord::BoardOff` is the flight's credited variant once the board has been held `MinOffSeconds` (0.2 s), and `BoardOffSeconds` the time held (from the hands reaching it to letting go; two board-offs in one flight add up, the later variant replaces the earlier). `SignatureFromJump` copies both, `TrickNaming` names it ("Board-off", "Superman", "Tic tac", "Board pass", combined as "Megaloop board-off", "Kiteloop superman", "Back roll tic tac"), and `TrickScoring` adds its technicality: plain 0.6, superman 0.8, tic tac 0.9, board pass 1.0 (*estimates*). A board not caught still names the jump; the verdict makes it a crash (`KiteSurf.Trick.BoardOffVariantsNamed`).
+
+**The board's inertia.** `URiderAttitudeComponent` has no board term in its inertia, so the board held away from the body is approximated with the tuck: the board-off asks the attitude for `TuckPlain` (0.6), `TuckSuperman` (0.2, the stretched body gives back most of what the board takes away), `TuckTicTac` (0.6) or `TuckBoardPass` (0.5), times the eased removal, on top of the jump-held tuck. Composing the board's inertia in the attitude (the plan's `OffsetBodyCm`) is left for later.
+
+**The pose** (`BoardOffPose::Evaluate`, pure, in the rider frame: the pelvis and the body as the riding pose puts them). The drawn board blends from the strapped board to the held one with the eased removal (and back with the catch); only the drawn board moves, never the physics root, and only while the attitude draws it. The body holds still (`PelvisAnchor`), folds at the hips as the variant asks, and both feet leave the straps: the ankles go from the straps of the board as drawn to the variant's place, so they leave it and come back to it smoothly.
+- Plain: the board in front of the hips, deck up and towards the chest, both hands on the toe rail (`ToeRailFront`, `ToeRailBack`), torso folded 20 deg, knees tucked (ankles 55 cm under the hips).
+- Superman: the board out in front, deck to the rider, the back hand at the tail end of the toe rail (on top), the front hand on the bar, the legs stretched down and back behind it.
+- Tic tac: the board on the back hand's side, nose forwards, toe edge on top in the back hand, turning about its long axis through the hand; the front hand on the bar.
+- Board pass: the board stood on its tail, carried round the waist by its handle: the back hand to behind the back, the front hand from there, both on it only close to the middle of the back.
+On the timed jump every holding hand is on its grip on the drawn board (0.00 cm off) for the whole hold, the board 60 to 90 cm from the straps, and after the catch the feet are back in the straps (0.000 cm) on the attitude's board (`KiteSurf.Trick.BoardOffCaughtLands`, `KiteSurf.Trick.BoardOffFollowsHands`). Every grip is within 92% of the arm's reach for either nose side, across the spin and the pass. The camera is not affected (it does not read the drawn board). A haptic marks the catch.
+
+**Scripted path.** `SetTrickInput(true, true, false, Stick)` or `kitesurf.Trick 1 1 0 [<x> <y>]` holds the chord with the variant stick in rotation axes (Y +1 superman, -1 tic tac, X board pass); `kitesurf.Trick 0 0 0` lets go. The command logs the board-off's phase, variant, hold and what a touchdown now would find.
+
+Not yet: the plan's "CATCH" prompt on the HUD, the board flip variant, steering with both hands off the bar (the plan's steer authority of 0 for the pass), and the board's own inertia in the attitude (above).
 
 ## Default Tunable Properties
 

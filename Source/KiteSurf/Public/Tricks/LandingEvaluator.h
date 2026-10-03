@@ -62,9 +62,17 @@ struct FLandingInputs
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
 	float ErrorAlongSpin = 0.0f;
 
-	/** False when the board is off the feet at contact (board-off not caught). */
+	/** False when the board is off the feet at contact (board-off not caught; EBoardCatchState::NotCaught). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
 	bool bBoardAttached = true;
+
+	/**
+	 * The board was in the last moment of its re-catch at contact (T2.3; EBoardCatchState::CaughtLate):
+	 * it is under the feet, but the landing is at best sketchy (BoardCaughtLate). Read only with
+	 * bBoardAttached.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
+	bool bBoardCaughtLate = false;
 
 	/** False when the rider has let go of the bar. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
@@ -210,8 +218,9 @@ namespace LandingEvaluator
 	 *   or lower, else it is clean. A hot landing (kite under HotLandingKiteElevationDeg, sink over
 	 *   HotLandingSinkMS or bHotLanding) or g over SketchyMinLandingG is at best sketchy, with
 	 *   cause KiteTooLow (kite low or the board's hot flag alone) or TooHard (sink or g);
-	 * - a back foot still returning to its strap (BackFoot Returning) is at best sketchy, cause
-	 *   FootLate, which is named before the kite and the g.
+	 * - a board caught late (bBoardCaughtLate, T2.3) is at best sketchy, cause BoardCaughtLate; then
+	 *   a back foot still returning to its strap (BackFoot Returning) is at best sketchy, cause
+	 *   FootLate. Both are named before the kite and the g, the board first.
 	 * A non-finite tilt, yaw or g fails its limit.
 	 */
 	KITESURF_API FLandingVerdict Evaluate(const FLandingInputs& Inputs, const FLandingThresholds& Thresholds = FLandingThresholds());

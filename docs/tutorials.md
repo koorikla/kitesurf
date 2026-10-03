@@ -373,8 +373,7 @@ the trick wiring.
   the controller or mouse (tasks S11 to S13).
 - [x] **Unhooked gate.** Keep Kitesurf College's order: chapter F needs chapters C and E (decided
   2026-10-03).
-- [ ] **Stars against assists.** Is three stars "every assist off" right for a game whose default
-  is sim-cade with assists?
+- [x] **Stars against assists.** Three stars means every assist is off (decided 2026-10-03).
 
 ## Sources
 

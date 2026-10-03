@@ -128,10 +128,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SaveSettingsToDisk();
 
-	/** Takes the settings, the trick book and the session bests from a loaded save: what LoadSettingsFromDisk does with the Settings slot. */
+	/**
+	 * Takes the settings, the trick book and the session bests from a loaded save, and hands the
+	 * lesson progress to ULessonSubsystem when it exists (it does once Init has run): what
+	 * LoadSettingsFromDisk does with the Settings slot.
+	 */
 	void ApplySaveGame(const UKiteSurfSaveGame& SaveGame);
 
-	/** Writes the settings, the trick book and the session bests into a save: what SaveSettingsToDisk does before writing the Settings slot. */
+	/**
+	 * Writes the settings, the trick book and the session bests into a save, and the lesson
+	 * progress from ULessonSubsystem when it exists (otherwise the save's progress is left as it
+	 * was): what SaveSettingsToDisk does before writing the Settings slot.
+	 */
 	void WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const;
 
 	/** The tricks landed so far, loaded from and saved to the Settings slot with the settings. */

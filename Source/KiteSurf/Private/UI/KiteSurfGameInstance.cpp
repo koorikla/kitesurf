@@ -2,6 +2,7 @@
 #include "KiteGear.h"
 #include "KiteComponent.h"
 #include "UI/KiteSurfSaveGame.h"
+#include "School/LessonSubsystem.h"
 #include "Tricks/JumpRecord.h"
 #include "Misc/App.h"
 
@@ -58,6 +59,10 @@ void UKiteSurfGameInstance::ApplySaveGame(const UKiteSurfSaveGame& SaveGame)
 	BoardSize = KiteGear::BoardSizeFromIndex(SaveGame.BoardSizeIndex);
 	TrickBook.SetEntries(SaveGame.TrickBook.GetEntries());
 	BestSessionTotalBySeconds = SaveGame.BestSessionTotalBySeconds;
+	if (ULessonSubsystem* Lessons = GetSubsystem<ULessonSubsystem>())
+	{
+		Lessons->LoadFromSaveGame(SaveGame);
+	}
 	FApp::SetVolumeMultiplier(MasterVolume);
 }
 
@@ -91,6 +96,10 @@ void UKiteSurfGameInstance::WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const
 	SaveGame.BoardSizeIndex = static_cast<int32>(BoardSize);
 	SaveGame.TrickBook = TrickBook;
 	SaveGame.BestSessionTotalBySeconds = BestSessionTotalBySeconds;
+	if (const ULessonSubsystem* Lessons = GetSubsystem<ULessonSubsystem>())
+	{
+		Lessons->WriteToSaveGame(SaveGame);
+	}
 }
 
 bool UKiteSurfGameInstance::RecordTrickLanding(const FJumpRecord& Record)

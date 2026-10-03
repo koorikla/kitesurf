@@ -10,8 +10,8 @@
  * Kite school lesson data (docs/tutorials.md 3.2). A lesson is data, not code: a set-up, one to
  * three drill steps, a pass objective, an ordered list of fault rules with their feedback lines,
  * and star rules. LessonEval (LessonEvaluator.h) evaluates objectives and diagnoses faults;
- * LessonCatalog (LessonCatalog.h) holds the lessons. Not yet run by the game: the lesson
- * subsystem (S2) and director (S3) come next.
+ * LessonCatalog (LessonCatalog.h) holds the lessons; ULessonSubsystem (LessonSubsystem.h, S2)
+ * holds the player's progress and the unlocks. Not yet run by the game: the director (S3) comes next.
  *
  * Every threshold in the catalogue is an estimate (docs/tutorials.md section 2).
  */

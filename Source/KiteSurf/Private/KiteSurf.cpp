@@ -227,9 +227,9 @@ public:
 				{
 					return;
 				}
-				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn, height %.0f cm, kite clock %.0f deg elevation %.0f deg, tension %.0f N, steer %.2f, bar %.2f"),
+				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn heading %.0f deg, height %.0f cm, kite clock %.0f deg elevation %.0f deg turned %.0f deg, tension %.0f N, steer %.2f, bar %.2f"),
 					*UEnum::GetDisplayValueAsText(Board->GetBoardState()).ToString(), Board->IsFloating() ? TEXT(" floating") : TEXT(""), Board->IsCrashing() ? TEXT(" crashing") : TEXT(""),
-					KiteUnits::CmSToKnots(Board->Velocity.Size2D()), Board->GetCurrentJumpHeight(), Kite->GetClockDeg(), Kite->GetElevationDeg(), Kite->GetLineTensionN(),
+					KiteUnits::CmSToKnots(Board->Velocity.Size2D()), Board->Velocity.Rotation().Yaw, Board->GetCurrentJumpHeight(), Kite->GetClockDeg(), Kite->GetElevationDeg(), Kite->GetTurnDeg(), Kite->GetLineTensionN(),
 					Rider->GetCurrentSteerInput(), Rider->GetCurrentSheetInput());
 			}),
 			ECVF_Default

@@ -62,6 +62,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bMotionBar;
 
+	/**
+	 * The bar springs back to the middle when the power input is let go (on by default). Saves made
+	 * before this setting have no such property and load with it on.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bBarReturnsToMiddle;
+
+	/** How the motion bar reads power, as an EMotionSheetMode index (default 0, Tilt) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	int32 MotionSheetModeIndex;
+
 	/** Controller vibration (on by default) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bHaptics;

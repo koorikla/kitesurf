@@ -16,6 +16,8 @@ UKiteSurfGameInstance::UKiteSurfGameInstance()
 	, bOnboardingCompleted(false)
 	, RiderCharacter(ERiderCharacter::Santa)
 	, bMotionBar(false)
+	, MotionSheetMode(EMotionSheetMode::Tilt)
+	, bBarReturnsToMiddle(true)
 	, bHaptics(true)
 	, bSpotIslands(true)
 	, bSpotSandbars(true)
@@ -54,6 +56,8 @@ void UKiteSurfGameInstance::ApplySaveGame(const UKiteSurfSaveGame& SaveGame)
 	SetKiteSizeM2(SaveGame.KiteSizeM2);
 	KiteModel = KiteGear::KiteModelFromIndex(SaveGame.KiteModelIndex);
 	bMotionBar = SaveGame.bMotionBar;
+	MotionSheetMode = SaveGame.MotionSheetModeIndex == static_cast<int32>(EMotionSheetMode::Move) ? EMotionSheetMode::Move : EMotionSheetMode::Tilt;
+	bBarReturnsToMiddle = SaveGame.bBarReturnsToMiddle;
 	bHaptics = SaveGame.bHaptics;
 	SetSpotFeatures(SaveGame.bSpotIslands, SaveGame.bSpotSandbars, SaveGame.bSpotSharks);
 	BoardSize = KiteGear::BoardSizeFromIndex(SaveGame.BoardSizeIndex);
@@ -89,6 +93,8 @@ void UKiteSurfGameInstance::WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const
 	SaveGame.KiteSizeM2 = KiteSizeM2;
 	SaveGame.KiteModelIndex = static_cast<int32>(KiteModel);
 	SaveGame.bMotionBar = bMotionBar;
+	SaveGame.MotionSheetModeIndex = static_cast<int32>(MotionSheetMode);
+	SaveGame.bBarReturnsToMiddle = bBarReturnsToMiddle;
 	SaveGame.bHaptics = bHaptics;
 	SaveGame.bSpotIslands = bSpotIslands;
 	SaveGame.bSpotSandbars = bSpotSandbars;
@@ -181,6 +187,16 @@ void UKiteSurfGameInstance::SetSpotFeatures(bool bIslands, bool bSandbars, bool 
 void UKiteSurfGameInstance::SetMotionBar(bool bEnabled)
 {
 	bMotionBar = bEnabled;
+}
+
+void UKiteSurfGameInstance::SetMotionSheetMode(EMotionSheetMode InMode)
+{
+	MotionSheetMode = InMode == EMotionSheetMode::Move ? EMotionSheetMode::Move : EMotionSheetMode::Tilt;
+}
+
+void UKiteSurfGameInstance::SetBarReturnsToMiddle(bool bEnabled)
+{
+	bBarReturnsToMiddle = bEnabled;
 }
 
 void UKiteSurfGameInstance::SetHaptics(bool bEnabled)

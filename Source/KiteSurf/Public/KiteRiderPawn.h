@@ -124,6 +124,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SteerKite(float Axis /* -1..1 */);
 
+	/**
+	 * Puts the bar at this position, 0 (out) to 1 (in), and holds it there: the scripted path (tests,
+	 * the ride's start, kitesurf.Input). It takes the bar back from the player's spring-loaded sheet
+	 * input until the player next moves the bar (see bBarReturnsToMiddle).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SheetKite(float Amount /* 0..1 */);
 
@@ -146,6 +151,7 @@ public:
 	UInputAction* GetWeightShiftAction() const { return WeightShiftAction.Get(); }
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
+	UInputAction* GetRecenterMotionAction() const { return RecenterMotionAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
@@ -365,6 +371,41 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
 	void RecentreMotionBar();
 
+	/**
+	 * The recentre button (IA_RecenterMotion: right stick click, Home): takes the way the controller is
+	 * held now as "bar level, in the middle" (BarNeutralSheet) and shows "Controller recentred". Does
+	 * nothing unless the motion bar is following a controller, so a stray stick click while the right
+	 * stick is the bar changes nothing.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void RecentreMotionBarToMiddle();
+
+	/** The handler Enhanced Input calls for IA_RecenterMotion; public so tests press it. */
+	void OnRecenterMotionTriggered(const FInputActionValue& Value);
+
+	/** How many times the recentre button has recentred the motion bar, for tests. */
+	int32 GetMotionRecentreButtonCount() const { return MotionRecentreButtonCount; }
+
+	/** Tilt (pitch) or Move (travel) for the motion bar's power. Steering is the roll either way. */
+	UFUNCTION(BlueprintCallable, Category = "Input|Motion")
+	void SetMotionSheetMode(EMotionSheetMode InMode);
+
+	UFUNCTION(BlueprintPure, Category = "Input|Motion")
+	EMotionSheetMode GetMotionSheetMode() const { return MotionSheetMode; }
+
+	/** The Move mode's travel, as the pawn feeds it; tests read it. */
+	const FMotionBarStroke& GetMotionStroke() const { return MotionStroke; }
+
+	/** The Move mode's tunables (deadband, still detection, gain). Its limits and relaxation are set by the pawn every frame. */
+	FMotionBarStroke& GetMutableMotionStroke() { return MotionStroke; }
+
+	/**
+	 * With the bar returning to the middle, the Move mode's travel also relaxes towards the middle
+	 * with this time constant (s), so a drifting position does not need recentring often. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Motion", meta = (ClampMin = "0.1"))
+	float MoveRelaxSeconds = 5.0f;
+
 	/** The controller being read, for the settings screen; empty if none. */
 	UFUNCTION(BlueprintPure, Category = "Input|Motion")
 	FString GetMotionDeviceName() const;
@@ -463,9 +504,40 @@ public:
 	/** How the jointed rider is posed now: where the pelvis, knees, feet, elbows and hands are. */
 	const FRiderRigPose& GetRiderRigPose() const { return RiderPose; }
 
-	/** Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. */
+	/**
+	 * Hold the bar moving in (+) or out (-), -1..1; 0 leaves it where it is. The scripted path
+	 * (tests, kitesurf.Input): the bar stays where the rate leaves it whatever bBarReturnsToMiddle
+	 * says. The player's keys, stick and triggers go through OnSheetTriggered instead.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SetSheetRateInput(float Axis);
+
+	/**
+	 * The player's sheet input (IA_Sheet: Up / Down, the right stick, the triggers), -1..1. With
+	 * bBarReturnsToMiddle the bar is spring-loaded: held input sets how far from BarNeutralSheet it
+	 * goes (full input: fully in or out; half a trigger: half way), and letting go returns it to the
+	 * middle at BarReturnRatePerSec. Without it, the input moves the bar as SetSheetRateInput does.
+	 * Public so tests and kitesurf.Bar drive the player path.
+	 */
+	void OnSheetTriggered(const FInputActionValue& Value);
+
+	/** True while the player's sheet input owns the bar (and so springs back to the middle); scripted calls and the mouse bar take it back. */
+	bool IsPlayerSheetInputActive() const { return bPlayerSheetInput; }
+
+	/** The bar springs back to BarNeutralSheet when the player lets go of the sheet input (the "Bar returns to middle" setting, on by default). */
+	UFUNCTION(BlueprintCallable, Category = "Input")
+	void SetBarReturnsToMiddle(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Input")
+	bool GetBarReturnsToMiddle() const { return bBarReturnsToMiddle; }
+
+	/** The bar's resting place with the spring-loaded sheet input, 0..1. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BarNeutralSheet;
+
+	/** How fast the bar returns to BarNeutralSheet when the player lets go (throw per second). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite", meta = (ClampMin = "0.01"))
+	float BarReturnRatePerSec;
 
 	/** Sheet in (+) / out (-) input currently held, -1..1. The bar position itself is GetCurrentSheetInput(). */
 	UFUNCTION(BlueprintCallable, Category = "Input")
@@ -738,6 +810,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> ResetAction;
 
+	/** Recentres the motion bar with the bar in the middle (right stick click, Home). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RecenterMotionAction;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Gameplay")
 	void ResetRider();
@@ -747,8 +823,22 @@ public:
 
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
-	void OnSheetTriggered(const FInputActionValue& Value);
 	void UpdateMouseBar();
+
+	/** Moves the bar for this frame from the sheet input: the spring, the rate, or the motion bar. Tick calls it after UpdateMotionBar. */
+	void UpdateBarSheet(float DeltaTime);
+
+	/** Sets the bar's position and hands it to the kite, without changing who owns the bar. */
+	void ApplySheet(float Amount);
+
+	/** Hands the bar back from the player's spring to a position that holds: scripted calls and the mouse bar. */
+	void ReleasePlayerSheetSpring();
+
+	/** Where the spring-loaded bar heads for this input, -1..1: BarNeutralSheet, moved that fraction of the way to fully in or out. */
+	float GetSpringSheetTarget(float Input) const;
+
+	/** The motion bar's own bar position, 0..1, before the keys' trim: the pitch (Tilt) or the travel (Move). */
+	float GetMotionSheet() const;
 	void OnPauseTriggered(const FInputActionValue& Value);
 	void OnResetTriggered(const FInputActionValue& Value);
 
@@ -791,6 +881,11 @@ private:
 	bool bMotionBarEnabled = false;
 	bool bMotionBarActive = false;
 	bool bMotionRecentrePending = false;
+	/** The pending recentre puts the bar in the middle rather than leaving it where it is. */
+	bool bMotionRecentreToMiddle = false;
+	int32 MotionRecentreButtonCount = 0;
+	EMotionSheetMode MotionSheetMode = EMotionSheetMode::Tilt;
+	FMotionBarStroke MotionStroke;
 
 	UFUNCTION()
 	void HandleKiteCrashed(FVector Location);
@@ -880,6 +975,12 @@ private:
 	float CurrentSteerInput;
 	float CurrentSheetInput;
 	float SheetRateInput;
+	/** The "Bar returns to middle" setting. */
+	bool bBarReturnsToMiddle;
+	/** The last sheet input came from the player (OnSheetTriggered), so the spring applies. */
+	bool bPlayerSheetInput;
+	/** While the motion bar is active: the player's spring-loaded trim on top of the controller's bar position. */
+	float PlayerSheetOffset;
 	float KeySteerInput;
 	float MouseSteerInput;
 	/** Set by ApplyScriptedInput: the bar goes straight to the kite wherever it is. */

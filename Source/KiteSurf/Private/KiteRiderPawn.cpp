@@ -143,6 +143,8 @@ AKiteRiderPawn::AKiteRiderPawn()
 	}
 
 	SheetRatePerSec = 2.5f; // the whole throw in 0.4 s, as fast as arms move a bar
+	BarNeutralSheet = 0.5f;
+	BarReturnRatePerSec = 1.5f; // middle from either end in a third of a second
 	MouseSteerSensitivity = 0.02f;
 	MouseSheetSensitivity = 0.01f;
 	CameraArmLengthCm = 1000.0f;
@@ -295,6 +297,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CurrentSteerInput = 0.0f;
 	CurrentSheetInput = 0.0f;
 	SheetRateInput = 0.0f;
+	bBarReturnsToMiddle = true;
+	bPlayerSheetInput = false;
+	PlayerSheetOffset = 0.0f;
 	KeySteerInput = 0.0f;
 	MouseSteerInput = 0.0f;
 	bScriptedRawSteer = false;
@@ -348,6 +353,8 @@ void AKiteRiderPawn::BeginPlay()
 		{
 			SetRiderCharacter(GI->RiderCharacter);
 			SetMotionBarEnabled(GI->bMotionBar);
+			SetMotionSheetMode(GI->MotionSheetMode);
+			SetBarReturnsToMiddle(GI->bBarReturnsToMiddle);
 			SetHapticsEnabled(GI->bHaptics);
 			SetMusicVolume(GI->MusicVolume);
 			SetAmbientVolume(GI->AmbientVolume);
@@ -427,6 +434,10 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		if (ResetAction)
 		{
 			EnhancedInputComponent->BindAction(ResetAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnResetTriggered);
+		}
+		if (RecenterMotionAction)
+		{
+			EnhancedInputComponent->BindAction(RecenterMotionAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnRecenterMotionTriggered);
 		}
 	}
 
@@ -553,6 +564,7 @@ void AKiteRiderPawn::SetMotionBarEnabled(bool bEnabled)
 	{
 		// Hand the bar back level, where it is.
 		bMotionBarActive = false;
+		PlayerSheetOffset = 0.0f;
 		SteerKite(KeySteerInput + MouseSteerInput);
 	}
 }
@@ -560,6 +572,53 @@ void AKiteRiderPawn::SetMotionBarEnabled(bool bEnabled)
 void AKiteRiderPawn::RecentreMotionBar()
 {
 	bMotionRecentrePending = true;
+}
+
+void AKiteRiderPawn::RecentreMotionBarToMiddle()
+{
+	// The right stick is the bar while the motion bar is not following a controller: a stray click
+	// of it then must not move anything.
+	if (!bMotionBarActive)
+	{
+		return;
+	}
+	bMotionRecentrePending = true;
+	bMotionRecentreToMiddle = true;
+	++MotionRecentreButtonCount;
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (AKiteSurfHUD* HUD = Cast<AKiteSurfHUD>(PC->GetHUD()))
+		{
+			HUD->ShowNotice(TEXT("Controller recentred"));
+		}
+	}
+}
+
+void AKiteRiderPawn::OnRecenterMotionTriggered(const FInputActionValue& Value)
+{
+	RecentreMotionBarToMiddle();
+}
+
+void AKiteRiderPawn::SetMotionSheetMode(EMotionSheetMode InMode)
+{
+	if (MotionSheetMode == InMode)
+	{
+		return;
+	}
+	MotionSheetMode = InMode;
+	// The new mode starts from the bar where it is and the pad as it is held now.
+	MotionStroke.Reset();
+	bMotionRecentrePending = true;
+}
+
+void AKiteRiderPawn::SetBarReturnsToMiddle(bool bEnabled)
+{
+	bBarReturnsToMiddle = bEnabled;
+	if (!bEnabled)
+	{
+		// The bar stays where the spring had it.
+		ReleasePlayerSheetSpring();
+	}
 }
 
 FString AKiteRiderPawn::GetMotionDeviceName() const
@@ -585,6 +644,7 @@ void AKiteRiderPawn::UpdateMotionBar(float DeltaTime)
 			// The controller went away: the stick and keys have the bar again.
 			bMotionBarActive = false;
 			MotionFilter.Reset();
+			PlayerSheetOffset = 0.0f;
 			SteerKite(KeySteerInput + MouseSteerInput);
 		}
 		return;
@@ -598,11 +658,26 @@ void AKiteRiderPawn::UpdateMotionBar(float DeltaTime)
 	}
 	if (bMotionRecentrePending || !bMotionBarActive)
 	{
-		// However the pad is being held now is "bar level": no jump in steering or power.
-		MotionBarMapping.Calibrate(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg(), CurrentSheetInput);
+		// However the pad is being held now is "bar level": no jump in steering, and no jump in power
+		// unless the recentre button asked for the bar in the middle.
+		MotionBarMapping.Calibrate(MotionFilter.GetRollDeg(), MotionFilter.GetPitchDeg(), bMotionRecentreToMiddle ? BarNeutralSheet : CurrentSheetInput);
+		MotionStroke.Reset();
+		PlayerSheetOffset = 0.0f;
 		bMotionRecentrePending = false;
+		bMotionRecentreToMiddle = false;
 	}
 	bMotionBarActive = true;
+
+	if (MotionSheetMode == EMotionSheetMode::Move)
+	{
+		// The travel stops at the ends of the bar's throw, and with the bar returning to the middle it
+		// creeps back there, so drift does not build up between recentres.
+		MotionStroke.MinDisplacementCm = MotionBarMapping.GetStrokeMinCm();
+		MotionStroke.MaxDisplacementCm = MotionBarMapping.GetStrokeMaxCm();
+		MotionStroke.RelaxSeconds = bBarReturnsToMiddle ? MoveRelaxSeconds : 0.0f;
+		MotionStroke.RelaxTargetCm = (BarNeutralSheet - MotionBarMapping.SheetAtNeutral) * MotionBarMapping.MoveSheetFullStrokeCm;
+		MotionStroke.Update(Sample, MotionFilter.GetUp(), DeltaTime);
+	}
 
 	// The right stick is taken out of the steering: the keys and the mouse still add to the tilt.
 	float StickSteer = 0.0f;
@@ -611,7 +686,71 @@ void AKiteRiderPawn::UpdateMotionBar(float DeltaTime)
 		StickSteer = PC->GetInputAnalogKeyState(EKeys::Gamepad_RightX);
 	}
 	SteerKite(KeySteerInput - StickSteer + MouseSteerInput + MotionBarMapping.GetSteer(MotionFilter.GetRollDeg()));
-	SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+	// The bar's position is set by UpdateBarSheet, which adds the keys' trim.
+}
+
+float AKiteRiderPawn::GetMotionSheet() const
+{
+	if (MotionSheetMode == EMotionSheetMode::Move)
+	{
+		return MotionBarMapping.GetSheetFromStroke(MotionStroke.GetDisplacementCm());
+	}
+	return MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg());
+}
+
+float AKiteRiderPawn::GetSpringSheetTarget(float Input) const
+{
+	const float Neutral = FMath::Clamp(BarNeutralSheet, 0.0f, 1.0f);
+	const float Clamped = FMath::Clamp(Input, -1.0f, 1.0f);
+	return Clamped >= 0.0f ? Neutral + Clamped * (1.0f - Neutral) : Neutral + Clamped * Neutral;
+}
+
+void AKiteRiderPawn::ReleasePlayerSheetSpring()
+{
+	if (!FMath::IsNearlyZero(PlayerSheetOffset))
+	{
+		// The keys' trim on the motion bar becomes part of where the bar sits.
+		MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral + PlayerSheetOffset, 0.0f, 1.0f);
+		PlayerSheetOffset = 0.0f;
+	}
+	bPlayerSheetInput = false;
+}
+
+void AKiteRiderPawn::UpdateBarSheet(float DeltaTime)
+{
+	const bool bSpring = bBarReturnsToMiddle && bPlayerSheetInput;
+	const bool bHeld = FMath::Abs(SheetRateInput) > KINDA_SMALL_NUMBER;
+	// Out at the bar's own rate while held, back to the middle at the return rate once let go.
+	const float SpringRate = bHeld ? SheetRatePerSec : BarReturnRatePerSec;
+
+	if (bMotionBarActive)
+	{
+		if (bSpring)
+		{
+			// The keys, stick and triggers trim the controller's bar while held and spring back when let
+			// go: full input is fully in or out from wherever the controller has the bar.
+			const float Base = GetMotionSheet();
+			const float Target = SheetRateInput >= 0.0f ? SheetRateInput * (1.0f - Base) : SheetRateInput * Base;
+			PlayerSheetOffset = FMath::FInterpConstantTo(PlayerSheetOffset, Target, DeltaTime, SpringRate);
+		}
+		else if (!FMath::IsNearlyZero(SheetRateInput))
+		{
+			// Scripted, or with the spring off: the input moves where the bar sits for the controller.
+			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral + SheetRateInput * SheetRatePerSec * DeltaTime, 0.0f, 1.0f);
+		}
+		ApplySheet(GetMotionSheet() + PlayerSheetOffset);
+		return;
+	}
+
+	if (bSpring)
+	{
+		ApplySheet(FMath::FInterpConstantTo(CurrentSheetInput, GetSpringSheetTarget(SheetRateInput), DeltaTime, SpringRate));
+	}
+	else if (!FMath::IsNearlyZero(SheetRateInput))
+	{
+		// The bar stays where it is put: the input moves it in or out instead of setting it.
+		ApplySheet(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
+	}
 }
 
 void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
@@ -756,14 +895,19 @@ void AKiteRiderPawn::UpdateMouseBar()
 		float DeltaY = 0.0f;
 		PC->GetInputMouseDelta(DeltaX, DeltaY);
 		MouseSteerInput = FMath::Clamp(MouseSteerInput + DeltaX * MouseSteerSensitivity, -1.0f, 1.0f);
-		if (bMotionBarActive)
+		if (DeltaY != 0.0f)
 		{
-			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral - DeltaY * MouseSheetSensitivity, 0.0f, 1.0f);
-			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
-		}
-		else
-		{
-			SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+			// The mouse keeps its own mapping: the bar stays where it puts it, spring or not.
+			ReleasePlayerSheetSpring();
+			if (bMotionBarActive)
+			{
+				MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral - DeltaY * MouseSheetSensitivity, 0.0f, 1.0f);
+				ApplySheet(GetMotionSheet());
+			}
+			else
+			{
+				ApplySheet(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+			}
 		}
 		SteerKite(KeySteerInput + MouseSteerInput);
 	}
@@ -781,12 +925,16 @@ void AKiteRiderPawn::UpdateMouseBar()
 
 void AKiteRiderPawn::OnSheetTriggered(const FInputActionValue& Value)
 {
-	SetSheetRateInput(Value.Get<float>());
+	// The player's keys, stick and triggers: spring-loaded about the middle when the setting is on
+	// (UpdateBarSheet).
+	SheetRateInput = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
+	bPlayerSheetInput = true;
 }
 
 void AKiteRiderPawn::SetSheetRateInput(float Axis)
 {
-	// The bar stays where it is put: the input moves it in or out (see Tick) instead of setting it.
+	// Scripted: the bar stays where it is put, the input moves it in or out (UpdateBarSheet).
+	ReleasePlayerSheetSpring();
 	SheetRateInput = FMath::Clamp(Axis, -1.0f, 1.0f);
 }
 
@@ -886,6 +1034,13 @@ void AKiteRiderPawn::SteerKite(float Axis)
 }
 
 void AKiteRiderPawn::SheetKite(float Amount)
+{
+	// Scripted: the bar holds this position, so the player's spring lets go of it.
+	ReleasePlayerSheetSpring();
+	ApplySheet(Amount);
+}
+
+void AKiteRiderPawn::ApplySheet(float Amount)
 {
 	CurrentSheetInput = FMath::Clamp(Amount, 0.0f, 1.0f);
 	if (Kite)
@@ -1339,19 +1494,9 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 
 	UpdateMotionBar(DeltaTime);
 
-	// The stick, triggers and keys still adjust the bar when the motion controller is in use.
-	if (!FMath::IsNearlyZero(SheetRateInput))
-	{
-		if (bMotionBarActive)
-		{
-			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral + SheetRateInput * SheetRatePerSec * DeltaTime, 0.0f, 1.0f);
-			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
-		}
-		else
-		{
-			SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
-		}
-	}
+	// The keys, stick and triggers move the bar, springing back to the middle when the player lets go
+	// (bBarReturnsToMiddle); they still adjust it while the motion controller has the bar.
+	UpdateBarSheet(DeltaTime);
 
 	if (GetController())
 	{

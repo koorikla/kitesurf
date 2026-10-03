@@ -370,7 +370,7 @@ FString AKiteSurfHUD::GetCurrentPromptText() const
 	case 0:
 		return TEXT("Steer the kite: steer away from it to fly it over the top; keep steering towards its own side to loop it [Left / Right or Right Stick]");
 	case 1:
-		return TEXT("Sheet in for power: pull the bar in [Down]. Sheet out to slow down [Up]. The bar stays where you leave it [or Right Stick]");
+		return TEXT("Sheet in for power: hold the bar in [Down]. Sheet out to slow down [Up]. Let go and the bar springs back to the middle [or Right Stick, Triggers]");
 	case 2:
 		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
 	case 3:
@@ -1020,7 +1020,7 @@ void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
 		}
 	case 1: // Sheet
 		{
-			// The bar holds its position, so progress comes from moving it, not from where it sits.
+			// Progress comes from working the bar (the input held), not from where it sits: it may spring back to the middle.
 			const float SheetInput = FMath::Abs(RiderPawn->GetSheetRateInput());
 			if (SheetInput > 0.3f)
 			{

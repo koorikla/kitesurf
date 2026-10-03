@@ -9,9 +9,10 @@ namespace
 	const FKiteSurfControlBinding ControlBindings[] =
 	{
 		{ TEXT("Steer the kite round the window"), TEXT("Left / Right"),              TEXT("Right stick left / right") },
-		{ TEXT("Bar in / out (power)"),            TEXT("Down / Up"),                 TEXT("Right stick up / down, triggers") },
+		{ TEXT("Bar in / out (power); let go: back to the middle"), TEXT("Down / Up (hold)"), TEXT("Right stick up / down, triggers") },
 		{ TEXT("Loop the kite"),                   TEXT("Keep steering towards the kite's own side"), TEXT("Keep the stick towards the kite's own side") },
 		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet"), TEXT("") },
+		{ TEXT("Motion bar: recentre, bar in the middle"), TEXT("Home"),                  TEXT("Right stick click") },
 		{ TEXT("Turn the board"),                  TEXT("A / D"),                     TEXT("Left stick left / right") },
 		{ TEXT("Weight on the nose / the tail"),   TEXT("W / S"),                     TEXT("Left stick up / down") },
 		{ TEXT("Hold to load the edge, let go to pop"), TEXT("Space"),                    TEXT("Bottom face button") },

@@ -68,6 +68,8 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 			CurrentRiderCharacter = GI->RiderCharacter;
 			CurrentKiteSizeM2 = GI->KiteSizeM2;
 			bMotionBar = GI->bMotionBar;
+			MotionSheetMode = GI->MotionSheetMode;
+			bBarReturnsToMiddle = GI->bBarReturnsToMiddle;
 			bHaptics = GI->bHaptics;
 		}
 		else
@@ -83,6 +85,8 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 				bSkipOnboarding = SaveGame->bSkipOnboarding;
 				CurrentRiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
 				CurrentKiteSizeM2 = UKiteComponent::GetKiteSizesM2().Contains(SaveGame->KiteSizeM2) ? SaveGame->KiteSizeM2 : 0.0f;
+				MotionSheetMode = SaveGame->MotionSheetModeIndex == static_cast<int32>(EMotionSheetMode::Move) ? EMotionSheetMode::Move : EMotionSheetMode::Tilt;
+				bBarReturnsToMiddle = SaveGame->bBarReturnsToMiddle;
 			}
 		}
 	}
@@ -476,6 +480,43 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 						]
 					]
 				]
+				// Motion power row: tip the pad or move it
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("MOTION POWER:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateMotionSheetModeButton, SButton)
+						.IsFocusable(false)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleMotionSheetMode();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateMotionSheetModeText, STextBlock)
+							.Text(FText::FromString(MotionSheetMode == EMotionSheetMode::Move ? TEXT("MOVE") : TEXT("TILT")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
+				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(200.0f, 0.0f, 20.0f, 6.0f)
@@ -485,6 +526,43 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 					.ColorAndOpacity(FLinearColor(0.55f, 0.75f, 0.9f))
 					.AutoWrapText(true)
+				]
+				// Bar returns to middle row
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(20.0f, 6.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SBox).WidthOverride(170.0f)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(TEXT("BAR TO MIDDLE:")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
+						]
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.Padding(10.0f, 0.0f)
+					.VAlign(VAlign_Center)
+					[
+						SAssignNew(SlateBarReturnsButton, SButton)
+						.IsFocusable(false)
+						.HAlign(HAlign_Center)
+						.OnClicked_Lambda([this]()
+						{
+							ToggleBarReturnsToMiddle();
+							return FReply::Handled();
+						})
+						[
+							SAssignNew(SlateBarReturnsText, STextBlock)
+							.Text(FText::FromString(bBarReturnsToMiddle ? TEXT("ON") : TEXT("OFF")))
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+						]
+					]
 				]
 				// Vibration row
 				+ SVerticalBox::Slot()
@@ -777,11 +855,42 @@ void UKiteSurfSettingsWidget::ToggleMotionBar()
 	UpdateTextDisplays();
 }
 
+void UKiteSurfSettingsWidget::ToggleMotionSheetMode()
+{
+	MotionSheetMode = MotionSheetMode == EMotionSheetMode::Move ? EMotionSheetMode::Tilt : EMotionSheetMode::Move;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetMotionSheetMode(MotionSheetMode);
+		}
+	}
+	UpdateTextDisplays();
+}
+
+void UKiteSurfSettingsWidget::ToggleBarReturnsToMiddle()
+{
+	bBarReturnsToMiddle = !bBarReturnsToMiddle;
+	if (const UWorld* World = GetWorld())
+	{
+		const APlayerController* PC = World->GetFirstPlayerController();
+		if (AKiteRiderPawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+		{
+			Rider->SetBarReturnsToMiddle(bBarReturnsToMiddle);
+		}
+	}
+	UpdateTextDisplays();
+}
+
 FString UKiteSurfSettingsWidget::GetMotionBarNote() const
 {
+	const TCHAR* PowerHow = MotionSheetMode == EMotionSheetMode::Move
+		? TEXT("move it down or towards you for power, up or away to let the bar out")
+		: TEXT("tip it towards you for power");
 	if (!bMotionBar)
 	{
-		return TEXT("Hold the controller like a bar: tilt to steer, tip it towards you for power. Needs a controller with motion sensors (PlayStation, Switch); Xbox controllers have none.");
+		return FString::Printf(TEXT("Hold the controller like a bar: tilt to steer, %s. Needs a controller with motion sensors (PlayStation, Switch); Xbox controllers have none."), PowerHow);
 	}
 	FString Device;
 	if (const UWorld* World = GetWorld())
@@ -794,9 +903,9 @@ FString UKiteSurfSettingsWidget::GetMotionBarNote() const
 	}
 	if (!Device.IsEmpty())
 	{
-		return FString::Printf(TEXT("Using %s. However you are holding it when you start is level; reset [R] re-centres."), *Device);
+		return FString::Printf(TEXT("Using %s: tilt to steer, %s. Right stick click [Home] recentres with the bar in the middle."), *Device, PowerHow);
 	}
-	return TEXT("On. With no motion sensors found the right stick still works. However you hold the controller when the ride starts is level; reset [R] re-centres.");
+	return TEXT("On. With no motion sensors found the right stick still works. However you hold the controller when the ride starts is level; right stick click [Home] recentres.");
 }
 
 void UKiteSurfSettingsWidget::ToggleVSync()
@@ -965,6 +1074,14 @@ void UKiteSurfSettingsWidget::UpdateTextDisplays()
 	{
 		SlateMotionBarNote->SetText(FText::FromString(GetMotionBarNote()));
 	}
+	if (SlateMotionSheetModeText.IsValid())
+	{
+		SlateMotionSheetModeText->SetText(FText::FromString(MotionSheetMode == EMotionSheetMode::Move ? TEXT("MOVE") : TEXT("TILT")));
+	}
+	if (SlateBarReturnsText.IsValid())
+	{
+		SlateBarReturnsText->SetText(FText::FromString(bBarReturnsToMiddle ? TEXT("ON") : TEXT("OFF")));
+	}
 
 	const FString VSyncStr = bCurrentVSync ? TEXT("ENABLED") : TEXT("DISABLED");
 	if (VSyncValueText)
@@ -999,6 +1116,8 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 			GI->SetRiderCharacter(CurrentRiderCharacter);
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
 			GI->SetMotionBar(bMotionBar);
+			GI->SetMotionSheetMode(MotionSheetMode);
+			GI->SetBarReturnsToMiddle(bBarReturnsToMiddle);
 			GI->SetHaptics(bHaptics);
 			GI->SaveSettingsToDisk();
 
@@ -1030,6 +1149,8 @@ void UKiteSurfSettingsWidget::OnBackClicked()
 				SaveGame->bSkipOnboarding = bSkipOnboarding;
 				SaveGame->RiderCharacterIndex = static_cast<int32>(CurrentRiderCharacter);
 				SaveGame->KiteSizeM2 = CurrentKiteSizeM2;
+				SaveGame->MotionSheetModeIndex = static_cast<int32>(MotionSheetMode);
+				SaveGame->bBarReturnsToMiddle = bBarReturnsToMiddle;
 				SaveGame->SaveSettings();
 			}
 		}
@@ -1083,6 +1204,8 @@ void UKiteSurfSettingsWidget::BuildNavigation()
 		SetResolutionByIndex(FMath::Clamp(Next, 0, FMath::Max(SupportedResolutions.Num() - 1, 0)));
 	});
 	Navigator.AddButton(SlateMotionBarButton, [this]() { ToggleMotionBar(); }, true);
+	Navigator.AddButton(SlateMotionSheetModeButton, [this]() { ToggleMotionSheetMode(); }, true);
+	Navigator.AddButton(SlateBarReturnsButton, [this]() { ToggleBarReturnsToMiddle(); }, true);
 	Navigator.AddButton(SlateHapticsButton, [this]() { ToggleHaptics(); }, true);
 	Navigator.AddButton(SlateVSyncButton, [this]() { ToggleVSync(); }, true);
 	Navigator.AddText(SlateQualityText, [this](int32 Direction) { SetQualityPreset(CurrentQualityPreset + Direction); });

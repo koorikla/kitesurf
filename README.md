@@ -62,9 +62,10 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power (the bar holds its position) | Down / Up | Right stick pulled back / pushed forward, triggers |
+| Bar in / out: power. Let go and the bar springs back to the middle (Settings: BAR TO MIDDLE; off, it holds its position) | Down / Up (hold) | Right stick pulled back / pushed forward, triggers (half a trigger: half way) |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
-| Bar on the mouse | Hold right button: move to steer and sheet | |
+| Bar on the mouse (the bar stays where the mouse leaves it) | Hold right button: move to steer and sheet | |
+| Motion bar: recentre, with the bar in the middle | Home | Right stick click |
 | Turn the board left / right | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Hold to crouch and load the edge; let go to pop | Space | Bottom face button |
@@ -120,12 +121,16 @@ and 9.9 g (90 kn), and the higher ones, the best 60 kn jump included (11.2 g), c
 The card that names and scores the jump shows the same g.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
-motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full
-steering), and pull it in towards you like a bar for power. However you are holding it when the
-ride starts is level; reset (R) re-centres. The right stick, triggers and bar keys then leave the
-bar alone. It needs a controller with motion sensors (PlayStation DualSense or DualShock 4,
-Switch Pro); Xbox controllers have none, and with no sensors found the right stick carries on
-working. Linux only for now.
+motion sensors are the bar: hold the controller like a bar and tilt it to steer (35 degrees is full
+steering). MOTION POWER picks how it reads power: TILT (the default) is the pad tipped towards you;
+MOVE is the pad moved down or towards you, as a real bar is pulled in, and up or away to let it out
+(about 25 cm of travel is the whole throw; keep strokes brisk, under a second, because a pad cannot
+tell a slow movement from holding still, and recentre when the bar has wandered). However you are
+holding it when the ride starts is level; the right stick click (Home) recentres with the bar in the
+middle, and reset (R) re-centres where it is. The triggers and bar keys trim the bar on top of the
+controller while held. It needs a controller with motion sensors (PlayStation DualSense or
+DualShock 4, Switch Pro); Xbox controllers have none, and with no sensors found the right stick
+carries on working. Linux only for now.
 
 **Vibration.** The controller buzzes briefly on the pop, on landing (harder for a harder
 landing), on a crash, when the kite hits the water, and once when the lines yank hard, as in a

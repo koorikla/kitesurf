@@ -4,6 +4,7 @@
 #include "Engine/GameInstance.h"
 #include "RiderCharacter.h"
 #include "KiteGear.h"
+#include "KiteMotionBar.h"
 #include "Tricks/TrickBook.h"
 #include "KiteSurfGameInstance.generated.h"
 
@@ -70,6 +71,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void SetMotionBar(bool bEnabled);
+
+	/** How the motion bar reads power: tip the pad (Tilt, the default) or move it up and down (Move) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	EMotionSheetMode MotionSheetMode;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetMotionSheetMode(EMotionSheetMode InMode);
+
+	/** The bar springs back to the middle when the power keys, stick or triggers are let go (on by default) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
+	bool bBarReturnsToMiddle;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void SetBarReturnsToMiddle(bool bEnabled);
 
 	/** Controller vibration on pops, landings, crashes and hard pulls (on by default) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")

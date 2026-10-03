@@ -97,6 +97,15 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
   Call the engine through these scripts, not directly, or the lock is bypassed.
   `KITESURF_GPU_LOCK=0` skips the lock; `KITESURF_GPU_LOCK_FILE` points it elsewhere.
   A wait is not a hang: check the holder's pid before killing anything.
+- **The lock only queues runs that take it.** Branches from before the lock, direct engine
+  calls and windowed runs still hold VRAM; a 1280x720 smoke run needs about 3.5 GB, so it
+  crashes at frame 0 next to any other offscreen game. With the lock held, a command
+  therefore also waits for `KITESURF_GPU_MIN_FREE_MB` (4096) of free VRAM, for up to
+  `KITESURF_GPU_WAIT_SECONDS` (900), printing `=== Waiting for 4096 MB of free VRAM ...` and
+  the engine processes on the GPU. `smoke-test.sh` also retries a run that died with
+  `Fatal error: [File:...VulkanMemory.cpp]` up to `KITESURF_SMOKE_OOM_RETRIES` (2) times.
+  A red `gpu-smoke` with that error is contention, not a code bug: see who held the GPU in the
+  log before blaming the change. Rebase old branches so their runs take the lock.
 - **A green test run can be empty.** `scripts/run-tests.sh` only warns when the report is
   missing, and `scripts/parse_test_report.py` exits 0 if the report cannot be parsed. Always
   read the `Test Results:` line and check that `Total` is the number of tests you expect.

@@ -31,6 +31,8 @@ bool ULessonSubsystem::RecordLessonResult(FName LessonId, bool bPassed, int32 St
 		return false;
 	}
 	const bool bRaised = Progress.RecordAttempt(LessonId, bPassed, Stars, Value, bNoAssists, FDateTime::UtcNow());
+	// Before the save, so what the listeners change (the tutorial's completed flag) is written with it.
+	OnLessonResultRecorded.Broadcast(LessonId, bPassed);
 	SaveProgress();
 	return bRaised;
 }

@@ -23,14 +23,9 @@
 #include "InputAction.h"
 #include "School/LessonDirector.h"
 #include "School/LessonSubsystem.h"
+#include "School/SchoolOnboarding.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
-	: CurrentOnboardingStep(0)
-	, bOnboardingActive(true)
-	, CurrentStepProgress(0.0f)
-	, bHasInitializedOnboarding(false)
-	, PromptAlpha(1.0f)
-	, StepCompletionTimer(0.0f)
 {
 }
 
@@ -334,65 +329,6 @@ FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)
 	return FString::Printf(TEXT("%.1f"), Knots);
 }
 
-void AKiteSurfHUD::StartOnboarding()
-{
-	CurrentOnboardingStep = 0;
-	bOnboardingActive = true;
-	CurrentStepProgress = 0.0f;
-	StepCompletionTimer = 0.0f;
-	PromptAlpha = 1.0f;
-}
-
-void AKiteSurfHUD::SkipOnboarding()
-{
-	bOnboardingActive = false;
-	CurrentOnboardingStep = 4;
-	if (UWorld* World = GetWorld())
-	{
-		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
-		{
-			GI->SetSkipOnboarding(true);
-			GI->SaveSettingsToDisk();
-		}
-	}
-}
-
-void AKiteSurfHUD::AdvanceOnboardingStep()
-{
-	CurrentOnboardingStep++;
-	CurrentStepProgress = 0.0f;
-	StepCompletionTimer = 0.0f;
-	if (CurrentOnboardingStep >= 4)
-	{
-		bOnboardingActive = false;
-		if (UWorld* World = GetWorld())
-		{
-			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
-			{
-				GI->SetOnboardingCompleted(true);
-				GI->SaveSettingsToDisk();
-			}
-		}
-	}
-}
-
-FString AKiteSurfHUD::GetCurrentPromptText() const
-{
-	switch (CurrentOnboardingStep)
-	{
-	case 0:
-		return TEXT("Steer the kite: steer away from it to fly it over the top; keep steering towards its own side to loop it [Left / Right or Right Stick]");
-	case 1:
-		return TEXT("Sheet in for power: hold the bar in [Down]. Sheet out to slow down [Up]. Let go and the bar springs back to the middle [or Right Stick, Triggers]");
-	case 2:
-		return TEXT("Turn the board with A / D and put your weight on its edge: W leans on the nose, S on the tail [or Left Stick]");
-	case 3:
-		return TEXT("Big air: hold [SPACE or Bottom Face Button] to crouch and load the edge, steer the kite up, pull the bar in, then let go to pop and jump");
-	default:
-		return TEXT("TUTORIAL COMPLETE - ENJOY THE OPEN WATER!");
-	}
-}
-
 void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
 {
 	JumpRejectionText = UBoardMovementComponent::JumpRejectReasonToString(Reason);
@@ -472,8 +408,10 @@ void AKiteSurfHUD::DrawHUD()
 
 	DrawFPS(ScreenW - 130.0f, 25.0f);
 
-	// The kite school's lesson layer, while a lesson runs: it replaces the old onboarding prompt.
+	// The kite school's lesson layer, while a lesson runs.
 	UpdateLessonLayer(DeltaTime);
+	// The first-run tutorial's line (lessons A1 to A3, S7).
+	UpdateTutorialHint();
 	const bool bLesson = LessonLayer.IsVisible();
 
 	AKiteRiderPawn* RiderPawn = Cast<AKiteRiderPawn>(GetOwningPawn());
@@ -490,18 +428,8 @@ void AKiteSurfHUD::DrawHUD()
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
 		// Left of the power gauge: what the hands are doing to the bar.
 		DrawControlBar(RiderPawn, ScreenW - 500.0f, ScreenH - 280.0f, 230.0f, 245.0f);
-		if (!bLesson)
-		{
-			UpdateOnboarding(DeltaTime, RiderPawn);
-		}
 		UpdateLandingCard(RiderPawn->GetBoardMovement(), DeltaTime);
 		DrawLandingCard(ScreenW, ScreenH);
-	}
-
-	const bool bOnboardingShown = bOnboardingActive && !bLesson;
-	if (bOnboardingShown)
-	{
-		DrawOnboardingPrompt(ScreenW, ScreenH);
 	}
 
 	// The lesson panel at the top centre; the jump readout and the trick card move down under it.
@@ -514,6 +442,9 @@ void AKiteSurfHUD::DrawHUD()
 		{
 			ReadoutTop = PanelBottom + 12.0f;
 		}
+		// Under the panel (or at the top over a result card): the tutorial's welcome, skip and "complete" lines.
+		const float HintBottom = DrawTutorialHint(ScreenW, ScreenH, PanelBottom > Margin ? PanelBottom + 8.0f : Margin);
+		ReadoutTop = FMath::Max(ReadoutTop, HintBottom + 12.0f);
 	}
 
 	// Top centre: how high and how far the jump is going, then what it came to.
@@ -534,11 +465,6 @@ void AKiteSurfHUD::DrawHUD()
 	}
 
 	// Under the readout: the trick being flown while in the air, then the finished jump's card.
-	// Kept below the onboarding prompt while it is up (its box ends at 165), so the two do not overlap.
-	if (bOnboardingShown)
-	{
-		BelowReadoutY = FMath::Max(BelowReadoutY, 181.0f);
-	}
 	if (!TickerText.IsEmpty())
 	{
 		float TextW = 0.0f;
@@ -1017,148 +943,65 @@ void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 	DrawText(FString::Printf(TEXT("PULLED IN %.0f%%"), Sheet * 100.0f), FLinearColor::White, ScreenX + 10.0f, TrackY + 32.0f, nullptr, 0.9f);
 }
 
-void AKiteSurfHUD::UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn)
+void AKiteSurfHUD::UpdateTutorialHint()
 {
-	if (!bHasInitializedOnboarding)
+	TutorialHintLines.Reset();
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (const USchoolOnboardingSubsystem* Onboarding = GameInstance ? GameInstance->GetSubsystem<USchoolOnboardingSubsystem>() : nullptr)
 	{
-		bHasInitializedOnboarding = true;
-		if (UWorld* World = GetWorld())
-		{
-			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
-			{
-				if (GI->bSkipOnboarding || GI->bOnboardingCompleted)
-				{
-					bOnboardingActive = false;
-					CurrentOnboardingStep = 4;
-					return;
-				}
-			}
-		}
-	}
-
-	if (!bOnboardingActive || !RiderPawn)
-	{
-		return;
-	}
-
-	switch (CurrentOnboardingStep)
-	{
-	case 0: // Steer
-		{
-			const float SteerInput = FMath::Abs(RiderPawn->GetCurrentSteerInput());
-			if (SteerInput > 0.25f)
-			{
-				CurrentStepProgress += DeltaTime * 0.75f;
-			}
-			if (CurrentStepProgress >= 1.0f)
-			{
-				StepCompletionTimer += DeltaTime;
-				if (StepCompletionTimer >= 0.8f)
-				{
-					AdvanceOnboardingStep();
-				}
-			}
-			break;
-		}
-	case 1: // Sheet
-		{
-			// Progress comes from working the bar (the input held), not from where it sits: it may spring back to the middle.
-			const float SheetInput = FMath::Abs(RiderPawn->GetSheetRateInput());
-			if (SheetInput > 0.3f)
-			{
-				CurrentStepProgress += DeltaTime * 0.75f;
-			}
-			if (CurrentStepProgress >= 1.0f)
-			{
-				StepCompletionTimer += DeltaTime;
-				if (StepCompletionTimer >= 0.8f)
-				{
-					AdvanceOnboardingStep();
-				}
-			}
-			break;
-		}
-	case 2: // Edge
-		{
-			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
-			{
-				if (FMath::Abs(BoardMove->GetEdgeInput()) > 0.2f || FMath::Abs(BoardMove->GetWeightShift()) > 0.2f)
-				{
-					CurrentStepProgress += DeltaTime * 0.75f;
-				}
-			}
-			if (CurrentStepProgress >= 1.0f)
-			{
-				StepCompletionTimer += DeltaTime;
-				if (StepCompletionTimer >= 0.8f)
-				{
-					AdvanceOnboardingStep();
-				}
-			}
-			break;
-		}
-	case 3: // Jump
-		{
-			if (const UBoardMovementComponent* BoardMove = RiderPawn->GetBoardMovement())
-			{
-				if (BoardMove->GetBoardState() == EBoardState::Airborne || BoardMove->GetLastJumpApexHeight() > 10.0f)
-				{
-					CurrentStepProgress = 1.0f;
-					StepCompletionTimer += DeltaTime;
-					if (StepCompletionTimer >= 1.2f)
-					{
-						AdvanceOnboardingStep();
-					}
-				}
-			}
-			break;
-		}
-	default:
-		break;
+		TutorialHintLines = Onboarding->GetHintLines(FindLessonDirector());
 	}
 }
 
-void AKiteSurfHUD::DrawOnboardingPrompt(float ScreenW, float ScreenH)
+float AKiteSurfHUD::DrawTutorialHint(float ScreenW, float ScreenH, float Top)
 {
-	const FString PromptText = GetCurrentPromptText();
-	float TextW = 0.0f;
-	float TextH = 0.0f;
-	GetTextSize(PromptText, TextW, TextH, nullptr, 1.25f);
-
-	const float CenterX = ScreenW * 0.5f;
-	const float PromptY = 90.0f;
-	const float BoxW = FMath::Max(TextW + 40.0f, 480.0f);
-	const float BoxH = 75.0f;
-	// Centred, but kept clear of the telemetry panel on the left and the FPS readout on the right.
-	const float LeftLimit = 365.0f;
-	const float RightLimit = FMath::Max(ScreenW - 150.0f - BoxW, LeftLimit);
-	const float BoxX = FMath::Clamp(CenterX - (BoxW * 0.5f), LeftLimit, RightLimit);
-
-	// Background container
-	DrawRect(FLinearColor(0.02f, 0.06f, 0.12f, 0.85f), BoxX, PromptY, BoxW, BoxH);
-	// Top accent line
-	DrawRect(FLinearColor(0.2f, 0.8f, 1.0f, 0.9f), BoxX, PromptY, BoxW, 3.0f);
-
-	// Step indicator (e.g. "STEP 1/4")
-	FString StepHeader = FString::Printf(TEXT("ONBOARDING - STEP %d OF 4"), FMath::Min(CurrentOnboardingStep + 1, 4));
-	if (CurrentOnboardingStep >= 4)
+	if (TutorialHintLines.Num() == 0)
 	{
-		StepHeader = TEXT("ONBOARDING COMPLETE");
+		return Top;
 	}
-	DrawText(StepHeader, FLinearColor(0.2f, 0.85f, 1.0f), BoxX + 16.0f, PromptY + 10.0f, nullptr, 0.9f);
-
-	// Prompt instruction text
-	const FLinearColor TextColor = (CurrentStepProgress >= 1.0f) ? FLinearColor(0.3f, 1.0f, 0.4f) : FLinearColor::White;
-	DrawText(PromptText, TextColor, BoxX + 16.0f, PromptY + 30.0f, nullptr, 1.15f);
-
-	// Progress bar at bottom of card
-	const float BarW = BoxW - 32.0f;
-	const float BarH = 6.0f;
-	const float BarX = BoxX + 16.0f;
-	const float BarY = PromptY + BoxH - 14.0f;
-	DrawRect(FLinearColor(0.15f, 0.2f, 0.25f, 0.9f), BarX, BarY, BarW, BarH);
-	const float ClampedProgress = FMath::Clamp(CurrentStepProgress, 0.0f, 1.0f);
-	DrawRect(FLinearColor(0.2f, 0.85f, 1.0f, 1.0f), BarX, BarY, BarW * ClampedProgress, BarH);
+	// Sized like the lesson panel (LessonHUD's UiScale), centred and clear of the telemetry and the wind flag.
+	const float Ui = FMath::Clamp(ScreenH / 1080.0f, 0.85f, 1.6f);
+	const float Pad = 10.0f * Ui;
+	const float Spacing = 4.0f * Ui;
+	const float LeftLimit = 365.0f;
+	const float RightLimit = FMath::Max(ScreenW - 185.0f, LeftLimit + 200.0f);
+	const float MaxInnerW = FMath::Min(760.0f * Ui, RightLimit - LeftLimit) - 2.0f * Pad;
+	TArray<float> Scales;
+	TArray<FVector2D> Sizes;
+	float InnerW = 0.0f;
+	float InnerH = 0.0f;
+	for (int32 I = 0; I < TutorialHintLines.Num(); ++I)
+	{
+		// The first line is the title: larger.
+		float Scale = (I == 0 ? 1.25f : 1.05f) * Ui;
+		float W = 0.0f;
+		float H = 0.0f;
+		GetTextSize(TutorialHintLines[I], W, H, nullptr, Scale);
+		if (W > MaxInnerW && W > 0.0f)
+		{
+			Scale *= MaxInnerW / W;
+			GetTextSize(TutorialHintLines[I], W, H, nullptr, Scale);
+		}
+		Scales.Add(Scale);
+		Sizes.Add(FVector2D(W, H));
+		InnerW = FMath::Max(InnerW, W);
+		InnerH += H + Spacing;
+	}
+	InnerH -= Spacing;
+	const float BoxW = InnerW + 2.0f * Pad;
+	const float BoxH = InnerH + 2.0f * Pad;
+	const float BoxX = FMath::Clamp(ScreenW * 0.5f - BoxW * 0.5f, LeftLimit, FMath::Max(RightLimit - BoxW, LeftLimit));
+	const FLinearColor Green(0.45f, 1.0f, 0.6f);
+	DrawRect(FLinearColor(0.02f, 0.08f, 0.06f, 0.85f), BoxX, Top, BoxW, BoxH);
+	DrawRect(FLinearColor(Green.R, Green.G, Green.B, 0.9f), BoxX, Top, 3.0f * Ui, BoxH);
+	float Y = Top + Pad;
+	for (int32 I = 0; I < TutorialHintLines.Num(); ++I)
+	{
+		DrawText(TutorialHintLines[I], I == 0 ? Green : FLinearColor(0.85f, 0.92f, 0.95f), BoxX + Pad, Y, nullptr, Scales[I]);
+		Y += Sizes[I].Y + Spacing;
+	}
+	return Top + BoxH;
 }
 
 FString AKiteSurfHUD::FormatSessionClock(float SecondsLeft)

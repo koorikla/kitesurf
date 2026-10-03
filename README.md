@@ -168,7 +168,16 @@ START it, with more wind or fewer assists on a rerun for more stars. CONTINUE st
 the game recommends next. RESET PROGRESS forgets the lessons (it asks first, and keeps your trick
 book). During a lesson the pause menu offers RETRY LESSON, LESSON MENU and FREE RIDE.
 
-**Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
+**First run.** The tutorial is the kite school's first three lessons. The first time you press
+PLAY (until you finish or skip the tutorial) the game starts lesson A1, the kite power dive, on
+flat water instead of opening the gear screen; the result card's Next goes on to A2 (water start)
+and A3 (speed control). A line under the lesson panel welcomes you and says how to skip: in the
+pause menu FREE RIDE reads SKIP TUTORIAL, which ends the lesson in free ride and stops PLAY
+starting it again. Passing A3 finishes the tutorial, and its result card points on to the school
+(Next goes to A4; jumps start at B1, or B2 if you already have B1) or free ride. The lessons stay
+in the School menu for reruns.
+
+**Gear.** PLAY opens the gear screen (after the first-run tutorial), and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:
 
 - *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 2 to 17 m, or AUTO

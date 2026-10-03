@@ -2,6 +2,7 @@
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfSchoolWidget.h"
+#include "School/SchoolOnboarding.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfMenuVideo.h"
 #include "Widgets/Images/SImage.h"
@@ -333,6 +334,22 @@ void UKiteSurfMainMenuWidget::OnPlayClicked()
 	if (!World || ActiveGearWidget)
 	{
 		return;
+	}
+
+	// A first run (onboarding neither completed nor skipped) starts the kite school's first lesson
+	// instead (docs/tutorials.md S7): the lesson fixes its own wind and gear, so there is no gear
+	// screen. ULessonSubsystem::StartLesson opens L_FlatWater, and the lesson begins once the rider is in.
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	if (USchoolOnboardingSubsystem* Onboarding = GameInstance ? GameInstance->GetSubsystem<USchoolOnboardingSubsystem>() : nullptr)
+	{
+		if (Onboarding->StartFirstRunTutorial())
+		{
+			if (UKiteSurfMenuVideoSubsystem* Videos = GetVideos())
+			{
+				Videos->PrepareLoadingScreen();
+			}
+			return;
+		}
 	}
 
 	// Gear first: wind, kite, board and rider are chosen before the ride starts.

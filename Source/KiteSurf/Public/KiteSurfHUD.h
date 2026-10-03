@@ -24,37 +24,6 @@ public:
 
 	virtual void DrawHUD() override;
 
-	/** Onboarding Tutorial Steps */
-	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
-	int32 CurrentOnboardingStep; // 0=Steer, 1=Sheet, 2=Edge, 3=Jump, 4=Completed
-
-	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
-	bool bOnboardingActive;
-
-	UPROPERTY(BlueprintReadOnly, Category = "UI|Onboarding")
-	float CurrentStepProgress;
-
-	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
-	bool IsOnboardingActive() const { return bOnboardingActive; }
-
-	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
-	int32 GetCurrentOnboardingStep() const { return CurrentOnboardingStep; }
-
-	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
-	float GetCurrentStepProgress() const { return CurrentStepProgress; }
-
-	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
-	void StartOnboarding();
-
-	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
-	void SkipOnboarding();
-
-	UFUNCTION(BlueprintCallable, Category = "UI|Onboarding")
-	void AdvanceOnboardingStep();
-
-	UFUNCTION(BlueprintPure, Category = "UI|Onboarding")
-	FString GetCurrentPromptText() const;
-
 	UFUNCTION(BlueprintCallable, Category = "UI|Jump")
 	void ShowJumpRejection(EJumpRejectReason Reason);
 
@@ -262,8 +231,20 @@ public:
 	/** What the lesson layer shows now: the panel, the cue lines, the result card. Invisible with no lesson running. */
 	const FLessonHUDView& GetLessonView() const { return LessonLayer.GetView(); }
 
-	/** Whether a lesson is up (its layer replaces the old onboarding prompt while it is). */
+	/** Whether a lesson is up. */
 	bool IsLessonLayerVisible() const { return LessonLayer.IsVisible(); }
+
+	// --- First-run tutorial (docs/tutorials.md S7): lessons A1 to A3 replaced the old four-step onboarding prompt. ---
+
+	/**
+	 * Reads the tutorial line for the running lesson from the game instance's
+	 * USchoolOnboardingSubsystem (GetHintLines): the welcome and how to skip during A1 to A3, the
+	 * "tutorial complete" choices on A3's result card. DrawHUD calls it; tests call it with no Canvas.
+	 */
+	void UpdateTutorialHint();
+
+	/** What the tutorial line shows now; empty outside the tutorial. */
+	const TArray<FString>& GetTutorialHintLines() const { return TutorialHintLines; }
 
 	/**
 	 * The result card's and the drop-back offer's actions, from the existing inputs: the jump button
@@ -325,10 +306,8 @@ protected:
 	void DrawFPS(float ScreenX, float ScreenY);
 	void DrawPowerGauge(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
 	void DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height);
-	void DrawOnboardingPrompt(float ScreenW, float ScreenH);
-	void UpdateOnboarding(float DeltaTime, AKiteRiderPawn* RiderPawn);
 
-	bool bHasInitializedOnboarding;
-	float PromptAlpha;
-	float StepCompletionTimer;
+	TArray<FString> TutorialHintLines;
+	/** Draws GetTutorialHintLines in a box at the top centre, from Top; returns the box's bottom (Top when there is nothing). */
+	float DrawTutorialHint(float ScreenW, float ScreenH, float Top);
 };

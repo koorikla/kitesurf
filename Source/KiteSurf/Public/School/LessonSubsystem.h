@@ -17,6 +17,9 @@ KITESURF_API DECLARE_LOG_CATEGORY_EXTERN(LogKiteSchool, Log, All);
 /** Someone asked for the lesson menu (the result card's "Lesson menu"); the School menu (S5) answers it. */
 DECLARE_MULTICAST_DELEGATE(FOnLessonMenuRequested);
 
+/** A lesson attempt was recorded (RecordLessonResult), before the save is written: the first-run tutorial (S7) listens. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnLessonResultRecorded, FName /*LessonId*/, bool /*bPassed*/);
+
 /** One lesson as the lesson menu (S5) shows it: a tile on the chapter map. */
 USTRUCT(BlueprintType)
 struct KITESURF_API FLessonListItem
@@ -168,6 +171,9 @@ public:
 
 	/** Bound by the School menu (S5) in Initialize: it opens the lesson menu; see RequestLessonMenu. */
 	FOnLessonMenuRequested OnLessonMenuRequested;
+
+	/** Broadcast by RecordLessonResult for a catalogue lesson, before the save is written (USchoolOnboardingSubsystem marks A3's pass). */
+	FOnLessonResultRecorded OnLessonResultRecorded;
 
 	/** Whether StartLesson may open a map (on by default). Tests switch it off. */
 	void SetTravelEnabled(bool bEnabled) { bTravelEnabled = bEnabled; }

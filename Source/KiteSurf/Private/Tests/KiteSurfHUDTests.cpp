@@ -278,59 +278,6 @@ bool FKiteSurfHUDJumpRejection::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDOnboardingFlow, "KiteSurf.HUD.OnboardingFlow", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-
-bool FKiteSurfHUDOnboardingFlow::RunTest(const FString& Parameters)
-{
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
-	TestNotNull(TEXT("World created"), World);
-	if (World)
-	{
-		AKiteSurfHUD* HUD = World->SpawnActor<AKiteSurfHUD>();
-		TestNotNull(TEXT("HUD spawned"), HUD);
-		if (HUD)
-		{
-			// Default state
-			TestTrue(TEXT("Onboarding is initially active"), HUD->IsOnboardingActive());
-			TestEqual(TEXT("Starts at Step 0 (Steer)"), HUD->GetCurrentOnboardingStep(), 0);
-			TestTrue(TEXT("Step 0 prompt mentions steer"), HUD->GetCurrentPromptText().Contains(TEXT("Steer")));
-
-			// Advance to Step 1 (Sheet)
-			HUD->AdvanceOnboardingStep();
-			TestEqual(TEXT("Advanced to Step 1 (Sheet)"), HUD->GetCurrentOnboardingStep(), 1);
-			TestTrue(TEXT("Step 1 prompt mentions sheet"), HUD->GetCurrentPromptText().Contains(TEXT("Sheet")));
-
-			// Advance to Step 2 (Edge)
-			HUD->AdvanceOnboardingStep();
-			TestEqual(TEXT("Advanced to Step 2 (Edge)"), HUD->GetCurrentOnboardingStep(), 2);
-			TestTrue(TEXT("Step 2 prompt mentions edge"), HUD->GetCurrentPromptText().Contains(TEXT("edge")));
-
-			// Advance to Step 3 (Jump)
-			HUD->AdvanceOnboardingStep();
-			TestEqual(TEXT("Advanced to Step 3 (Jump)"), HUD->GetCurrentOnboardingStep(), 3);
-			TestTrue(TEXT("Step 3 prompt mentions jump"), HUD->GetCurrentPromptText().Contains(TEXT("jump")));
-
-			// Advance to Step 4 (Complete)
-			HUD->AdvanceOnboardingStep();
-			TestEqual(TEXT("Advanced to Step 4 (Completed)"), HUD->GetCurrentOnboardingStep(), 4);
-			TestFalse(TEXT("Onboarding inactive once completed"), HUD->IsOnboardingActive());
-			TestTrue(TEXT("Step 4 prompt mentions open water"), HUD->GetCurrentPromptText().Contains(TEXT("open water")));
-
-			// Restart onboarding
-			HUD->StartOnboarding();
-			TestTrue(TEXT("Onboarding active after restart"), HUD->IsOnboardingActive());
-			TestEqual(TEXT("Step reset to 0 after restart"), HUD->GetCurrentOnboardingStep(), 0);
-
-			// Skip onboarding
-			HUD->SkipOnboarding();
-			TestFalse(TEXT("Onboarding inactive after skip"), HUD->IsOnboardingActive());
-			TestEqual(TEXT("Step is 4 after skip"), HUD->GetCurrentOnboardingStep(), 4);
-		}
-		World->DestroyWorld(false);
-	}
-	return true;
-}
-
 // The bar display must move the way a bar does: down the throw as it is pulled in, and tilted
 // towards the hand that is pulling.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDBarDisplay, "KiteSurf.HUD.BarDisplay", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

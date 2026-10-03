@@ -492,6 +492,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderLoadLeanDeg;
 
+	/** Extra lean back against the harness at full UBoardMovementComponent::GetHarnessLeanAmount, the carve held against the limit of how far the board can point from the pull (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderHarnessLeanDeg;
+
 	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderAirHangLeanDeg;
@@ -711,11 +715,13 @@ private:
 
 	/**
 	 * The riding lean of the body: away from the pull, back in the water while floating, back over
-	 * the tail while loading (Load, 0..1). Facing is the level facing, TowardsKite the level direction to the
-	 * kite (zero without one). Shared by the drawn pose (with the smoothed kite) and the attitude's
-	 * slaved pose in the fixed step (with the kite where it is).
+	 * the tail while loading (Load, 0..1), and back against the hook with the carve held against the
+	 * harness's limit (HarnessLean, 0..1, UBoardMovementComponent::GetHarnessLeanAmount). Facing is the
+	 * level facing, TowardsKite the level direction to the kite (zero without one). Shared by the drawn
+	 * pose (with the smoothed kite) and the attitude's slaved pose in the fixed step (with the kite
+	 * where it is).
 	 */
-	FVector ComputeLevelBodyUp(const FVector& Facing, const FVector& TowardsKite, bool bHasKite, bool bAirborne, float Load) const;
+	FVector ComputeLevelBodyUp(const FVector& Facing, const FVector& TowardsKite, bool bHasKite, bool bAirborne, float Load, float HarnessLean) const;
 
 	/** The attitude's pose on the water, from the simulation's own state: Up along the riding lean, Front the stance facing. */
 	FQuat ComputeSlavedBodyQuat() const;

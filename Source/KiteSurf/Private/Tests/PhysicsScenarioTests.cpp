@@ -244,8 +244,8 @@ bool FKiteSurfPhysicsUpwindAtEdgeAngle::RunTest(const FString& Parameters)
 		const float UpwindMS = KiteUnits::CmToM(-Velocity.X);
 		const float CourseAboveBeamDeg = FMath::RadiansToDegrees(FMath::Atan2(-Velocity.X, FMath::Abs(Velocity.Y)));
 		const float LeewayDeg = Ride.Board->GetLeewayDeg();
-		UE_LOG(LogKiteSurf, Log, TEXT("UpwindAtEdgeAngle: %.0f deg above a beam reach in %.0f kn on %.0f m^2: %.1f kn, %.2f m/s made good upwind, course %.1f deg above the beam reach, leeway %.1f deg, heel %.1f deg, %.0f N, kite clock %.0f, taut throughout %d"),
-			AboveBeamReachDeg, WindKnots, Ride.Kite->AreaM2, Ride.SpeedKnots(), UpwindMS, CourseAboveBeamDeg, LeewayDeg, Ride.Board->GetHeelDeg(), Ride.Kite->GetLineTensionN(), Ride.Kite->GetClockDeg(), Ride.bTautThroughout);
+		UE_LOG(LogKiteSurf, Log, TEXT("UpwindAtEdgeAngle: %.0f deg above a beam reach in %.0f kn on %.0f m^2: %.1f kn, %.2f m/s made good upwind, course %.1f deg above the beam reach, leeway %.1f deg, heel %.1f deg, %.0f N, kite clock %.0f, taut throughout %d; %.1f deg upwind of the pull's beam"),
+			AboveBeamReachDeg, WindKnots, Ride.Kite->AreaM2, Ride.SpeedKnots(), UpwindMS, CourseAboveBeamDeg, LeewayDeg, Ride.Board->GetHeelDeg(), Ride.Kite->GetLineTensionN(), Ride.Kite->GetClockDeg(), Ride.bTautThroughout, Ride.Board->GetUpwindOfBeamDeg());
 
 		const FString What = FString::Printf(TEXT("%.0f kn"), WindKnots);
 		TestTrue(FString::Printf(TEXT("%s: velocity made good against the wind is %.0f to %.0f m/s (%.2f m/s)"), *What, MinMadeGoodMS, MaxMadeGoodMS, UpwindMS), UpwindMS >= MinMadeGoodMS && UpwindMS <= MaxMadeGoodMS);
@@ -394,6 +394,8 @@ namespace KiteScenario
 		float KiteLiftToDrag = 0.0f;
 		float BoardLiftToDrag = 0.0f;
 		float TheoremDeg = 0.0f;
+		/** The most the heading pointed upwind of the beam reach of the pull while the harness held the board (deg; docs/physics/plan-3.md item 3). */
+		float MostUpwindOfBeamDeg = -180.0f;
 	};
 
 	constexpr float CourseSettleSeconds = 5.0f;        // on the beam reach the ride starts on
@@ -433,6 +435,10 @@ namespace KiteScenario
 				Course.DroppedAtSeconds = Seconds;
 			}
 			bPlaning &= Ride.Board->IsPlaning();
+			if (Ride.Board->IsHarnessActive())
+			{
+				Course.MostUpwindOfBeamDeg = FMath::Max(Course.MostUpwindOfBeamDeg, Ride.Board->GetUpwindOfBeamDeg());
+			}
 		}
 		const int32 HoldFrames = FMath::RoundToInt(CourseHoldSeconds / Ride.FrameSeconds);
 		const int32 AverageFrames = FMath::RoundToInt(CourseAverageSeconds / Ride.FrameSeconds);
@@ -446,6 +452,10 @@ namespace KiteScenario
 				Course.DroppedAtSeconds = Seconds;
 			}
 			bPlaning &= Ride.Board->IsPlaning();
+			if (Ride.Board->IsHarnessActive())
+			{
+				Course.MostUpwindOfBeamDeg = FMath::Max(Course.MostUpwindOfBeamDeg, Ride.Board->GetUpwindOfBeamDeg());
+			}
 			if (Index >= HoldFrames - AverageFrames)
 			{
 				const FVector Velocity(Ride.Board->Velocity.X, Ride.Board->Velocity.Y, 0.0f);
@@ -512,8 +522,8 @@ bool FKiteSurfPhysicsCourseTheorem::RunTest(const FString& Parameters)
 	for (float AboveDeg = 0.0f; AboveDeg <= MostAboveDeg; AboveDeg += StepDeg)
 	{
 		const FHeldCourse Course = HoldCourse(*this, WindKnots, KiteAreaM2, AboveDeg, FString::Printf(TEXT("Course %.0f deg up"), AboveDeg));
-		UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: %.0f deg above the beam reach: sustained %d (off the plane after %.1f s), %.1f kn, %.2f m/s made good, course %.1f deg; %.1f deg off the apparent wind, kite L/D %.2f, board L/D %.2f, theorem %.1f deg"),
-			Course.AboveBeamReachDeg, Course.bSustained, Course.DroppedAtSeconds, Course.SpeedKnots, Course.MadeGoodMS, Course.CourseAboveBeamDeg, Course.ApparentAngleDeg, Course.KiteLiftToDrag, Course.BoardLiftToDrag, Course.TheoremDeg);
+		UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: %.0f deg above the beam reach: sustained %d (off the plane after %.1f s), %.1f kn, %.2f m/s made good, course %.1f deg; %.1f deg off the apparent wind, kite L/D %.2f, board L/D %.2f, theorem %.1f deg; at most %.1f deg upwind of the pull's beam"),
+			Course.AboveBeamReachDeg, Course.bSustained, Course.DroppedAtSeconds, Course.SpeedKnots, Course.MadeGoodMS, Course.CourseAboveBeamDeg, Course.ApparentAngleDeg, Course.KiteLiftToDrag, Course.BoardLiftToDrag, Course.TheoremDeg, Course.MostUpwindOfBeamDeg);
 		if (!Course.bSustained)
 		{
 			bFoundLimit = true;
@@ -535,6 +545,13 @@ bool FKiteSurfPhysicsCourseTheorem::RunTest(const FString& Parameters)
 // Pointing too high (docs/physics/plan-2.md item 3b): turned up 50 deg above the beam reach in 15 kn on
 // the 12 m^2 and held there, the board slows, trims up past the planing hump, pays more pressure drag
 // for the edge it carries and drops off the plane within 15 s.
+//
+// The harness (docs/physics/plan-3.md item 3) measures the heading from the beam reach of the pull, not
+// of the wind. The kite sits 36 deg off downwind on the ride and moves round with the board as it turns
+// up, so 50 deg above the wind's beam reach is still at least 10.5 deg short of the pull's: the course
+// is well inside MaxUpwindHeadingDeg, this is the drag's drop-off, not the harness's, and the test keeps
+// its course (the plan expected it to ride at the limit). The course tests' courses, 0 to 35 deg up, are
+// 17 to 35 deg short of the pull's beam.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsPointingTooHighDropsOffThePlane, "KiteSurf.Physics.PointingTooHighDropsOffThePlane", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsPointingTooHighDropsOffThePlane::RunTest(const FString& Parameters)
@@ -544,12 +561,312 @@ bool FKiteSurfPhysicsPointingTooHighDropsOffThePlane::RunTest(const FString& Par
 	const float WithinSeconds = 15.0f;
 	const float TurnSeconds = AboveBeamReachDeg / CourseTurnRateDegPerS;
 	const FHeldCourse Course = HoldCourse(*this, WindKnots, 12.0f, AboveBeamReachDeg, TEXT("Too high"));
-	UE_LOG(LogKiteSurf, Log, TEXT("PointingTooHighDropsOffThePlane: turned up %.0f deg above the beam reach in %.0f kn over %.1f s: off the plane %.1f s after the turn started; %.1f kn after %.0f s more, course %.1f deg"),
-		AboveBeamReachDeg, WindKnots, TurnSeconds, Course.DroppedAtSeconds, Course.SpeedKnots, CourseHoldSeconds, Course.CourseAboveBeamDeg);
+	UE_LOG(LogKiteSurf, Log, TEXT("PointingTooHighDropsOffThePlane: turned up %.0f deg above the beam reach in %.0f kn over %.1f s: off the plane %.1f s after the turn started; %.1f kn after %.0f s more, course %.1f deg; at most %.1f deg upwind of the pull's beam"),
+		AboveBeamReachDeg, WindKnots, TurnSeconds, Course.DroppedAtSeconds, Course.SpeedKnots, CourseHoldSeconds, Course.CourseAboveBeamDeg, Course.MostUpwindOfBeamDeg);
 
 	TestTrue(FString::Printf(TEXT("Pointed %.0f deg up the board drops off the plane within %.0f s of getting there (%.1f s after the turn started, which took %.1f s)"), AboveBeamReachDeg, WithinSeconds, Course.DroppedAtSeconds, TurnSeconds),
 		Course.DroppedAtSeconds >= 0.0f && Course.DroppedAtSeconds <= TurnSeconds + WithinSeconds);
 	TestFalse(TEXT("and cannot hold that course"), Course.bSustained);
+	TestTrue(FString::Printf(TEXT("The course is inside the harness's limit, so the drop-off is the drag's (at most %.1f deg upwind of the pull's beam)"), Course.MostUpwindOfBeamDeg),
+		Course.MostUpwindOfBeamDeg < UBoardMovementComponent::StaticClass()->GetDefaultObject<UBoardMovementComponent>()->MaxUpwindHeadingDeg);
+	return true;
+}
+
+namespace KiteScenario
+{
+	/** What a ride did with the carve held away from the kite and then let go (KiteSurf.Physics.HarnessStopsOverRotation). */
+	struct FHeldCarve
+	{
+		float StartKnots = 0.0f;
+		float StartUpwindOfBeamDeg = 0.0f;
+		/** The most the heading pointed upwind of the pull's beam while the harness held the board (deg). */
+		float MostUpwindOfBeamDeg = -180.0f;
+		/** The same measured from the pawn's heading and the line force, with the lines taut and the rider on the board, harness or not (deg). */
+		float MostPawnUpwindOfBeamDeg = -180.0f;
+		/** The furthest the heading turned from where it started (deg, either way). */
+		float MostTurnedDeg = 0.0f;
+		/** Times the rider changed the rail they face, from the carve to the end of the ride after it. */
+		int32 StanceFlips = 0;
+		float MostLean = 0.0f;
+		bool bDroppedOffThePlane = false;
+		float HeldEndKnots = 0.0f;
+		/** At the end of the ride after the carve was let go: the heading against the pull's beam (deg), the speed, planing, and when it planed again (s after the release, -1 never). */
+		float ReleasedUpwindOfBeamDeg = 0.0f;
+		float ReleasedKnots = 0.0f;
+		bool bPlaningAtEnd = false;
+		float ReplanedAfterSeconds = -1.0f;
+	};
+
+	constexpr float HarnessSettleSeconds = 3.0f;
+	constexpr float HarnessHoldSeconds = 6.0f;      // plan-3 item 3: the stick held fully over for 6 s
+	constexpr float HarnessReleaseSeconds = 12.0f;
+
+	/** The angle of the pawn's heading upwind of the beam reach of the line force it feels now (deg). */
+	float PawnUpwindOfBeamDeg(const FScenarioRide& Ride)
+	{
+		const FVector Pull = Ride.Kite->GetLineForce();
+		return UBoardMovementComponent::UpwindOfBeamForHeading(Ride.Pawn->GetActorRotation().Yaw, FMath::RadiansToDegrees(FMath::Atan2(Pull.Y, Pull.X)));
+	}
+
+	/**
+	 * A ride on the kite rigged for the wind, on the tack TackSide (-1 the left: riding to the left
+	 * looking downwind, the kite on the right), the carve held fully away from the kite (left on the left
+	 * tack) for HarnessHoldSeconds, then let go for HarnessReleaseSeconds. The invariants are asserted
+	 * under What.
+	 */
+	FHeldCarve HoldCarveAwayFromTheKite(FAutomationTestBase& Test, float WindKnots, float TackSide, bool bHarnessLimit, const FString& What, float FrameSeconds = DefaultFrameSeconds)
+	{
+		FHeldCarve Carve;
+		FScenarioRide Ride(WindKnots, UKiteComponent::RecommendKiteSizeM2(WindKnots, RiderAndBoardMassKg), FrameSeconds, TackSide);
+		if (!Ride.IsValid())
+		{
+			return Carve;
+		}
+		Ride.Board->bHarnessLimit = bHarnessLimit;
+		Ride.Simulate(HarnessSettleSeconds);
+		Carve.StartKnots = Ride.SpeedKnots();
+		Carve.StartUpwindOfBeamDeg = PawnUpwindOfBeamDeg(Ride);
+		const float StartYawDeg = Ride.Pawn->GetActorRotation().Yaw;
+		float TurnedDeg = 0.0f;
+		float LastYawDeg = StartYawDeg;
+		float LastStance = Ride.Pawn->GetRiderStanceSide();
+		auto Track = [&]()
+		{
+			const float YawDeg = Ride.Pawn->GetActorRotation().Yaw;
+			const float StepDeg = FRotator::NormalizeAxis(YawDeg - LastYawDeg);
+			// A twin-tip swapping ends turns its nose round; that is not the board turning.
+			if (FMath::Abs(StepDeg) < 90.0f)
+			{
+				TurnedDeg += StepDeg;
+			}
+			LastYawDeg = YawDeg;
+			Carve.MostTurnedDeg = FMath::Max(Carve.MostTurnedDeg, FMath::Abs(TurnedDeg));
+			Carve.StanceFlips += Ride.Pawn->GetRiderStanceSide() != LastStance ? 1 : 0;
+			LastStance = Ride.Pawn->GetRiderStanceSide();
+		};
+
+		Ride.Pawn->EdgeBoard(TackSide);
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(HarnessHoldSeconds / Ride.FrameSeconds); Frame < Frames; ++Frame)
+		{
+			Ride.Frame();
+			Track();
+			if (Ride.Board->IsHarnessActive())
+			{
+				Carve.MostUpwindOfBeamDeg = FMath::Max(Carve.MostUpwindOfBeamDeg, Ride.Board->GetUpwindOfBeamDeg());
+			}
+			if (Ride.Kite->AreLinesTaut() && !Ride.Board->IsFloating() && Ride.Board->GetBoardState() != EBoardState::Airborne)
+			{
+				Carve.MostPawnUpwindOfBeamDeg = FMath::Max(Carve.MostPawnUpwindOfBeamDeg, PawnUpwindOfBeamDeg(Ride));
+			}
+			Carve.MostLean = FMath::Max(Carve.MostLean, Ride.Board->GetHarnessLeanAmount());
+			Carve.bDroppedOffThePlane |= !Ride.Board->IsPlaning();
+		}
+		Carve.HeldEndKnots = Ride.SpeedKnots();
+
+		Ride.Pawn->EdgeBoard(0.0f);
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(HarnessReleaseSeconds / Ride.FrameSeconds); Frame < Frames; ++Frame)
+		{
+			Ride.Frame();
+			Track();
+			if (Carve.ReplanedAfterSeconds < 0.0f && Ride.Board->IsPlaning())
+			{
+				Carve.ReplanedAfterSeconds = (Frame + 1) * Ride.FrameSeconds;
+			}
+		}
+		Carve.ReleasedUpwindOfBeamDeg = PawnUpwindOfBeamDeg(Ride);
+		Carve.ReleasedKnots = Ride.SpeedKnots();
+		Carve.bPlaningAtEnd = Ride.Board->IsPlaning();
+		Ride.Invariants.Assert(Test, What);
+		return Carve;
+	}
+}
+
+// The harness limits how far the board can point from the pull (docs/physics/plan-3.md item 3). The
+// user's report: on the left tack with the stick held fully left, the board kept turning, through the
+// wind, and the rider ended up rotating round under the kite. Riding on the left tack in 15 and 20 kn
+// with the stick held fully left for 6 s, the heading never passes MaxUpwindHeadingDeg upwind of the
+// beam reach of the pull, the rider never changes the rail they face, and the board slows and drops off
+// the plane instead of turning on round; let go, the heading comes back towards the kite and the rider
+// rides on. Mirrored on the right tack, the stick fully right, it is the same ride.
+//
+// Measured: the board turns up past the pull's beam, stalls about 15 deg past it (the pull is behind the
+// board past the beam), the pivot turns it back towards the kite and the slow carve up again, never more
+// than about 25 deg past it in any wind from 15 to 30 kn. So the limit (50) is not where it stops, and
+// the plan's "HarnessLeanAmount reaches 1" does not happen here: the lean builds only with the carve held
+// against the limit (KiteSurf.Physics.HarnessBringsTheBoardBack). What stops the rotation is the harness
+// keeping the stalled board's nose, not its tail, towards the pull, and the carve's lean being the one
+// the turn needs: until plan-3 item 3 the full input leaned the board 35 deg into the turn at any speed,
+// which on a board nearly stopped pushed it to windward, swung its velocity round and the carve after it.
+// With the harness off (bHarnessLimit false) the board points 67 deg past the pull's beam and the rider
+// changes rail four times in the 18 s.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHarnessStopsOverRotation, "KiteSurf.Physics.HarnessStopsOverRotation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsHarnessStopsOverRotation::RunTest(const FString& Parameters)
+{
+	const float MaxUpwindHeadingDeg = UBoardMovementComponent::StaticClass()->GetDefaultObject<UBoardMovementComponent>()->MaxUpwindHeadingDeg;
+	const float MirrorToleranceDeg = 0.5f;
+	const float MirrorToleranceKnots = 0.1f;
+	const float MaxHeldSpeedFraction = 0.5f;   // the board has bled off at least half its speed by the end of the 6 s
+	for (const float WindKnots : { 15.0f, 20.0f })
+	{
+		FHeldCarve Tacks[2];
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			const float TackSide = Index == 0 ? -1.0f : 1.0f;
+			const FString What = FString::Printf(TEXT("%.0f kn, %s tack, the stick fully %s"), WindKnots, TackSide < 0.0f ? TEXT("left") : TEXT("right"), TackSide < 0.0f ? TEXT("left") : TEXT("right"));
+			const FHeldCarve& Carve = Tacks[Index] = HoldCarveAwayFromTheKite(*this, WindKnots, TackSide, true, What);
+			UE_LOG(LogKiteSurf, Log, TEXT("HarnessStopsOverRotation: %s for %.0f s from %.1f kn (%.1f deg upwind of the pull's beam): at most %.1f deg upwind of it, turned at most %.0f deg, %.1f kn at the end, off the plane %d, lean at most %.2f; let go for %.0f s: %.1f deg upwind of the pull's beam, %.1f kn, planing again after %.1f s; rail changes %d"),
+				*What, HarnessHoldSeconds, Carve.StartKnots, Carve.StartUpwindOfBeamDeg, Carve.MostUpwindOfBeamDeg, Carve.MostTurnedDeg, Carve.HeldEndKnots, Carve.bDroppedOffThePlane, Carve.MostLean,
+				HarnessReleaseSeconds, Carve.ReleasedUpwindOfBeamDeg, Carve.ReleasedKnots, Carve.ReplanedAfterSeconds, Carve.StanceFlips);
+
+			TestTrue(FString::Printf(TEXT("%s: the heading never passes %.0f deg upwind of the pull's beam (%.1f)"), *What, MaxUpwindHeadingDeg, Carve.MostUpwindOfBeamDeg), Carve.MostUpwindOfBeamDeg <= MaxUpwindHeadingDeg);
+			TestEqual(FString::Printf(TEXT("%s: the rider never changes the rail they face"), *What), Carve.StanceFlips, 0);
+			TestTrue(FString::Printf(TEXT("%s: the board slows instead (%.1f to %.1f kn)"), *What, Carve.StartKnots, Carve.HeldEndKnots), Carve.HeldEndKnots < MaxHeldSpeedFraction * Carve.StartKnots);
+			TestTrue(FString::Printf(TEXT("%s: and drops off the plane"), *What), Carve.bDroppedOffThePlane);
+			TestTrue(FString::Printf(TEXT("%s: let go, the heading comes back towards the kite (%.1f deg from the pull's beam)"), *What, Carve.ReleasedUpwindOfBeamDeg), Carve.ReleasedUpwindOfBeamDeg < 0.0f);
+			TestTrue(FString::Printf(TEXT("%s: and the rider rides on, planing (%.1f kn, planing again after %.1f s)"), *What, Carve.ReleasedKnots, Carve.ReplanedAfterSeconds), Carve.bPlaningAtEnd && Carve.ReleasedKnots > Carve.HeldEndKnots);
+		}
+		const FString Mirror = FString::Printf(TEXT("%.0f kn: the right tack mirrors the left"), WindKnots);
+		TestNearlyEqual(Mirror + TEXT(": most upwind of the pull's beam (deg)"), Tacks[1].MostUpwindOfBeamDeg, Tacks[0].MostUpwindOfBeamDeg, MirrorToleranceDeg);
+		TestNearlyEqual(Mirror + TEXT(": most turned (deg)"), Tacks[1].MostTurnedDeg, Tacks[0].MostTurnedDeg, MirrorToleranceDeg);
+		TestNearlyEqual(Mirror + TEXT(": speed at the end of the carve (kn)"), Tacks[1].HeldEndKnots, Tacks[0].HeldEndKnots, MirrorToleranceKnots);
+	}
+
+	// Drawn at 30 frames a second it is the same ride: the rig is stepped at its own fixed rate.
+	const FHeldCarve At60 = HoldCarveAwayFromTheKite(*this, 15.0f, -1.0f, true, TEXT("15 kn, left tack, 60 fps"));
+	const FHeldCarve At30 = HoldCarveAwayFromTheKite(*this, 15.0f, -1.0f, true, TEXT("15 kn, left tack, 30 fps"), 1.0f / 30.0f);
+	TestNearlyEqual(TEXT("At 30 fps: most upwind of the pull's beam (deg)"), At30.MostUpwindOfBeamDeg, At60.MostUpwindOfBeamDeg, MirrorToleranceDeg);
+	TestNearlyEqual(TEXT("At 30 fps: speed at the end of the carve (kn)"), At30.HeldEndKnots, At60.HeldEndKnots, MirrorToleranceKnots);
+	TestEqual(TEXT("At 30 fps: rail changes"), At30.StanceFlips, At60.StanceFlips);
+
+	// Without the harness the same carve in 15 kn carries the board round and the rider changes rail.
+	const FHeldCarve Free = HoldCarveAwayFromTheKite(*this, 15.0f, -1.0f, false, TEXT("15 kn, left tack, no harness"));
+	UE_LOG(LogKiteSurf, Log, TEXT("HarnessStopsOverRotation: 15 kn, left tack, the stick fully left, no harness: at most %.1f deg upwind of the pull's beam, turned at most %.0f deg, %.1f kn at the end; rail changes %d"),
+		Free.MostPawnUpwindOfBeamDeg, Free.MostTurnedDeg, Free.HeldEndKnots, Free.StanceFlips);
+	TestTrue(FString::Printf(TEXT("Without the harness the board points past the limit (%.1f deg) and the rider changes rail (%d times)"), Free.MostPawnUpwindOfBeamDeg, Free.StanceFlips),
+		Free.MostPawnUpwindOfBeamDeg > MaxUpwindHeadingDeg && Free.StanceFlips > 0);
+	return true;
+}
+
+// The harness brings the board back (docs/physics/plan-3.md item 3). With the board pointed by hand 70 deg
+// upwind of the beam reach of the pull on the water, the taut lines bring it back inside
+// MaxUpwindHeadingDeg within 1 s, and it stays inside. Planing at 5 m/s on the 15 kn ride the harness
+// turns it back at HarnessYawRateDegPerS (90 deg/s); stopped, in 15 and 20 kn, the low-speed pivot lines
+// it up with the nose towards the pull. The carve held away from the kite meanwhile is held against the
+// limit: the rider leans back against the hook at HarnessLeanRatePerS, and the lean goes when the stick
+// is let go, at HarnessLeanReleaseRatePerS. Without the harness nothing turns the planing board back:
+// it swings further out until it has slowed off the plane and the low-speed pivot lines it up.
+//
+// Pointed by hand at a full ride's speed the board is pulled off the water within 0.25 s (it moves away
+// from the kite at 6 m/s, which loads it to 2.4 kN) before anything brings it back, so the planing case
+// starts at 5 m/s.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsHarnessBringsTheBoardBack, "KiteSurf.Physics.HarnessBringsTheBoardBack", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsHarnessBringsTheBoardBack::RunTest(const FString& Parameters)
+{
+	const float PointedDeg = 70.0f;
+	const float WithinSeconds = 1.0f;
+	const float WatchSeconds = 2.0f;
+	const float PlaningStartMS = 5.0f;
+	const float LeanToleranceS = 2.0f * DefaultFrameSeconds; // the lean starts in the step after the stick
+	struct FPointed
+	{
+		float BackAfterSeconds = -1.0f;   // first frame inside the limit, -1 never
+		float MostBeforeBackDeg = -180.0f; // the most upwind of the pull's beam until then
+		float MostAfterBackDeg = -180.0f; // the most upwind of the pull's beam once back inside, while on the water
+		bool bLeftTheWater = false;
+		float AgainstSeconds = 0.0f;      // with the stick held: how long it pushed against the limit
+		float MostLean = 0.0f;
+		float LeanAfterRelease = 0.0f;
+	};
+	auto Point = [this, PointedDeg](float WindKnots, float SpeedMS, bool bHarnessLimit, bool bHoldStick, float WatchFor, const FString& What) -> FPointed
+	{
+		FPointed Result;
+		FScenarioRide Ride(WindKnots, UKiteComponent::RecommendKiteSizeM2(WindKnots, RiderAndBoardMassKg));
+		if (!Ride.IsValid())
+		{
+			return Result;
+		}
+		Ride.Board->bHarnessLimit = bHarnessLimit;
+		Ride.Simulate(HarnessSettleSeconds);
+		// 70 deg past the pull's beam on the side the board is on, the velocity along the new heading.
+		const FVector Pull = Ride.Kite->GetLineForce();
+		const float PullYawDeg = FMath::RadiansToDegrees(FMath::Atan2(Pull.Y, Pull.X));
+		const float Side = FRotator::NormalizeAxis(Ride.Pawn->GetActorRotation().Yaw - PullYawDeg) >= 0.0f ? 1.0f : -1.0f;
+		const FRotator Heading(0.0f, FRotator::NormalizeAxis(PullYawDeg + Side * (90.0f + PointedDeg)), 0.0f);
+		Ride.Pawn->SetActorRotation(Heading);
+		Ride.Board->Velocity = Heading.Vector() * KiteUnits::MToCm(SpeedMS);
+		// The ride starts on the right tack: the stick to the right turns away from the kite.
+		Ride.Pawn->EdgeBoard(bHoldStick ? 1.0f : 0.0f);
+		float Seconds = 0.0f;
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(WatchFor / Ride.FrameSeconds); Frame < Frames; ++Frame)
+		{
+			Ride.Frame();
+			Seconds += Ride.FrameSeconds;
+			Result.bLeftTheWater |= Ride.Board->GetBoardState() == EBoardState::Airborne;
+			const float UpwindDeg = PawnUpwindOfBeamDeg(Ride);
+			if (Result.BackAfterSeconds < 0.0f)
+			{
+				Result.MostBeforeBackDeg = FMath::Max(Result.MostBeforeBackDeg, UpwindDeg);
+			}
+			if (Result.BackAfterSeconds < 0.0f && !Result.bLeftTheWater && UpwindDeg <= Ride.Board->MaxUpwindHeadingDeg)
+			{
+				Result.BackAfterSeconds = Seconds;
+			}
+			else if (Result.BackAfterSeconds >= 0.0f && !Result.bLeftTheWater)
+			{
+				Result.MostAfterBackDeg = FMath::Max(Result.MostAfterBackDeg, UpwindDeg);
+			}
+			if (Ride.Board->GetLastStepDebug().bAgainstHarness)
+			{
+				Result.AgainstSeconds += Ride.FrameSeconds;
+			}
+			Result.MostLean = FMath::Max(Result.MostLean, Ride.Board->GetHarnessLeanAmount());
+		}
+		if (bHoldStick)
+		{
+			// Let the stick go and watch the lean go.
+			Ride.Pawn->EdgeBoard(0.0f);
+			Ride.Simulate(1.0f / FMath::Max(Ride.Board->HarnessLeanReleaseRatePerS, KINDA_SMALL_NUMBER));
+			Result.LeanAfterRelease = Ride.Board->GetHarnessLeanAmount();
+		}
+		UE_LOG(LogKiteSurf, Log, TEXT("HarnessBringsTheBoardBack: %s: pointed %.0f deg upwind of the pull's beam at %.1f m/s: at most %.1f deg until back inside the limit after %.2f s, at most %.1f deg after that on the water, left the water %d; held against the limit for %.2f s, lean at most %.2f, %.2f after letting go"),
+			*What, PointedDeg, SpeedMS, Result.MostBeforeBackDeg, Result.BackAfterSeconds, Result.MostAfterBackDeg, Result.bLeftTheWater, Result.AgainstSeconds, Result.MostLean, Result.LeanAfterRelease);
+		Ride.Invariants.Assert(*this, What);
+		return Result;
+	};
+
+	const UBoardMovementComponent* Defaults = UBoardMovementComponent::StaticClass()->GetDefaultObject<UBoardMovementComponent>();
+	const float LimitDeg = Defaults->MaxUpwindHeadingDeg;
+	// Planing: the harness's own rate, (70 - 50) / 90 = 0.22 s, give or take the pull moving.
+	const float HarnessReturnSeconds = (PointedDeg - LimitDeg) / Defaults->HarnessYawRateDegPerS;
+	const FPointed Planing = Point(15.0f, PlaningStartMS, true, false, WatchSeconds, TEXT("15 kn, planing"));
+	TestTrue(FString::Printf(TEXT("Planing in 15 kn: back inside the limit within %.0f s, on the water (%.2f s)"), WithinSeconds, Planing.BackAfterSeconds), Planing.BackAfterSeconds >= 0.0f && Planing.BackAfterSeconds <= WithinSeconds);
+	TestTrue(FString::Printf(TEXT("at the harness's rate (%.2f s for %.0f deg at %.0f deg/s, %.2f s)"), HarnessReturnSeconds, PointedDeg - LimitDeg, Defaults->HarnessYawRateDegPerS, Planing.BackAfterSeconds),
+		Planing.BackAfterSeconds <= HarnessReturnSeconds + 2.0f * DefaultFrameSeconds);
+	TestTrue(FString::Printf(TEXT("and stays inside (at most %.1f deg)"), Planing.MostAfterBackDeg), Planing.MostAfterBackDeg <= LimitDeg);
+	const FPointed PlaningFree = Point(15.0f, PlaningStartMS, false, false, WatchSeconds, TEXT("15 kn, planing, no harness"));
+	TestTrue(FString::Printf(TEXT("With it the board turns straight back (at most %.1f deg on the way)"), Planing.MostBeforeBackDeg), Planing.MostBeforeBackDeg <= PointedDeg);
+	TestTrue(FString::Printf(TEXT("Without the harness nothing turns the planing board back: it swings further out (%.1f deg) until it has slowed off the plane and the pivot lines it up (%.2f s)"), PlaningFree.MostBeforeBackDeg, PlaningFree.BackAfterSeconds),
+		PlaningFree.MostBeforeBackDeg > PointedDeg && PlaningFree.BackAfterSeconds > HarnessReturnSeconds + 2.0f * DefaultFrameSeconds);
+
+	for (const float WindKnots : { 15.0f, 20.0f })
+	{
+		const FString What = FString::Printf(TEXT("%.0f kn, stopped"), WindKnots);
+		const FPointed Stopped = Point(WindKnots, 0.0f, true, false, WatchSeconds, What);
+		TestTrue(FString::Printf(TEXT("%s: back inside the limit within %.0f s (%.2f s)"), *What, WithinSeconds, Stopped.BackAfterSeconds), Stopped.BackAfterSeconds >= 0.0f && Stopped.BackAfterSeconds <= WithinSeconds);
+		TestTrue(FString::Printf(TEXT("%s: and stays inside (at most %.1f deg)"), *What, Stopped.MostAfterBackDeg), Stopped.MostAfterBackDeg <= LimitDeg);
+		TestFalse(FString::Printf(TEXT("%s: on the water throughout"), *What), Stopped.bLeftTheWater);
+	}
+
+	// The stick held away from the kite while the harness brings the board back is held against the
+	// limit: the rider leans back against the hook, at most at the lean's rate, and the lean goes when
+	// the stick is let go.
+	const FPointed Leaning = Point(15.0f, PlaningStartMS, true, true, WatchSeconds, TEXT("15 kn, planing, the stick held"));
+	TestTrue(FString::Printf(TEXT("Holding the stick against the limit the rider leans back (%.2f after %.2f s against it)"), Leaning.MostLean, Leaning.AgainstSeconds), Leaning.AgainstSeconds > 0.0f && Leaning.MostLean > 0.0f);
+	TestTrue(FString::Printf(TEXT("the lean building at %.1f /s while held against it (at most %.2f)"), Defaults->HarnessLeanRatePerS, Defaults->HarnessLeanRatePerS * (Leaning.AgainstSeconds + LeanToleranceS)),
+		Leaning.MostLean <= FMath::Min(Defaults->HarnessLeanRatePerS * (Leaning.AgainstSeconds + LeanToleranceS), 1.0f));
+	TestTrue(FString::Printf(TEXT("Let go, the lean has gone %.2f s later (%.2f)"), 1.0f / Defaults->HarnessLeanReleaseRatePerS, Leaning.LeanAfterRelease), Leaning.LeanAfterRelease <= KINDA_SMALL_NUMBER);
 	return true;
 }
 

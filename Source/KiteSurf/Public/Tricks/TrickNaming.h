@@ -23,7 +23,7 @@ enum class ETrickMove : uint8
  * only the first letter of a name is a capital, except names that are written otherwise (KGB, 313).
  *
  * - Big air (hooked, no pass) composes: [Switch|Toeside|Blind] [Double|Triple] [Early|Late]
- *   {Megaloop|Kiteloop|Contra loop|Heli loop|S-loop} [Double|Triple] {Back roll|Front roll|
+ *   {Megaloop|Kiteloop|Contra loop|Heli loop|S-loop|Snake loop} [Double|Triple] {Back roll|Front roll|
  *   Backflip|Front flip} [Frontside|Backside N] [One-footer] [Board-off|Superman|Tic tac|
  *   Board pass|Board flip] [grab] [to blind|to toeside]. Nothing at all is "Straight air".
  * - Freestyle (unhooked or any pass) comes from one table keyed by take-off stance, move, sense,

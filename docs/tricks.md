@@ -1,8 +1,10 @@
 # Tricks: research and implementation plan
 
-As of 2026-10-02, against `main` at `4aa65f8` (jointed rider merged) and the parallel physics
-rework on `physics/rework` (`docs/physics/plan.md` there). Nothing in this document is
-implemented yet.
+Written on 2026-10-02 against `main` at `4aa65f8`, and refreshed on 2026-10-03. The physics
+rework (#45, the fixed step) is now on `main`, and the first trick modules have merged. What is
+done, and what each PR verified, is in the status table in `docs/tricks/README.md`. Sections
+3 to 6 are the research and design. Sections 5 and 7 describe the code before the trick work
+started, so read them together with that table.
 
 `docs/research.md` already covers big air basics: the jump phases, kite loop physics, the base
 big air trick list, King of the Air and GKA big air judging, and backlog epics C to F. This
@@ -182,8 +184,8 @@ noted otherwise.
 | Tantrum | Heelside backflip, back hand off at take-off | None | Heelside | 3 | Unhooked front roll |
 | Back to blind | Inverted back roll + BS 180 | BS 180 | Blind | 3 | Unhooked back roll |
 | 313 | Raley, then FS 360 | FS 360, front hand off at or just after the apex | Heelside | 3.5 | Raley to wrapped |
-| Frontside or backside 3, 5, 7 | Flat pop + spin | Mid-rotation | Heelside or switch | 3 to 4.5 | Surface pass |
-| KGB (5, 7) | Inverted back roll + BS 360 | At about 3/4 of the roll | Heelside | 4 | Back to blind |
+| Frontside or backside 3, 5, 7 | Flat pop + spin | Mid-rotation | Heelside for 3 and 7; blind or toeside for 5 (an odd number of half turns faces away from the kite) | 3 to 4.5 | Surface pass |
+| KGB (5, 7) | Inverted back roll + BS 360 | At about 3/4 of the roll | Heelside for KGB and KGB 7; blind or toeside for KGB 5 | 4 | Back to blind |
 | Back mobe (5, 7) | Inverted back roll, then FS 360 (720 total). Kite a little higher, about 75° | Just before the drop; the bar arrives before the board lands | Heelside | 4 | KGB or 313 |
 | Crow mobe, dum dum | Toeside front roll + FS or BS 360 | | Heelside | 4 | Toeside riding |
 | Slim chance (5, 7) | Front flip + FS 360, legs straightened skywards | Pass while inverted | Heelside, nose downwind | 4.5 | Front to blind, 313 |
@@ -465,8 +467,7 @@ scale:
 Poses blend with a critically damped spring, 0.12 to 0.2 s (**estimate**). Grabs are IK to
 sockets on the board, using the existing `SolveTwoBone`. There are no authored animations.
 
-The robot (skeletal mannequin) gets none of this until it has an AnimBP. The gear screen should
-say so, or the robot should share the jointed rig.
+The robot rider uses the jointed rig too (#54), so every rider can do tricks.
 
 ### 6.6 Recognition
 
@@ -505,7 +506,7 @@ Each kite loop record holds:
 
 | Loop | Rule |
 | --- | --- |
-| Heli loop | Flown on the way down, minimum elevation 55° or more |
+| Heli loop | Started after the apex, kite at 40° or more throughout, dropping no more than 25° (a loop starts only 35° round the clock and bottoms about 20° below where it starts, so an absolute 55° limit could never be met) |
 | Kite loop | 360° completed, minimum elevation under 55° |
 | Megaloop | A kite loop started with the rider 8 m or more up, minimum elevation 20° or less, peak tension 3 body weights or more (`research.md` C6) |
 | Contra loop | Looped against the natural direction, where natural means the kite dives in the rider's direction of travel (pulled with the front hand). Direction to be checked against footage |
@@ -687,11 +688,15 @@ first-trick-per-tack scoring. This builds on T2.3's detached board.
 
 ### Order against other work
 
-- **Can start now:** T0 has no physics dependency. Its pure functions can be written and tested
-  against synthetic signatures and recorded loops.
-- **T1:** waits for the physics rework's fixed step (items 1 and 2) to merge into `main`.
-  Rotation has to integrate inside that step, and the rework resets interpolation on any root
-  change made outside it.
+- **The fixed step is on `main`** (#45), so nothing here waits for it any more.
+- **Physics phase 2** (`docs/physics/plan-2.md`) edits `BoardMovementComponent`, `KiteComponent`
+  and the physics tests. The trick work that changes those files waits for phase 2 to merge:
+  - stepping the rider attitude and replacing the kinematic air spin (T1.2 PR E);
+  - air rotation input (T1.4) and live rotation tracking (T1.6);
+  - the kite's loop entry for S-loops and contra loops;
+  - the board's own take-off and landing values.
+
+  The status table in `docs/tricks/README.md` lists what has landed.
 - **Tuning:** wait for physics items 7 to 9 (kite terms, rider drag, hang time) before tuning
   rotation rates, loop thresholds or scores. Airtime will change.
 - **Landing:** physics items 10 and 12 (force-balance edging, multi-point water and landing
@@ -729,13 +734,18 @@ Every value is an **estimate** unless tagged otherwise.
   variety families.
 - [ ] **Sign conventions.** Back/front and FS/BS are defined in section 2 from coaching text.
   Confirm them against one reference clip each (back roll, KGB, back mobe, contra loop) before
-  T1.2 and T3.4 fix them in tests.
+  T1.2 and T3.4 fix them in tests. Two cases are already pending:
+  - `RollInversionSign` in `Tricks/RiderAxes.h`: −1 tilts the roll axis away from the lines,
+    +1 towards them.
+  - The contra rule: a plain held loop in the game reads as a contra loop.
+- [ ] **Freestyle names for odd numbers.** Under the wrap model, KGB 5 and 315 land blind or
+  toeside. The name table expects heelside, so those jumps are described rather than named.
+  Which landing does a real KGB 5 have?
 - [ ] **Crash score in free ride.** Real judging gives 0. Should free ride show a partial score
   for learning?
-- [ ] **Robot rider.** It has no rig, so either it is excluded from tricks or it moves to the
-  jointed rig.
-- [ ] **Visual board split.** It touches the gear preview, wake and several tests. Do it in T1.1
-  or with the physics rework merge.
+- [x] **Robot rider.** It uses the jointed rig (#54).
+- [x] **Visual board split.** Done in #68. The gear preview is a separate actor and was not
+  affected.
 
 ## Sources
 

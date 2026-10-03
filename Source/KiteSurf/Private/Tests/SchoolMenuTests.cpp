@@ -40,7 +40,7 @@ namespace SchoolMenuTest
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
 
-	ULessonSubsystem* MakeLessons(UKiteSurfGameInstance* GI = nullptr)
+	ULessonSubsystem* MakeMenuLessons(UKiteSurfGameInstance* GI = nullptr)
 	{
 		ULessonSubsystem* Lessons = NewObject<ULessonSubsystem>(GI ? GI : NewObject<UKiteSurfGameInstance>());
 		Lessons->SetWriteToDisk(false);
@@ -48,7 +48,7 @@ namespace SchoolMenuTest
 		return Lessons;
 	}
 
-	void Pass(ULessonSubsystem* Lessons, const TArray<const TCHAR*>& Ids, int32 Stars = 1)
+	void PassLessons(ULessonSubsystem* Lessons, const TArray<const TCHAR*>& Ids, int32 Stars = 1)
 	{
 		for (const TCHAR* Id : Ids)
 		{
@@ -57,14 +57,14 @@ namespace SchoolMenuTest
 	}
 
 	/** The player's Settings save, before and after: it must come out of a test unchanged. */
-	struct FSettingsGuard
+	struct FMenuSettingsGuard
 	{
 		FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"), UKiteSurfSaveGame::DefaultSaveSlot + TEXT(".sav"));
 		bool bExisted = false;
 		FDateTime Stamp;
 		FString Hash;
 
-		FSettingsGuard()
+		FMenuSettingsGuard()
 		{
 			bExisted = IFileManager::Get().FileExists(*Path);
 			Stamp = IFileManager::Get().GetTimeStamp(*Path);
@@ -84,11 +84,11 @@ namespace SchoolMenuTest
 	};
 
 	/** A game world with a context, so actors can be destroyed as in a game; destroyed with the fixture. */
-	struct FWorldFixture
+	struct FMenuWorldFixture
 	{
 		UWorld* World = nullptr;
 
-		FWorldFixture()
+		FMenuWorldFixture()
 		{
 			World = UWorld::CreateWorld(EWorldType::Game, false);
 			if (World && GEngine)
@@ -97,7 +97,7 @@ namespace SchoolMenuTest
 			}
 		}
 
-		~FWorldFixture()
+		~FMenuWorldFixture()
 		{
 			if (World)
 			{
@@ -145,10 +145,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuTilesShowProgress, "KiteSurf
 bool FKiteSurfSchoolMenuTilesShowProgress::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	FWorldFixture Fx;
-	ULessonSubsystem* Lessons = MakeLessons();
-	Pass(Lessons, { TEXT("A1") }, 3);
-	Pass(Lessons, { TEXT("A2") }, 1);
+	FMenuWorldFixture Fx;
+	ULessonSubsystem* Lessons = MakeMenuLessons();
+	PassLessons(Lessons, { TEXT("A1") }, 3);
+	PassLessons(Lessons, { TEXT("A2") }, 1);
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
 	{
@@ -229,9 +229,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuNavigation, "KiteSurf.School
 bool FKiteSurfSchoolMenuNavigation::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	FWorldFixture Fx;
-	ULessonSubsystem* Lessons = MakeLessons();
-	Pass(Lessons, { TEXT("A1"), TEXT("A2"), TEXT("A3"), TEXT("A4"), TEXT("A5") });
+	FMenuWorldFixture Fx;
+	ULessonSubsystem* Lessons = MakeMenuLessons();
+	PassLessons(Lessons, { TEXT("A1"), TEXT("A2"), TEXT("A3"), TEXT("A4"), TEXT("A5") });
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
 	{
@@ -331,9 +331,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuLockedCannotStart, "KiteSurf
 bool FKiteSurfSchoolMenuLockedCannotStart::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	const FSettingsGuard Settings;
-	FWorldFixture Fx;
-	ULessonSubsystem* Lessons = MakeLessons();
+	const FMenuSettingsGuard Settings;
+	FMenuWorldFixture Fx;
+	ULessonSubsystem* Lessons = MakeMenuLessons();
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
 	{
@@ -360,7 +360,7 @@ bool FKiteSurfSchoolMenuLockedCannotStart::RunTest(const FString& Parameters)
 	TestEqual(TEXT("nor does START"), Lessons->GetPendingLessonId(), FName());
 
 	// Coming soon: locked whatever the prerequisites say.
-	Pass(Lessons, { TEXT("A1"), TEXT("A2"), TEXT("A3"), TEXT("A4"), TEXT("A5") });
+	PassLessons(Lessons, { TEXT("A1"), TEXT("A2"), TEXT("A3"), TEXT("A4"), TEXT("A5") });
 	School->Refresh();
 	School->FocusLesson(TEXT("A6"));
 	TestFalse(TEXT("A6 waits for toeside riding"), School->StartFocusedLesson());
@@ -384,10 +384,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuContinueAndRerunOptions, "Ki
 bool FKiteSurfSchoolMenuContinueAndRerunOptions::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	const FSettingsGuard Settings;
-	FWorldFixture Fx;
-	ULessonSubsystem* Lessons = MakeLessons();
-	Pass(Lessons, { TEXT("A1"), TEXT("A2") });
+	const FMenuSettingsGuard Settings;
+	FMenuWorldFixture Fx;
+	ULessonSubsystem* Lessons = MakeMenuLessons();
+	PassLessons(Lessons, { TEXT("A1"), TEXT("A2") });
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
 	{
@@ -442,9 +442,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuRerunKeepsBestStars, "KiteSu
 bool FKiteSurfSchoolMenuRerunKeepsBestStars::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	FWorldFixture Fx;
-	ULessonSubsystem* Lessons = MakeLessons();
-	Pass(Lessons, { TEXT("A1") }, 3);
+	FMenuWorldFixture Fx;
+	ULessonSubsystem* Lessons = MakeMenuLessons();
+	PassLessons(Lessons, { TEXT("A1") }, 3);
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
 	{
@@ -476,8 +476,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuResetConfirmKeepsTrickBook, 
 bool FKiteSurfSchoolMenuResetConfirmKeepsTrickBook::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	const FSettingsGuard Settings;
-	FWorldFixture Fx;
+	const FMenuSettingsGuard Settings;
+	FMenuWorldFixture Fx;
 
 	UKiteSurfGameInstance* GI = NewObject<UKiteSurfGameInstance>();
 	FJumpRecord Record;
@@ -488,8 +488,8 @@ bool FKiteSurfSchoolMenuResetConfirmKeepsTrickBook::RunTest(const FString& Param
 	Record.ApexHeightCm = 812.0f;
 	Record.Outcome = EJumpOutcome::Landed;
 	TestTrue(TEXT("A trick in the game instance's book"), GI->RecordTrickLanding(Record));
-	ULessonSubsystem* Lessons = MakeLessons(GI);
-	Pass(Lessons, { TEXT("A1"), TEXT("A2") }, 2);
+	ULessonSubsystem* Lessons = MakeMenuLessons(GI);
+	PassLessons(Lessons, { TEXT("A1"), TEXT("A2") }, 2);
 
 	UKiteSurfSchoolWidget* School = Fx.MakeSchool(Lessons);
 	if (!TestNotNull(TEXT("Lesson menu created"), School))
@@ -535,7 +535,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuFromMainMenu, "KiteSurf.Scho
 bool FKiteSurfSchoolMenuFromMainMenu::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	FWorldFixture Fx;
+	FMenuWorldFixture Fx;
 	UKiteSurfMainMenuWidget* MainMenu = Fx.World ? CreateWidget<UKiteSurfMainMenuWidget>(Fx.World, UKiteSurfMainMenuWidget::StaticClass()) : nullptr;
 	if (!TestNotNull(TEXT("Main menu created"), MainMenu))
 	{
@@ -559,7 +559,7 @@ bool FKiteSurfSchoolMenuFromMainMenu::RunTest(const FString& Parameters)
 	TestEqual(TEXT("on PLAY"), MainMenu->GetNavigator().GetSelected(), 0);
 
 	MainMenu->OnSchoolClicked();
-	ULessonSubsystem* Lessons = MakeLessons();
+	ULessonSubsystem* Lessons = MakeMenuLessons();
 	if (MainMenu->ActiveSchoolWidget)
 	{
 		MainMenu->ActiveSchoolWidget->SetLessonSubsystem(Lessons);
@@ -578,7 +578,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolMenuPauseEntries, "KiteSurf.Scho
 bool FKiteSurfSchoolMenuPauseEntries::RunTest(const FString& Parameters)
 {
 	using namespace SchoolMenuTest;
-	FWorldFixture Fx;
+	FMenuWorldFixture Fx;
 	UWorld* World = Fx.World;
 	APlayerController* PC = World ? World->SpawnActor<APlayerController>() : nullptr;
 	AKiteSurfHUD* HUD = World ? World->SpawnActor<AKiteSurfHUD>() : nullptr;
@@ -620,7 +620,7 @@ bool FKiteSurfSchoolMenuPauseEntries::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	ULessonSubsystem* Lessons = MakeLessons();
+	ULessonSubsystem* Lessons = MakeMenuLessons();
 	Director->SetLessonSubsystem(Lessons);
 	Director->IntroSeconds = 0.0f;
 	for (int32 Frame = 0; Frame < 30 && Director->GetPhase() != ELessonPhase::Step; ++Frame)

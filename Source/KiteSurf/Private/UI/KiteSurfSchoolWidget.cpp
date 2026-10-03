@@ -21,24 +21,24 @@
 
 namespace KiteSurfSchoolPrivate
 {
-	const FLinearColor TitleColor(1.0f, 0.85f, 0.2f);
-	const FLinearColor LabelColor(0.75f, 0.82f, 0.9f);
-	const FLinearColor HintColor(0.55f, 0.75f, 0.9f);
-	const FLinearColor SelectedColor(1.0f, 0.8f, 0.15f);
-	const FLinearColor DimColor(0.45f, 0.5f, 0.56f);
-	const FLinearColor NewColor(1.0f, 0.55f, 0.15f);
-	const FLinearColor StarOnColor(1.0f, 0.8f, 0.15f);
-	const FLinearColor StarOffColor(0.18f, 0.22f, 0.28f);
+	const FLinearColor SchoolTitleColor(1.0f, 0.85f, 0.2f);
+	const FLinearColor SchoolLabelColor(0.75f, 0.82f, 0.9f);
+	const FLinearColor SchoolHintColor(0.55f, 0.75f, 0.9f);
+	const FLinearColor SchoolSelectedColor(1.0f, 0.8f, 0.15f);
+	const FLinearColor SchoolDimColor(0.45f, 0.5f, 0.56f);
+	const FLinearColor SchoolNewColor(1.0f, 0.55f, 0.15f);
+	const FLinearColor SchoolStarOnColor(1.0f, 0.8f, 0.15f);
+	const FLinearColor SchoolStarOffColor(0.18f, 0.22f, 0.28f);
 
-	constexpr float Unbounded = UE_BIG_NUMBER * 0.5f;
-	constexpr float MSPerKnot = 0.5144f;
-	constexpr int32 AssistCount = 6;
+	constexpr float SchoolUnbounded = UE_BIG_NUMBER * 0.5f;
+	constexpr float SchoolMSPerKnot = 0.5144f;
+	constexpr int32 SchoolAssistCount = 6;
 
-	bool HasMin(float Min) { return Min > -Unbounded; }
-	bool HasMax(float Max) { return Max < Unbounded; }
+	bool SchoolHasMin(float Min) { return Min > -SchoolUnbounded; }
+	bool SchoolHasMax(float Max) { return Max < SchoolUnbounded; }
 
 	/** A number with no more than two decimals and no trailing zeros: 1, 0.5, 0.15. */
-	FString Num(float Value)
+	FString SchoolNum(float Value)
 	{
 		FString S = FString::Printf(TEXT("%.2f"), Value);
 		if (S.Contains(TEXT(".")))
@@ -56,27 +56,27 @@ namespace KiteSurfSchoolPrivate
 	}
 
 	/** "1-2 m", "0.5 m or more", "4 s or less". Min and Max in the metric's unit; Scale converts for display. */
-	FString Range(float Min, float Max, const FString& Unit, float Scale = 1.0f)
+	FString SchoolRange(float Min, float Max, const FString& Unit, float Scale = 1.0f)
 	{
-		const bool bMin = HasMin(Min) && !(HasMax(Max) && Min <= 0.0f);
-		const bool bMax = HasMax(Max);
+		const bool bMin = SchoolHasMin(Min) && !(SchoolHasMax(Max) && Min <= 0.0f);
+		const bool bMax = SchoolHasMax(Max);
 		if (bMin && bMax)
 		{
-			return FString::Printf(TEXT("%s–%s%s"), *Num(Min * Scale), *Num(Max * Scale), *Unit);
+			return FString::Printf(TEXT("%s–%s%s"), *SchoolNum(Min * Scale), *SchoolNum(Max * Scale), *Unit);
 		}
 		if (bMin)
 		{
-			return FString::Printf(TEXT("%s%s or more"), *Num(Min * Scale), *Unit);
+			return FString::Printf(TEXT("%s%s or more"), *SchoolNum(Min * Scale), *Unit);
 		}
 		if (bMax)
 		{
-			return FString::Printf(TEXT("%s%s or less"), *Num(Max * Scale), *Unit);
+			return FString::Printf(TEXT("%s%s or less"), *SchoolNum(Max * Scale), *Unit);
 		}
 		return FString();
 	}
 
 	/** The display unit of a metric and the factor from its stored unit. */
-	FString UnitOf(ELessonMetric Metric, float& OutScale)
+	FString SchoolUnitOf(ELessonMetric Metric, float& OutScale)
 	{
 		OutScale = 1.0f;
 		switch (Metric)
@@ -97,7 +97,7 @@ namespace KiteSurfSchoolPrivate
 			return TEXT(" s");
 		case ELessonMetric::TakeoffSpeed:
 		case ELessonMetric::SpeedHeld:
-			OutScale = 1.0f / MSPerKnot;
+			OutScale = 1.0f / SchoolMSPerKnot;
 			return TEXT(" kn");
 		case ELessonMetric::SinkAtTouchdown:
 			return TEXT(" m/s");
@@ -117,23 +117,23 @@ namespace KiteSurfSchoolPrivate
 		}
 	}
 
-	FString ChannelName(ELessonChannel Channel)
+	FString SchoolChannelName(ELessonChannel Channel)
 	{
 		return StaticEnum<ELessonChannel>()->GetDisplayNameTextByValue(static_cast<int64>(Channel)).ToString().ToLower();
 	}
 
-	FString GradeName(float Index)
+	FString SchoolGradeName(float Index)
 	{
 		const int32 Grade = FMath::Clamp(FMath::RoundToInt(Index), 0, static_cast<int32>(ELandingGrade::Crash));
 		return StaticEnum<ELandingGrade>()->GetDisplayNameTextByValue(Grade).ToString();
 	}
 
-	bool IsHeld(ELessonMetric Metric)
+	bool SchoolIsHeld(ELessonMetric Metric)
 	{
 		return Metric == ELessonMetric::SpeedHeld || Metric == ELessonMetric::KiteElevationHeld || Metric == ELessonMetric::ChannelHeld;
 	}
 
-	bool& AssistFlag(FLessonAssists& Assists, int32 Index)
+	bool& SchoolAssistFlag(FLessonAssists& Assists, int32 Index)
 	{
 		switch (Index)
 		{
@@ -146,20 +146,20 @@ namespace KiteSurfSchoolPrivate
 		}
 	}
 
-	const TCHAR* AssistName(int32 Index)
+	const TCHAR* SchoolAssistName(int32 Index)
 	{
-		static const TCHAR* Names[AssistCount] = { TEXT("auto-park"), TEXT("auto-edge"), TEXT("landing assist"), TEXT("auto-redirect"), TEXT("loop catch"), TEXT("slow motion") };
-		return Names[FMath::Clamp(Index, 0, AssistCount - 1)];
+		static const TCHAR* Names[SchoolAssistCount] = { TEXT("auto-park"), TEXT("auto-edge"), TEXT("landing assist"), TEXT("auto-redirect"), TEXT("loop catch"), TEXT("slow motion") };
+		return Names[FMath::Clamp(Index, 0, SchoolAssistCount - 1)];
 	}
 
 	/** The assists the lesson has on, by index. */
-	TArray<int32> AssistsOn(const FLessonAssists& Assists)
+	TArray<int32> SchoolAssistsOn(const FLessonAssists& Assists)
 	{
 		FLessonAssists Copy = Assists;
 		TArray<int32> On;
-		for (int32 I = 0; I < AssistCount; ++I)
+		for (int32 I = 0; I < SchoolAssistCount; ++I)
 		{
-			if (AssistFlag(Copy, I))
+			if (SchoolAssistFlag(Copy, I))
 			{
 				On.Add(I);
 			}
@@ -168,7 +168,7 @@ namespace KiteSurfSchoolPrivate
 	}
 
 	/** The lesson list against an empty progress book, for a menu with no subsystem. */
-	TArray<FLessonListItem> FreshList()
+	TArray<FLessonListItem> SchoolFreshList()
 	{
 		const FLessonProgressBook Empty;
 		TArray<FLessonListItem> Items;
@@ -185,7 +185,7 @@ namespace KiteSurfSchoolPrivate
 		return Items;
 	}
 
-	FString LessonLabel(FName LessonId)
+	FString SchoolLessonLabel(FName LessonId)
 	{
 		const FLessonDef* Lesson = LessonCatalog::Find(LessonId);
 		return Lesson ? FString::Printf(TEXT("%s %s"), *Lesson->Id.ToString(), *Lesson->Title.ToString()) : LessonId.ToString();
@@ -213,8 +213,8 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 {
 	using namespace KiteSurfSchoolPrivate;
 	float Scale = 1.0f;
-	const FString Unit = UnitOf(O.Metric, Scale);
-	const FString R = Range(O.Min, O.Max, Unit, Scale);
+	const FString Unit = SchoolUnitOf(O.Metric, Scale);
+	const FString R = SchoolRange(O.Min, O.Max, Unit, Scale);
 	FString S;
 	switch (O.Metric)
 	{
@@ -222,7 +222,7 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 	case ELessonMetric::Airtime: S = TEXT("Stay in the air ") + R; break;
 	case ELessonMetric::JumpDistance: S = TEXT("Jump ") + R + TEXT(" far"); break;
 	case ELessonMetric::TakeoffSpeed: S = TEXT("Take off at ") + R; break;
-	case ELessonMetric::LandingGrade: S = TEXT("Land ") + GradeName(O.Max) + TEXT(" or better"); break;
+	case ELessonMetric::LandingGrade: S = TEXT("Land ") + SchoolGradeName(O.Max) + TEXT(" or better"); break;
 	case ELessonMetric::SinkAtTouchdown: S = TEXT("Touch down sinking ") + R; break;
 	case ELessonMetric::LandingG: S = TEXT("Land at ") + R; break;
 	case ELessonMetric::KiteElevationAtTouchdown: S = TEXT("Kite at ") + R + TEXT(" at touchdown"); break;
@@ -237,18 +237,18 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 	case ELessonMetric::GrabHoldSeconds: S = TEXT("Hold a grab ") + R; break;
 	case ELessonMetric::DiveBeforeTouchdown: S = TEXT("Dive the kite ") + R + TEXT(" before touchdown"); break;
 	case ELessonMetric::HeadingChange: S = TEXT("Turn ") + R + TEXT(" in the air"); break;
-	case ELessonMetric::Channel: S = TEXT("Bring the ") + ChannelName(O.Channel) + TEXT(" to ") + R; break;
+	case ELessonMetric::Channel: S = TEXT("Bring the ") + SchoolChannelName(O.Channel) + TEXT(" to ") + R; break;
 	case ELessonMetric::SpeedHeld: S = TEXT("Hold a speed of ") + R; break;
 	case ELessonMetric::KiteElevationHeld: S = TEXT("Fly the kite at ") + R; break;
-	case ELessonMetric::ChannelHeld: S = TEXT("Hold the ") + ChannelName(O.Channel) + TEXT(" at ") + R; break;
-	case ELessonMetric::TimeToPlaning: S = TEXT("Get planing within ") + Num(O.Max) + TEXT(" s"); break;
+	case ELessonMetric::ChannelHeld: S = TEXT("Hold the ") + SchoolChannelName(O.Channel) + TEXT(" at ") + R; break;
+	case ELessonMetric::TimeToPlaning: S = TEXT("Get planing within ") + SchoolNum(O.Max) + TEXT(" s"); break;
 	case ELessonMetric::UpwindGain: S = TEXT("Gain ") + R + TEXT(" upwind"); break;
 	case ELessonMetric::DistanceRidden: S = TEXT("Ride ") + R + TEXT(" planing"); break;
 	case ELessonMetric::KiteDives:
-		S = FString::Printf(TEXT("Dive the kite: never below %s°, back above %s°"), *Num(O.Min), *Num(O.Max));
+		S = FString::Printf(TEXT("Dive the kite: never below %s°, back above %s°"), *SchoolNum(O.Min), *SchoolNum(O.Max));
 		if (O.WindowSeconds > 0.0f)
 		{
-			S += TEXT(" within ") + Num(O.WindowSeconds) + TEXT(" s");
+			S += TEXT(" within ") + SchoolNum(O.WindowSeconds) + TEXT(" s");
 		}
 		break;
 	case ELessonMetric::Transition: S = TEXT("Turn round"); break;
@@ -257,9 +257,9 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 	case ELessonMetric::KiteLeadAtTransition: S = TEXT("Kite leads the turn by ") + R; break;
 	default: S = TEXT("No pass test"); break;
 	}
-	if (IsHeld(O.Metric) && O.WindowSeconds > 0.0f)
+	if (SchoolIsHeld(O.Metric) && O.WindowSeconds > 0.0f)
 	{
-		S += TEXT(" for ") + Num(O.WindowSeconds) + TEXT(" s");
+		S += TEXT(" for ") + SchoolNum(O.WindowSeconds) + TEXT(" s");
 	}
 	if (O.bEachTack && O.Count == 2)
 	{
@@ -278,7 +278,7 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 		const FLessonMeasure& M = C.Measure;
 		if (M.Metric == ELessonMetric::LandingGrade)
 		{
-			S += TEXT(", landed ") + GradeName(C.Max) + TEXT(" or better");
+			S += TEXT(", landed ") + SchoolGradeName(C.Max) + TEXT(" or better");
 		}
 		else if (M.Metric == ELessonMetric::Popped && C.Min >= 1.0f)
 		{
@@ -286,11 +286,11 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 		}
 		else if (M.Metric == ELessonMetric::JumpHeight)
 		{
-			S += TEXT(", from a jump of ") + Range(C.Min, C.Max, TEXT(" m"));
+			S += TEXT(", from a jump of ") + SchoolRange(C.Min, C.Max, TEXT(" m"));
 		}
 		else if (M.Metric == ELessonMetric::DiveBeforeTouchdown)
 		{
-			S += TEXT(", dive ") + Range(C.Min, C.Max, TEXT(" s")) + TEXT(" before touchdown");
+			S += TEXT(", dive ") + SchoolRange(C.Min, C.Max, TEXT(" s")) + TEXT(" before touchdown");
 		}
 		else if (M.Metric == ELessonMetric::Channel)
 		{
@@ -305,15 +305,15 @@ FText SchoolMenuText::DescribeObjective(const FLessonObjective& O)
 			case ELessonChannel::KiteElevation:
 				if (M.Reduce == ELessonReduce::Range)
 				{
-					S += TEXT(", kite moving ") + Range(C.Min, C.Max, TEXT("°")) + TEXT(" at take-off");
+					S += TEXT(", kite moving ") + SchoolRange(C.Min, C.Max, TEXT("°")) + TEXT(" at take-off");
 				}
 				else
 				{
-					S += TEXT(", kite at ") + Range(C.Min, C.Max, TEXT("°"));
+					S += TEXT(", kite at ") + SchoolRange(C.Min, C.Max, TEXT("°"));
 				}
 				break;
 			case ELessonChannel::KiteClockAbs:
-				S += TEXT(", kite within ") + Num(C.Max) + TEXT("° of 12");
+				S += TEXT(", kite within ") + SchoolNum(C.Max) + TEXT("° of 12");
 				break;
 			case ELessonChannel::CompletedLoops:
 				S += TEXT(", with a kite loop");
@@ -345,7 +345,7 @@ FText SchoolMenuText::FormatValue(ELessonMetric Metric, float Value)
 	switch (Metric)
 	{
 	case ELessonMetric::LandingGrade:
-		return FText::FromString(GradeName(Value));
+		return FText::FromString(SchoolGradeName(Value));
 	case ELessonMetric::Popped:
 	case ELessonMetric::LoopKind:
 	case ELessonMetric::TrickNameContains:
@@ -354,10 +354,10 @@ FText SchoolMenuText::FormatValue(ELessonMetric Metric, float Value)
 		break;
 	}
 	float Scale = 1.0f;
-	const FString Unit = UnitOf(Metric, Scale);
+	const FString Unit = SchoolUnitOf(Metric, Scale);
 	const float Shown = Value * Scale;
 	// Big numbers in whole units, small ones to a tenth or a hundredth.
-	const FString Text = FMath::Abs(Shown) >= 10.0f ? FString::Printf(TEXT("%.0f"), Shown) : Num(FMath::RoundToFloat(Shown * 10.0f) / 10.0f);
+	const FString Text = FMath::Abs(Shown) >= 10.0f ? FString::Printf(TEXT("%.0f"), Shown) : SchoolNum(FMath::RoundToFloat(Shown * 10.0f) / 10.0f);
 	return FText::FromString(Text + Unit);
 }
 
@@ -387,9 +387,9 @@ FText SchoolMenuText::ListAssists(const FLessonAssists& Assists)
 {
 	using namespace KiteSurfSchoolPrivate;
 	TArray<FString> Names;
-	for (const int32 Index : AssistsOn(Assists))
+	for (const int32 Index : SchoolAssistsOn(Assists))
 	{
-		Names.Add(AssistName(Index));
+		Names.Add(SchoolAssistName(Index));
 	}
 	return Names.Num() > 0 ? FText::FromString(FString::Join(Names, TEXT(", "))) : LOCTEXT("NoAssists", "none");
 }
@@ -442,7 +442,7 @@ ULessonSubsystem* UKiteSurfSchoolWidget::GetLessons() const
 void UKiteSurfSchoolWidget::Refresh()
 {
 	const ULessonSubsystem* Lessons = GetLessons();
-	Tiles = Lessons ? Lessons->GetLessonList() : KiteSurfSchoolPrivate::FreshList();
+	Tiles = Lessons ? Lessons->GetLessonList() : KiteSurfSchoolPrivate::SchoolFreshList();
 	bRefreshed = true;
 	if (!FindTile(FocusedLessonId))
 	{
@@ -563,7 +563,7 @@ void UKiteSurfSchoolWidget::SetRunWindKnots(float Knots)
 int32 UKiteSurfSchoolWidget::GetAssistChoiceCount() const
 {
 	const FLessonDef* Lesson = GetFocusedLesson();
-	const int32 On = Lesson ? KiteSurfSchoolPrivate::AssistsOn(Lesson->Setup.Assists).Num() : 0;
+	const int32 On = Lesson ? KiteSurfSchoolPrivate::SchoolAssistsOn(Lesson->Setup.Assists).Num() : 0;
 	// The lesson's own; then each one left off and all off (one assist: just "all off").
 	return On == 0 ? 1 : (On == 1 ? 2 : On + 2);
 }
@@ -582,14 +582,14 @@ FText UKiteSurfSchoolWidget::GetAssistChoiceText() const
 	{
 		return FText::GetEmpty();
 	}
-	const TArray<int32> On = AssistsOn(Lesson->Setup.Assists);
+	const TArray<int32> On = SchoolAssistsOn(Lesson->Setup.Assists);
 	if (AssistChoice == 0)
 	{
 		return FText::FromString(TEXT("LESSON'S: ") + SchoolMenuText::ListAssists(Lesson->Setup.Assists).ToString());
 	}
 	if (On.Num() >= 2 && AssistChoice <= On.Num())
 	{
-		return FText::FromString(FString(TEXT("WITHOUT ")) + AssistName(On[AssistChoice - 1]));
+		return FText::FromString(FString(TEXT("WITHOUT ")) + SchoolAssistName(On[AssistChoice - 1]));
 	}
 	return LOCTEXT("AssistsAllOff", "ALL OFF");
 }
@@ -609,12 +609,12 @@ FLessonRunOptions UKiteSurfSchoolWidget::GetRunOptions() const
 	}
 	if (AssistChoice > 0)
 	{
-		const TArray<int32> On = AssistsOn(Lesson->Setup.Assists);
+		const TArray<int32> On = SchoolAssistsOn(Lesson->Setup.Assists);
 		Options.bOverrideAssists = true;
 		Options.Assists = Lesson->Setup.Assists;
 		if (On.Num() >= 2 && AssistChoice <= On.Num())
 		{
-			AssistFlag(Options.Assists, On[AssistChoice - 1]) = false;
+			SchoolAssistFlag(Options.Assists, On[AssistChoice - 1]) = false;
 		}
 		else
 		{
@@ -702,7 +702,7 @@ FText UKiteSurfSchoolWidget::GetDetailStatusText() const
 		{
 			if (!Lessons || Lessons->GetProgress().GetStars(Req) == 0)
 			{
-				Missing.Add(KiteSurfSchoolPrivate::LessonLabel(Req));
+				Missing.Add(KiteSurfSchoolPrivate::SchoolLessonLabel(Req));
 			}
 		}
 		return FText::FromString(FString::Printf(TEXT("LOCKED: pass %s first"), *FString::Join(Missing, TEXT(" and "))));
@@ -742,7 +742,7 @@ FText UKiteSurfSchoolWidget::GetDetailNeedsText() const
 	for (const FName& Req : Lesson->Requires)
 	{
 		const bool bPassed = Lessons && Lessons->GetProgress().GetStars(Req) > 0;
-		Parts.Add(KiteSurfSchoolPrivate::LessonLabel(Req) + (bPassed ? TEXT(" (passed)") : TEXT(" (not passed)")));
+		Parts.Add(KiteSurfSchoolPrivate::SchoolLessonLabel(Req) + (bPassed ? TEXT(" (passed)") : TEXT(" (not passed)")));
 	}
 	FString S = Parts.Num() > 0 ? FString::Join(Parts, TEXT(", ")) : FString(TEXT("Nothing: start here."));
 	if (!LessonCatalog::IsAvailable(*Lesson))
@@ -909,7 +909,7 @@ void UKiteSurfSchoolWidget::BuildNavigation()
 		{
 			if (const TSharedPtr<SButton> Pinned = Weak.Pin())
 			{
-				Pinned->SetBorderBackgroundColor(bSelected ? KiteSurfSchoolPrivate::SelectedColor : FLinearColor::White);
+				Pinned->SetBorderBackgroundColor(bSelected ? KiteSurfSchoolPrivate::SchoolSelectedColor : FLinearColor::White);
 			}
 		};
 	};
@@ -1034,7 +1034,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildTile(FName LessonId, FName Chapt
 					.BorderBackgroundColor_Lambda([this, LessonId, Star]()
 					{
 						const FLessonListItem* Tile = FindTile(LessonId);
-						return FSlateColor(Tile && Tile->Stars >= Star ? StarOnColor : StarOffColor);
+						return FSlateColor(Tile && Tile->Stars >= Star ? SchoolStarOnColor : SchoolStarOffColor);
 					})
 				]
 			];
@@ -1043,7 +1043,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildTile(FName LessonId, FName Chapt
 	auto TextColor = [this, LessonId]()
 	{
 		const FLessonListItem* Tile = FindTile(LessonId);
-		return FSlateColor(Tile && !Tile->bLocked ? FLinearColor::White : DimColor);
+		return FSlateColor(Tile && !Tile->bLocked ? FLinearColor::White : SchoolDimColor);
 	};
 
 	return SNew(SBox)
@@ -1060,7 +1060,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildTile(FName LessonId, FName Chapt
 				{
 					return FSlateColor(FLinearColor::Transparent);
 				}
-				return FSlateColor(HighlightedChapter == Chapter ? SelectedColor : FLinearColor(0.8f, 0.85f, 0.9f, 0.55f));
+				return FSlateColor(HighlightedChapter == Chapter ? SchoolSelectedColor : FLinearColor(0.8f, 0.85f, 0.9f, 0.55f));
 			})
 			.OnMouseButtonDown_Lambda([this, LessonId, Chapter](const FGeometry&, const FPointerEvent& Event)
 			{
@@ -1138,7 +1138,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildTile(FName LessonId, FName Chapt
 							.ColorAndOpacity_Lambda([this, LessonId]()
 							{
 								const FLessonListItem* Tile = FindTile(LessonId);
-								return FSlateColor(Tile && Tile->bNew ? NewColor : DimColor);
+								return FSlateColor(Tile && Tile->bNew ? SchoolNewColor : SchoolDimColor);
 							})
 						]
 					]
@@ -1159,7 +1159,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildChapter(const FSchoolChapterInfo
 		Content = SNew(STextBlock)
 			.Text(LOCTEXT("ChapterSoon", "Lessons coming soon"))
 			.Font(FCoreStyle::GetDefaultFontStyle("Italic", 10))
-			.ColorAndOpacity(DimColor);
+			.ColorAndOpacity(SchoolDimColor);
 	}
 	else
 	{
@@ -1188,9 +1188,9 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildChapter(const FSchoolChapterInfo
 				{
 					if (!bHasLessons)
 					{
-						return FSlateColor(DimColor);
+						return FSlateColor(SchoolDimColor);
 					}
-					return FSlateColor(HighlightedChapter == ChapterId ? SelectedColor : LabelColor);
+					return FSlateColor(HighlightedChapter == ChapterId ? SchoolSelectedColor : SchoolLabelColor);
 				})
 			]
 			+ SHorizontalBox::Slot()
@@ -1201,7 +1201,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildChapter(const FSchoolChapterInfo
 				SNew(STextBlock)
 				.Text(Chapter.Wind)
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(HintColor)
+				.ColorAndOpacity(SchoolHintColor)
 			]
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
@@ -1211,7 +1211,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildChapter(const FSchoolChapterInfo
 				SNew(STextBlock)
 				.Text_Lambda([this, ChapterId]() { return GetChapterProgressText(ChapterId); })
 				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
-				.ColorAndOpacity(HintColor)
+				.ColorAndOpacity(SchoolHintColor)
 			]
 		]
 		+ SVerticalBox::Slot()
@@ -1232,7 +1232,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildMapPanel()
 			SNew(STextBlock)
 			.Text(LOCTEXT("SchoolTitle", "SCHOOL"))
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 26))
-			.ColorAndOpacity(TitleColor)
+			.ColorAndOpacity(SchoolTitleColor)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -1241,7 +1241,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildMapPanel()
 			SNew(STextBlock)
 			.Text_Lambda([this]() { return GetOverallProgressText(); })
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
-			.ColorAndOpacity(HintColor)
+			.ColorAndOpacity(SchoolHintColor)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -1251,7 +1251,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildMapPanel()
 			{
 				const FName Id = GetContinueLessonId();
 				return Id.IsNone() ? LOCTEXT("ContinueNone", "CONTINUE")
-					: FText::FromString(TEXT("CONTINUE:  ") + KiteSurfSchoolPrivate::LessonLabel(Id).ToUpper());
+					: FText::FromString(TEXT("CONTINUE:  ") + KiteSurfSchoolPrivate::SchoolLessonLabel(Id).ToUpper());
 			}), [this]() { Continue(); }, 17)
 		];
 
@@ -1297,7 +1297,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildDetailPanel()
 		return SNew(STextBlock)
 			.Text(Label)
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-			.ColorAndOpacity(HintColor);
+			.ColorAndOpacity(SchoolHintColor);
 	};
 	auto Body = [](TFunction<FText()> Text) -> TSharedRef<SWidget>
 	{
@@ -1319,7 +1319,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildDetailPanel()
 					SNew(STextBlock)
 					.Text(Label)
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
-					.ColorAndOpacity(LabelColor)
+					.ColorAndOpacity(SchoolLabelColor)
 				]
 			]
 			+ SHorizontalBox::Slot()
@@ -1342,7 +1342,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildDetailPanel()
 				return Lesson ? FText::FromString(FString::Printf(TEXT("%s  %s"), *Lesson->Id.ToString(), *Lesson->Title.ToString().ToUpper())) : FText::GetEmpty();
 			})
 			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 20))
-			.ColorAndOpacity(TitleColor)
+			.ColorAndOpacity(SchoolTitleColor)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -1357,9 +1357,9 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildDetailPanel()
 				const FLessonListItem* Tile = FindTile(FocusedLessonId);
 				if (!Tile || Tile->bLocked)
 				{
-					return FSlateColor(DimColor);
+					return FSlateColor(SchoolDimColor);
 				}
-				return FSlateColor(Tile->bNew ? NewColor : StarOnColor);
+				return FSlateColor(Tile->bNew ? SchoolNewColor : SchoolStarOnColor);
 			})
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(Pad, 4.0f, Pad, 1.0f)[Section(LOCTEXT("Teaches", "WHAT IT TEACHES"))]
@@ -1398,7 +1398,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildDetailPanel()
 			SNew(STextBlock)
 			.Text(LOCTEXT("AssistHint", "Fewer assists earn 2 stars, none at all 3."))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-			.ColorAndOpacity(HintColor)
+			.ColorAndOpacity(SchoolHintColor)
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(Pad, 4.0f, Pad, 4.0f)
 		[
@@ -1450,7 +1450,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildConfirmPanel()
 						SNew(STextBlock)
 						.Text(LOCTEXT("ResetTitle", "RESET PROGRESS?"))
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 22))
-						.ColorAndOpacity(TitleColor)
+						.ColorAndOpacity(SchoolTitleColor)
 					]
 					+ SVerticalBox::Slot()
 					.AutoHeight()
@@ -1459,7 +1459,7 @@ TSharedRef<SWidget> UKiteSurfSchoolWidget::BuildConfirmPanel()
 						SNew(STextBlock)
 						.Text(LOCTEXT("ResetBody", "Every lesson's stars, bests and attempts are forgotten. Your trick book is kept."))
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 12))
-						.ColorAndOpacity(LabelColor)
+						.ColorAndOpacity(SchoolLabelColor)
 						.AutoWrapText(true)
 					]
 					+ SVerticalBox::Slot()

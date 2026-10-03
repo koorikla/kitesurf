@@ -5,6 +5,7 @@
 #include "UI/KiteSurfMenuNavigator.h"
 #include "GenericPlatform/GenericWindow.h"
 #include "RiderCharacter.h"
+#include "KiteMotionBar.h"
 #include "KiteSurfSettingsWidget.generated.h"
 
 class USlider;
@@ -119,6 +120,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Settings")
 	void ToggleMotionBar();
+
+	/** How the motion bar reads power: tip the pad (Tilt) or move it up and down (Move). */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	EMotionSheetMode MotionSheetMode = EMotionSheetMode::Tilt;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleMotionSheetMode();
+
+	/** The bar springs back to the middle when the power keys, stick or triggers are let go. */
+	UPROPERTY(BlueprintReadOnly, Category = "Settings")
+	bool bBarReturnsToMiddle = true;
+
+	UFUNCTION(BlueprintCallable, Category = "Settings")
+	void ToggleBarReturnsToMiddle();
 
 	/** Controller vibration. */
 	UPROPERTY(BlueprintReadOnly, Category = "Settings")
@@ -247,6 +262,12 @@ private:
 	TSharedPtr<SButton> SlateMotionBarButton;
 	TSharedPtr<STextBlock> SlateMotionBarText;
 	TSharedPtr<STextBlock> SlateMotionBarNote;
+
+	TSharedPtr<SButton> SlateMotionSheetModeButton;
+	TSharedPtr<STextBlock> SlateMotionSheetModeText;
+
+	TSharedPtr<SButton> SlateBarReturnsButton;
+	TSharedPtr<STextBlock> SlateBarReturnsText;
 
 	TSharedPtr<SButton> SlateVSyncButton;
 	TSharedPtr<STextBlock> SlateVSyncText;

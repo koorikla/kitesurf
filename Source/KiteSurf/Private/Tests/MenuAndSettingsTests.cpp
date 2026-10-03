@@ -628,12 +628,12 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         }
     }
 
-    // Settings: volume, window mode, resolution, motion bar, vsync, quality, back.
+    // Settings: four volumes, window mode, resolution, motion bar, motion power, bar to middle, vibration, vsync, quality, back.
     UKiteSurfSettingsWidget* Settings = CreateWidget<UKiteSurfSettingsWidget>(World, UKiteSurfSettingsWidget::StaticClass());
     if (Settings)
     {
         FKiteMenuNavigator& Navigator = Settings->GetNavigator();
-        TestEqual(TEXT("Settings has eleven items"), Navigator.Num(), 11);
+        TestEqual(TEXT("Settings has thirteen items"), Navigator.Num(), 13);
         TestEqual(TEXT("and opens on the first"), Navigator.GetSelected(), 0);
 
         Settings->OnVolumeSliderChanged(1.0f);
@@ -674,11 +674,23 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         TestEqual(TEXT("and so does right"), Settings->bMotionBar, bMotionBefore);
 
         Navigator.Select(7);
+        const EMotionSheetMode ModeBefore = Settings->MotionSheetMode;
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotEqual(TEXT("Accept on MOTION POWER switches between tilt and move"), Settings->MotionSheetMode, ModeBefore);
+        Navigator.HandleKey(EKeys::Enter);
+        TestEqual(TEXT("and back"), Settings->MotionSheetMode, ModeBefore);
+
+        Navigator.Select(8);
+        const bool bBarReturnsBefore = Settings->bBarReturnsToMiddle;
+        Navigator.HandleKey(EKeys::Enter);
+        TestNotEqual(TEXT("Accept on BAR TO MIDDLE switches it"), Settings->bBarReturnsToMiddle, bBarReturnsBefore);
+
+        Navigator.Select(9);
         const bool bHapticsBefore = Settings->bHaptics;
         Navigator.HandleKey(EKeys::Enter);
         TestNotEqual(TEXT("Accept on VIBRATION switches it"), Settings->bHaptics, bHapticsBefore);
 
-        Navigator.Select(9);
+        Navigator.Select(11);
         Settings->SetQualityPreset(1);
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("Right on QUALITY steps it up"), Settings->CurrentQualityPreset, 2);

@@ -415,6 +415,7 @@ assets test.
 | Unhook or hook in | Y | F | On the water only. Freestyle |
 | Handle pass | X | Left Shift | In the air, unhooked. FS or BS comes from the current spin sense |
 | Kite (exists) | Right stick, triggers | Arrows, right mouse | Loops stay on the bar; the gesture loop is backlog D3 |
+| Recentre the motion bar (exists) | Right stick click | Home | Only while the motion bar follows a controller, when the right stick is idle |
 
 The motion bar frees the right stick anyway, so none of the above conflicts with it.
 `kitesurf.Input` gains arguments for load, pre-wind, grab, board-off and pass, so scripted rides

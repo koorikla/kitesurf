@@ -119,6 +119,23 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Bar"),
+			TEXT("Holds the player's sheet input (Up / Down, right stick, triggers) through the same handler they use: with the bar returning to the middle, the bar goes that fraction of the way to fully in (+) or out (-) and springs back on 0. Usage: kitesurf.Bar <-1..1: +1 power>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const float Input = Args.IsValidIndex(0) ? FCString::Atof(*Args[0]) : 0.0f;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->OnSheetTriggered(FInputActionValue(Input));
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Bar %.2f: bar at %.2f, returns to middle %d"), Input, It->GetCurrentSheetInput(), It->GetBarReturnsToMiddle());
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.JumpButton"),
 			TEXT("Presses (1) or lets go of (0) the player's jump button through the same handlers the key uses: held on the water loads, letting go pops; pressed and held in the air tucks. Usage: kitesurf.JumpButton <0|1>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -280,9 +297,10 @@ public:
 							It->SetMotionBarEnabled(bOn);
 						}
 						const FKiteMotionSample& Sample = It->GetLastMotionSample();
-						UE_LOG(LogKiteSurf, Log, TEXT("Motion bar %s (active %d, device '%s', steer %.2f, sheet %.2f, roll %.1f deg, pitch %.1f deg, accel (%.2f, %.2f, %.2f) g, gyro (%.3f, %.3f, %.3f) rad/s)"),
-							bOn ? TEXT("on") : TEXT("off"), It->IsMotionBarActive(), *It->GetMotionDeviceName(), It->GetCurrentSteerInput(), It->GetCurrentSheetInput(),
-							It->GetMotionTiltDeg().X, It->GetMotionTiltDeg().Y, Sample.AccelG.X, Sample.AccelG.Y, Sample.AccelG.Z, Sample.GyroRadS.X, Sample.GyroRadS.Y, Sample.GyroRadS.Z);
+						UE_LOG(LogKiteSurf, Log, TEXT("Motion bar %s (active %d, device '%s', power by %s, steer %.2f, sheet %.2f, roll %.1f deg, pitch %.1f deg, travel %.1f cm, still %d, accel (%.2f, %.2f, %.2f) g, gyro (%.3f, %.3f, %.3f) rad/s)"),
+							bOn ? TEXT("on") : TEXT("off"), It->IsMotionBarActive(), *It->GetMotionDeviceName(), It->GetMotionSheetMode() == EMotionSheetMode::Move ? TEXT("move") : TEXT("tilt"),
+							It->GetCurrentSteerInput(), It->GetCurrentSheetInput(), It->GetMotionTiltDeg().X, It->GetMotionTiltDeg().Y, It->GetMotionStroke().GetDisplacementCm(), It->GetMotionStroke().IsStill(),
+							Sample.AccelG.X, Sample.AccelG.Y, Sample.AccelG.Z, Sample.GyroRadS.X, Sample.GyroRadS.Y, Sample.GyroRadS.Z);
 					}
 				}
 			}),
@@ -462,6 +480,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.PreWind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Stick"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.JumpButton"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Bar"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

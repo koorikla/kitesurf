@@ -87,6 +87,140 @@ float FMotionBarMapping::GetSheet(float PitchDeg) const
 	return FMath::Clamp(SheetAtNeutral + Off / FMath::Max(SheetRangeDeg, 1.0f), 0.0f, 1.0f);
 }
 
+float FMotionBarMapping::GetSheetFromStroke(float StrokeCm) const
+{
+	return FMath::Clamp(SheetAtNeutral + StrokeCm / FMath::Max(MoveSheetFullStrokeCm, 1.0f), 0.0f, 1.0f);
+}
+
+float FMotionBarMapping::GetStrokeMinCm() const
+{
+	return -SheetAtNeutral * FMath::Max(MoveSheetFullStrokeCm, 1.0f);
+}
+
+float FMotionBarMapping::GetStrokeMaxCm() const
+{
+	return (1.0f - SheetAtNeutral) * FMath::Max(MoveSheetFullStrokeCm, 1.0f);
+}
+
+void FMotionBarStroke::Reset()
+{
+	VelocityMS = 0.0f;
+	DisplacementM = 0.0f;
+	StillTimeSeconds = 0.0f;
+	QuietTimeSeconds = 0.0f;
+	RecentAlong.Reset();
+}
+
+void FMotionBarStroke::Update(const FKiteMotionSample& Sample, const FVector& Up, float DeltaTime)
+{
+	if (DeltaTime <= 0.0f)
+	{
+		return;
+	}
+	constexpr float StandardGravityMS2 = 9.80665f;
+	const FVector UpDir = Up.GetSafeNormal();
+	if (UpDir.IsNearlyZero())
+	{
+		return;
+	}
+
+	// What is left of the accelerometer's reading once gravity is off: the pad's own acceleration (g),
+	// along the pull: down, and towards the player. "Towards" is the level part of the pad's own
+	// towards-the-player and face axes, which works whether it is held flat or upright.
+	const FVector Residual = Sample.AccelG - UpDir;
+	const FVector Linear = Residual - BiasG;
+	const FVector ControllerTowards(0.0f, 1.0f, 1.0f);
+	const FVector Level = ControllerTowards - UpDir * FVector::DotProduct(ControllerTowards, UpDir);
+	const FVector TowardsDir = Level.Size() > 0.2f ? Level.GetSafeNormal() : FVector::ZeroVector;
+	float AlongG = -static_cast<float>(FVector::DotProduct(Linear, UpDir)) + TowardsWeight * static_cast<float>(FVector::DotProduct(Linear, TowardsDir));
+	const bool bQuiet = FMath::Abs(AlongG) < DeadbandG;
+	AlongG = bQuiet ? 0.0f : AlongG - FMath::Sign(AlongG) * DeadbandG;
+	// Only a lasting quiet is a drift to kill: the acceleration passes through zero in the middle of
+	// every stroke too.
+	QuietTimeSeconds = bQuiet ? QuietTimeSeconds + DeltaTime : 0.0f;
+
+	// The zero-velocity update: a pad that is not turning and feels only gravity is not moving. It
+	// takes StillSeconds of quiet readings to call the pad still, and then only a reading well past
+	// the thresholds (the start of a stroke) ends it, so a hand's tremor does not keep breaking it.
+	const float AccelOffG = FMath::Abs(static_cast<float>(Sample.AccelG.Size()) - 1.0f);
+	const float GyroRadS = static_cast<float>(Sample.GyroRadS.Size());
+	const bool bWasStill = IsStill();
+	if (bWasStill)
+	{
+		if (AccelOffG > StillBreakAccelG || GyroRadS > StillBreakGyroRadS)
+		{
+			StillTimeSeconds = 0.0f;
+		}
+	}
+	else
+	{
+		const bool bQuietSensors = GyroRadS < StillGyroRadS && AccelOffG < StillAccelG;
+		StillTimeSeconds = bQuietSensors ? StillTimeSeconds + DeltaTime : 0.0f;
+	}
+
+	if (IsStill())
+	{
+		// Still, the residual is the sensor's bias (and the filter's last error): learn it.
+		// Kept briefly: if this turns out to be the start of a stroke, it counts, and is not bias.
+		RecentAlong.Add({ AlongG, DeltaTime, BiasG });
+		const float Blend = FMath::Clamp(DeltaTime / FMath::Max(BiasLearnSeconds, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+		BiasG = FMath::Lerp(BiasG, Residual, Blend);
+		VelocityMS = 0.0f;
+		float Span = 0.0f;
+		int32 Keep = 0;
+		for (int32 Index = RecentAlong.Num() - 1; Index >= 0 && Span < StillLookbackSeconds; --Index)
+		{
+			Span += RecentAlong[Index].DeltaTime;
+			++Keep;
+		}
+		if (Keep < RecentAlong.Num())
+		{
+			RecentAlong.RemoveAt(0, RecentAlong.Num() - Keep);
+		}
+	}
+	else
+	{
+		if (bWasStill)
+		{
+			// A stroke has broken the stillness: the start of it, read while it was still too small to
+			// break it, is taken back from the last readings that pushed the same way.
+			for (int32 Index = RecentAlong.Num() - 1; Index >= 0; --Index)
+			{
+				const FRecentAlong& Earlier = RecentAlong[Index];
+				if (Earlier.AlongG == 0.0f || FMath::Sign(Earlier.AlongG) != FMath::Sign(AlongG))
+				{
+					break;
+				}
+				VelocityMS += Earlier.AlongG * StandardGravityMS2 * StrokeGain * Earlier.DeltaTime;
+				BiasG = Earlier.BiasBefore;
+			}
+		}
+		RecentAlong.Reset();
+
+		VelocityMS += AlongG * StandardGravityMS2 * StrokeGain * DeltaTime;
+		const float LeakSeconds = QuietTimeSeconds >= QuietHoldSeconds ? QuietLeakSeconds : VelocityLeakSeconds;
+		VelocityMS -= VelocityMS * FMath::Clamp(DeltaTime / FMath::Max(LeakSeconds, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+	}
+
+	DisplacementM += VelocityMS * DeltaTime;
+	if (RelaxSeconds > 0.0f)
+	{
+		const float Pull = 1.0f - FMath::Exp(-DeltaTime / RelaxSeconds);
+		DisplacementM += (RelaxTargetCm * 0.01f - DisplacementM) * Pull;
+	}
+
+	// The bar's stops: travel goes no more than StopSlackCm past one, so the movement back moves the
+	// bar almost at once, and the little the leaks leave of a stroke's speed (which runs it back a
+	// centimetre or two as the pad comes to rest) is taken up by that slack instead of the bar.
+	const float SlackM = FMath::Max(StopSlackCm, 0.0f) * 0.01f;
+	DisplacementM = FMath::Clamp(DisplacementM, GetMinM() - SlackM, GetMaxM() + SlackM);
+}
+
+float FMotionBarStroke::GetDisplacementCm() const
+{
+	return FMath::Clamp(DisplacementM, GetMinM(), GetMaxM()) * 100.0f;
+}
+
 #if PLATFORM_LINUX
 namespace
 {

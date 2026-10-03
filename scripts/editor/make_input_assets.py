@@ -68,6 +68,14 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_WeightShift', False)
         print(f'IA_WeightShift configured and saved: {ia_weight_shift}')
 
+        # 8. IA_RecenterMotion (Digital bool): the motion bar takes the way the controller is held
+        # now as level, with the bar in the middle (AKiteRiderPawn::RecentreMotionBarToMiddle).
+        ia_recenter_motion = get_or_create_asset('IA_RecenterMotion', '/Game/Input', unreal.InputAction, None)
+        ia_recenter_motion.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_recenter_motion)
+        editor_asset_lib.save_asset('/Game/Input/IA_RecenterMotion', False)
+        print(f'IA_RecenterMotion configured and saved: {ia_recenter_motion}')
+
         # Assets from earlier control schemes
         for stale in ['/Game/Input/IA_EdgePressure', '/Game/Input/IA_Loop']:
             if editor_asset_lib.does_asset_exist(stale):
@@ -114,6 +122,11 @@ def build_assets():
             # Reset (R and Gamepad Face Button Right)
             (ia_reset, 'R', False),
             (ia_reset, 'Gamepad_FaceButton_Right', False),
+            # Recentre the motion bar: the right stick click, free while the motion bar has the
+            # bar (the right stick is idle then); Home on the keyboard. LB/RB, X, Y and L3 are
+            # planned for tricks (docs/tricks.md 6.3), the D-pad is the menus'.
+            (ia_recenter_motion, 'Gamepad_RightThumbstick', False),
+            (ia_recenter_motion, 'Home', False),
         ]
 
         for action, key_str, _ in mappings_spec:
@@ -150,6 +163,7 @@ def build_assets():
         cdo_rider.set_editor_property('pause_action', ia_pause)
         if hasattr(cdo_rider, 'reset_action'):
             cdo_rider.set_editor_property('reset_action', ia_reset)
+        cdo_rider.set_editor_property('recenter_motion_action', ia_recenter_motion)
 
         # Camera distance, pitch and field of view are tunables on AKiteRiderPawn (applied every
         # tick by UpdateCamera); the Blueprint only smooths the boom.
@@ -159,7 +173,11 @@ def build_assets():
             boom.set_editor_property('camera_lag_speed', 6.0)
             boom.set_editor_property('enable_camera_rotation_lag', False)
 
-        rider_comp = cdo_rider.get_editor_property('rider_mesh')
+        # The jointed rider (RiderRig) replaced the skeletal 'rider_mesh'; older pawns still get the idle.
+        try:
+            rider_comp = cdo_rider.get_editor_property('rider_mesh')
+        except Exception:
+            rider_comp = None
         anim_asset = editor_asset_lib.load_asset('/Game/Characters/Mannequins/Anims/MM_Idle')
         if rider_comp and anim_asset:
             try:

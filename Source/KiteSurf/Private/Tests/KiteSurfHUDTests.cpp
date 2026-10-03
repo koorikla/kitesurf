@@ -405,4 +405,91 @@ bool FKiteSurfHUDLandingCard::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The frame-rate readout counts real frames: a lesson's slow motion dilates game time, and the dilated
+// frame time read 0.6x the frame rate.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDFPSUsesRealFrameTime, "KiteSurf.HUD.FPSUsesRealFrameTime", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfHUDFPSUsesRealFrameTime::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("A 60 Hz frame reads 60"), AKiteSurfHUD::FormatFPS(1.0f / 60.0f), FString(TEXT("FPS: 60")));
+	TestEqual(TEXT("No frame reads 0"), AKiteSurfHUD::FormatFPS(0.0f), FString(TEXT("FPS: 0")));
+	TestEqual(TEXT("No world: no frame"), AKiteSurfHUD::GetRealFrameSeconds(nullptr), 0.0f);
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	if (!TestNotNull(TEXT("World created"), World))
+	{
+		return false;
+	}
+	// A 60 Hz frame in the middle of a 0.6x slow motion.
+	World->DeltaRealTimeSeconds = 1.0f / 60.0f;
+	World->DeltaTimeSeconds = 0.6f / 60.0f;
+	TestNearlyEqual(TEXT("The readout's frame is the real one, not the dilated one (s)"), AKiteSurfHUD::GetRealFrameSeconds(World), 1.0f / 60.0f, 1e-6f);
+	TestEqual(TEXT("So it reads 60 through the slow motion, not 36"), AKiteSurfHUD::FormatFPS(AKiteSurfHUD::GetRealFrameSeconds(World)), FString(TEXT("FPS: 60")));
+	World->DestroyWorld(false);
+	return true;
+}
+
+// "NEW BEST" is for a jump the rider landed: a crashed jump is never a new best, whatever its height,
+// and is not shown under a crash card.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDNoNewBestOnCrash, "KiteSurf.HUD.NoNewBestOnCrash", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfHUDNoNewBestOnCrash::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("Landed higher than the best landed jump: a new best"), AKiteSurfHUD::IsNewBestJump(250.0f, 200.0f, true));
+	TestFalse(TEXT("Crashed higher than it: not a new best"), AKiteSurfHUD::IsNewBestJump(550.0f, 200.0f, false));
+	TestFalse(TEXT("No landed jump before: nothing to beat"), AKiteSurfHUD::IsNewBestJump(250.0f, 0.0f, true));
+	TestFalse(TEXT("Lower than the best: not a new best"), AKiteSurfHUD::IsNewBestJump(150.0f, 200.0f, true));
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteSurfHUD* HUD = World ? World->SpawnActor<AKiteSurfHUD>() : nullptr;
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+	if (!TestTrue(TEXT("HUD, rider and board created"), HUD && Board))
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+		}
+		return false;
+	}
+	Pawn->GetWind()->BaseWind = FVector::ZeroVector;
+	Pawn->GetKite()->SetElevationDeg(80.0f);
+	const float Frame = 1.0f / 60.0f;
+	// Drops the rider from this height onto flat water, crouched or standing, and lets the HUD follow the jump.
+	auto DropFrom = [&](float HeightM, bool bCrouch) -> bool
+	{
+		Pawn->SetActorRotation(FRotator::ZeroRotator);
+		Pawn->SetActorLocation(FVector::ZeroVector);
+		Board->Velocity = FVector(800.0f, 0.0f, 0.0f);
+		Board->SetLoadHeld(bCrouch);
+		Board->Simulate(0.5f);
+		HUD->UpdateJumpReadout(Board, Frame);
+		Pawn->SetActorLocation(FVector(0.0f, 0.0f, KiteUnits::MToCm(HeightM)));
+		Board->Velocity = FVector(800.0f, 0.0f, 0.0f);
+		Board->SetBoardState(EBoardState::Airborne);
+		Board->SetCurrentJumpAirtime(0.5f);
+		const int32 Before = Board->GetJumpCount();
+		for (float T = 0.0f; T < 4.0f && Board->GetJumpCount() == Before; T += Frame)
+		{
+			Board->Simulate(Frame);
+			HUD->UpdateJumpReadout(Board, Frame);
+		}
+		Board->SetLoadHeld(false);
+		HUD->UpdateJumpReadout(Board, Frame);
+		return Board->GetJumpCount() > Before;
+	};
+
+	TestTrue(TEXT("A first jump from 2 m lands"), DropFrom(2.0f, true));
+	TestTrue(FString::Printf(TEXT("crouched, Clean (%.1f g)"), Board->GetLastLandingG()), Board->WasLastLandingClean());
+	TestFalse(TEXT("The first jump has nothing to beat"), HUD->IsJumpReadoutNewBest());
+
+	TestTrue(TEXT("A higher one from 5.5 m"), DropFrom(5.5f, false));
+	TestFalse(FString::Printf(TEXT("standing, a crash (%.1f g)"), Board->GetLastLandingG()), Board->WasLastLandingClean());
+	TestTrue(TEXT("The readout shows the crashed jump"), !HUD->GetJumpReadoutText().IsEmpty());
+	TestFalse(TEXT("It is higher than the best, but crashed: no new best"), HUD->IsJumpReadoutNewBest());
+	TestFalse(TEXT("and no NEW BEST under it"), HUD->ShouldShowNewBest());
+	World->DestroyWorld(false);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -176,11 +176,11 @@ bool FKiteSurfHUDLessonFormatters::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("A3 step 1's band"), LessonHUD::FormatTarget(A3->Steps[0].Objective), FString(TEXT("35 - 55°")));
 	const FString A3Band = FString::Printf(TEXT("%.1f - %.1f kn"), A3->Pass.Min / MSPerKnot, A3->Pass.Max / MSPerKnot);
-	TestEqual(TEXT("A3's speed band in knots (15 kn +-15%)"), LessonHUD::FormatTarget(A3->Pass), A3Band);
-	TestTrue(TEXT("...about 12.8 to 17.3 kn"), FMath::IsNearlyEqual(A3->Pass.Min / MSPerKnot, 12.75f, 0.01f) && FMath::IsNearlyEqual(A3->Pass.Max / MSPerKnot, 17.25f, 0.01f));
+	TestEqual(TEXT("A3's speed band in knots (12 kn +-15%, tuned on rides)"), LessonHUD::FormatTarget(A3->Pass), A3Band);
+	TestTrue(TEXT("...about 10.2 to 13.8 kn"), FMath::IsNearlyEqual(A3->Pass.Min / MSPerKnot, 10.2f, 0.01f) && FMath::IsNearlyEqual(A3->Pass.Max / MSPerKnot, 13.8f, 0.01f));
 	TestEqual(TEXT("B2's jumps"), LessonHUD::FormatTarget(B2->Pass), FString(TEXT("1.0 - 2.0 m")));
-	TestEqual(TEXT("B2 step 1: at least 80 deg"), LessonHUD::FormatTarget(B2->Steps[0].Objective), FString(TEXT("at least 80°")));
-	TestEqual(TEXT("A2 step 1: up within 4 s"), LessonHUD::FormatTarget(A2->Steps[0].Objective), FString(TEXT("0.0 - 4.0 s")));
+	TestEqual(TEXT("B2 step 1: the kite at the top, at least 75 deg"), LessonHUD::FormatTarget(B2->Steps[0].Objective), FString(TEXT("at least 75°")));
+	TestEqual(TEXT("A2 step 1: up within 6 s"), LessonHUD::FormatTarget(A2->Steps[0].Objective), FString(TEXT("0.0 - 6.0 s")));
 
 	TestEqual(TEXT("Held progress in seconds"), LessonHUD::FormatProgress(A3->Steps[0].Objective, 0.64f), FString(TEXT("3.2 / 5.0 s")));
 	TestEqual(TEXT("Counted progress"), LessonHUD::FormatProgress(B2->Pass, 0.4f), FString(TEXT("2 / 5")));
@@ -390,9 +390,9 @@ bool FKiteSurfHUDLessonCueGeometry::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Left zone -55..-35"), Zones[0].Kind == ELessonArcZoneKind::Target && FMath::IsNearlyEqual(Zones[0].FromClockDeg, -55.0f) && FMath::IsNearlyEqual(Zones[0].ToClockDeg, -35.0f));
 		TestTrue(TEXT("Right zone 35..55"), Zones[1].Kind == ELessonArcZoneKind::Target && FMath::IsNearlyEqual(Zones[1].FromClockDeg, 35.0f) && FMath::IsNearlyEqual(Zones[1].ToClockDeg, 55.0f));
 	}
-	// A band reaching the top (B2 step 1: over 80 deg) is one zone across 12.
+	// A band reaching the top (B2 step 1: the kite at the top, 75 deg or more) is one zone across 12.
 	Zones = LessonHUD::ArcZones(ELessonCue::WindowArc, &B2->Steps[0].Objective, false, 1);
-	TestTrue(TEXT("Over 80 deg: one zone -10..10"), Zones.Num() == 1 && FMath::IsNearlyEqual(Zones[0].FromClockDeg, -10.0f) && FMath::IsNearlyEqual(Zones[0].ToClockDeg, 10.0f));
+	TestTrue(TEXT("Over 75 deg: one zone -15..15"), Zones.Num() == 1 && FMath::IsNearlyEqual(Zones[0].FromClockDeg, -15.0f) && FMath::IsNearlyEqual(Zones[0].ToClockDeg, 15.0f));
 	// No band: the three zones of docs/tutorials.md 3.4, the sweet spot in front of 12 on the travel side.
 	for (const int32 Tack : { 1, -1 })
 	{
@@ -510,7 +510,8 @@ bool FKiteSurfHUDLessonTimingGrades::RunTest(const FString& Parameters)
 {
 	using G = ELessonTimingGrade;
 	TestEqual(TEXT("Sheet in with the kite at 50 deg: early"), LessonTiming::GradeSheetIn(50.0f, 0.0f), G::Early);
-	TestEqual(TEXT("At 70 deg: good"), LessonTiming::GradeSheetIn(70.0f, 0.0f), G::Good);
+	TestEqual(TEXT("At 70 deg, still climbing: good"), LessonTiming::GradeSheetIn(70.0f, 0.0f), G::Good);
+	TestEqual(TEXT("At 72 deg once it has stopped climbing: the top, perfect"), LessonTiming::GradeSheetIn(72.0f, 0.0f, 0.0f), G::Perfect);
 	TestEqual(TEXT("At 85 deg just as it got there: perfect"), LessonTiming::GradeSheetIn(85.0f, 0.1f), G::Perfect);
 	TestEqual(TEXT("At 85 deg after half a second there: good"), LessonTiming::GradeSheetIn(85.0f, 0.5f), G::Good);
 	TestEqual(TEXT("At 85 deg after a second there: late"), LessonTiming::GradeSheetIn(85.0f, 1.0f), G::Late);
@@ -536,7 +537,7 @@ bool FKiteSurfHUDLessonTimingGrades::RunTest(const FString& Parameters)
 			FLessonSample S;
 			S.TimeSeconds = Time;
 			S.BoardState = EBoardState::Planing;
-			S.KiteElevationDeg = FMath::Lerp(45.0f, 85.0f, FMath::Clamp(Time / 2.0f, 0.0f, 1.0f)); // 80 deg at 1.75 s
+			S.KiteElevationDeg = FMath::Lerp(45.0f, 85.0f, FMath::Clamp(Time / 2.0f, 0.0f, 1.0f)); // 75 deg (the top) at 1.5 s
 			S.BarPosition = Time >= SheetAt ? 0.9f : 0.5f;
 			T.Add(S);
 			G Now = G::None;
@@ -549,10 +550,10 @@ bool FKiteSurfHUDLessonTimingGrades::RunTest(const FString& Parameters)
 		return TPair<G, int32>(Grade, Grades);
 	};
 	TestEqual(TEXT("Bar in at 55 deg while it climbs: early"), Ride(0.5f, 3.0f).Key, G::Early);
-	TestEqual(TEXT("Bar in at 75 deg: good"), Ride(1.5f, 3.0f).Key, G::Good);
-	TestEqual(TEXT("Bar in as the kite reaches 80 deg: perfect"), Ride(1.85f, 3.0f).Key, G::Perfect);
+	TestEqual(TEXT("Bar in at 70 deg while it climbs: good"), Ride(1.25f, 3.0f).Key, G::Good);
+	TestEqual(TEXT("Bar in as the kite reaches the top (76 deg): perfect"), Ride(1.55f, 3.0f).Key, G::Perfect);
 	TestEqual(TEXT("Bar in a second after it got there: late"), Ride(2.8f, 3.5f).Key, G::Late);
-	TestEqual(TEXT("One pull is one grade"), Ride(1.85f, 3.0f).Value, 1);
+	TestEqual(TEXT("One pull is one grade"), Ride(1.55f, 3.0f).Value, 1);
 	TestEqual(TEXT("Never pulled: no grade"), Ride(10.0f, 3.0f).Value, 0);
 
 	// The layer flashes a grade when its serial moves, for the flash time, and not again.
@@ -598,7 +599,7 @@ bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
 	TestFalse(TEXT("No lesson: the result-card keys do nothing"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
 
 	Fx.Director->IntroSeconds = 1.0f;
-	// The offer after the first miss rather than the third: A2's first step (planing within 4 s) is
+	// The offer after the first miss rather than the third: A2's first step (planing within 6 s) is
 	// missed once and then waits for the rider, so three misses would take a scripted water start.
 	Fx.Director->DropBackAfterFailures = 1;
 	TestTrue(TEXT("A2 begins"), Fx.Director->BeginLesson(*A2, Fx.Pawn));
@@ -613,11 +614,11 @@ bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Step header with its counter"), Fx.View().Header, FString(TEXT("A2  Water start   STEP 1/2")));
 	TestEqual(TEXT("Step prompt"), Fx.View().Prompt, FString(TEXT("Dive the kite to get up")));
 	TestEqual(TEXT("Step glyph"), Fx.View().Glyph, FString(TEXT("[Left/Right | R stick]")));
-	TestTrue(TEXT("Step progress line with its target"), Fx.View().Progress.Contains(TEXT("target 0.0 - 4.0 s")));
+	TestTrue(TEXT("Step progress line with its target"), Fx.View().Progress.Contains(TEXT("target 0.0 - 6.0 s")));
 
-	// Left floating with the kite at 12, the rider never gets up within 4 s: a missed attempt.
+	// Left floating with the kite at 12, the rider never gets up within 6 s: a missed attempt.
 	const bool bMissed = Fx.FramesUntil(20.0f, [&] { return Fx.Director->GetOutcome() == ELessonOutcome::AttemptFailed; });
-	if (!TestTrue(TEXT("Floating 4 s without planing misses the step"), bMissed))
+	if (!TestTrue(TEXT("Floating 6 s without planing misses the step"), bMissed))
 	{
 		return false;
 	}

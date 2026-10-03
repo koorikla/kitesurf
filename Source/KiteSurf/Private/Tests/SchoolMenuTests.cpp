@@ -320,7 +320,8 @@ bool FKiteSurfSchoolMenuNavigation::RunTest(const FString& Parameters)
 	School->FocusLesson(TEXT("A7"));
 	TestTrue(TEXT("A new lesson: its own wind and assists"), School->GetAssistChoice() == 0
 		&& School->GetRunWindKnots() == LessonCatalog::Find(TEXT("A7"))->Setup.WindKnots);
-	TestEqual(TEXT("A7 has no assists: one choice"), School->GetAssistChoiceCount(), 1);
+	// A7 rides with auto-edge (tuned on rides, docs/tutorials.md 2.1): the lesson's assists or all off.
+	TestEqual(TEXT("A7 has one assist: two choices"), School->GetAssistChoiceCount(), 2);
 	return true;
 }
 

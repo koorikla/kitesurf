@@ -127,12 +127,47 @@ namespace LessonCatalogPrivate
 	/** Speeds in the lessons are set in knots and stored in m/s. */
 	constexpr float MSPerKnot = 0.5144f;
 
-	/** A3's target speed (m/s) and band (share either side). */
-	constexpr float A3TargetSpeedMS = 15.0f * MSPerKnot;
+	/**
+	 * A1's wind and the longest a dive may stay under 70 deg (s). Tuned on rides (docs/tutorials.md 2.1): over a floating
+	 * rider the kite at 12 moves slowly, and a dive to 50 deg and back takes about 8 s in 14 kn (10 to 13 s in 12 kn), so
+	 * the section 2 estimate of 2 s in 12 kn cannot be met.
+	 */
+	constexpr float A1WindKnots = 14.0f;
+	constexpr float A1DiveSeconds = 10.0f;
+
+	/** A5's wind (kn). */
+	constexpr float A5WindKnots = 14.0f;
+
+	/** A2: planing within this long of the step start (s). A full dive with the bar in planes after 3.8 s in 12 kn. */
+	constexpr float A2PlaningSeconds = 6.0f;
+
+	/**
+	 * A3's target speed (m/s) and band (share either side). Tuned on rides (docs/tutorials.md 2.1): in A3's 12 kn the
+	 * kite between 35 and 55 deg pulls the rider at 5.6 to 6.5 m/s (bar 0.7 to 0.9; fully in, it stalls), short of
+	 * the 15 kn estimate's band (6.6 to 8.9 m/s), so the target is 12 kn.
+	 */
+	constexpr float A3TargetSpeedMS = 12.0f * MSPerKnot;
 	constexpr float A3Band = 0.15f;
 
-	/** Taking off faster than this is "too fast" for a pop or a jump transition (m/s, about 19 kn). */
+	/** Taking off faster than this is "too fast" for a pop (m/s, about 19 kn). */
 	constexpr float TooFastTakeoffMS = 10.0f;
+
+	/**
+	 * B5: taking off faster than this is too much crosswind speed to land the other way (m/s). Tuned on rides
+	 * (docs/tutorials.md 2.1): a jump transition lands the other way only from a take-off at under about 1.5 m/s
+	 * (the kite has 1 to 2 s in the air to pull the rider round); one popped at 3 m/s lands 45 to 60 deg round.
+	 */
+	constexpr float B5TooFastTakeoffMS = 2.5f;
+
+	/** B6's wind (kn). */
+	constexpr float B6WindKnots = 14.0f;
+
+	/**
+	 * B3's lowest jump (m). Tuned on rides (docs/tutorials.md 2.1): a send that keeps the kite high enough to dive
+	 * from lands 1.8 to 2.0 m jumps in 14 kn (the send takes the board's speed); a hard, early pop reaches 3.3 m once
+	 * but leaves the kite at 45 deg, with nothing to dive. The 3 m estimate is out of reach with a dive, so 1.5 m.
+	 */
+	constexpr float B3MinHeightM = 1.5f;
 
 	/** B3's slow motion: the rider passing this height on the way down (m above the water). */
 	constexpr float B3DiveCueHeightM = 4.0f;
@@ -219,9 +254,10 @@ namespace LessonCatalogPrivate
 				LOCTEXT("A1.Summary", "Dive the kite for power, then fly it straight back up to 12."), {});
 			// Standing in the shallows does not exist yet; docs/tutorials.md section 4 allows a floating start.
 			L.Setup = RidingSetup(ELessonStart::Floating);
+			L.Setup.WindKnots = A1WindKnots;
 			L.Setup.Assists.bAutoPark = true;
 			FLessonObjective Dives = Objective(EM::KiteDives, 30.0f, 70.0f, 6);
-			Dives.WindowSeconds = 2.0f;
+			Dives.WindowSeconds = A1DiveSeconds;
 			FLessonObjective FirstDive = Dives;
 			FirstDive.Count = 1;
 			L.Steps.Add(Step(LOCTEXT("A1.Step1", "Dive the kite to 45° and back up"), TEXT("IA_Steer"), ELessonCue::GhostKite, FirstDive));
@@ -241,7 +277,7 @@ namespace LessonCatalogPrivate
 			L.Setup.Assists.bAutoPark = true;
 			L.Setup.Assists.bAutoEdge = true;
 			L.Steps.Add(Step(LOCTEXT("A2.Step1", "Dive the kite to get up"), TEXT("IA_Steer"), ELessonCue::GhostKite,
-				Objective(EM::TimeToPlaning, 0.0f, 4.0f)));
+				Objective(EM::TimeToPlaning, 0.0f, A2PlaningSeconds)));
 			FLessonObjective Ride = Objective(EM::DistanceRidden, 50.0f, UE_BIG_NUMBER, 2);
 			Ride.bEachTack = true;
 			L.Steps.Add(Step(LOCTEXT("A2.Step2", "Ride 50 m, then the same on the other tack"), TEXT("IA_Edge"), ELessonCue::Meter, Ride));
@@ -299,6 +335,9 @@ namespace LessonCatalogPrivate
 			FLessonDef L = Lesson(TEXT("A5"), TEXT("A"), LOCTEXT("A5.Title", "Transition"),
 				LOCTEXT("A5.Summary", "Slow down, switch, and ride away the other way."), { TEXT("A4") });
 			L.Setup = RidingSetup(ELessonStart::Riding, 12.0f);
+			// Tuned on rides (docs/tutorials.md 2.1): in 12 kn the kite flown over the top after slowing down often stalls
+			// at 12 and the rider stops; in 14 kn it crosses and pulls them away on the new tack.
+			L.Setup.WindKnots = A5WindKnots;
 			L.Setup.Assists.bAutoPark = true;
 			L.Steps.Add(Step(LOCTEXT("A5.Step1", "Slow down: bar out"), TEXT("IA_Sheet"), ELessonCue::SpeedBand,
 				Held(EM::SpeedHeld, 0.0f, 5.0f, 1.0f)));
@@ -336,6 +375,10 @@ namespace LessonCatalogPrivate
 			FLessonDef L = Lesson(TEXT("A7"), TEXT("A"), LOCTEXT("A7.Title", "Carving transition"),
 				LOCTEXT("A7.Summary", "Carve round while the kite crosses 12, and never stop planing."), { TEXT("A5") });
 			L.Setup = RidingSetup(ELessonStart::Riding, 14.0f);
+			// Tuned on rides (docs/tutorials.md 2.1): without auto-edge the board rides flat unless the load heels it, and a
+			// rider not holding the jump button slows to 3 m/s and off the plane in 14 kn. Auto-edge on, as in the rest of
+			// chapter A; turning it off still earns the stars.
+			L.Setup.Assists.bAutoEdge = true;
 			L.Steps.Add(Step(LOCTEXT("A7.Step1", "Kite across 12 as you carve"), TEXT("IA_Steer"), ELessonCue::TimingRing,
 				Objective(EM::Transition, 1.0f)));
 			const FLessonObjective Carve = Objective(EM::TransitionNotPlaningSeconds, 0.0f, 0.1f);
@@ -391,10 +434,14 @@ namespace LessonCatalogPrivate
 			// Slow motion as the kite reaches the top, the moment to sheet in (S8).
 			L.Setup.Assists.bSlowMotion = true;
 			L.Steps.Add(Step(LOCTEXT("B2.Step1", "Send the kite slowly to 12"), TEXT("IA_Steer"), ELessonCue::GhostKite,
-				[] { FLessonObjective O = Objective(EM::Channel, 80.0f); O.Channel = EC::KiteElevation; return O; }()));
+				[] { FLessonObjective O = Objective(EM::Channel, LessonTiming::SheetPerfectMinDeg); O.Channel = EC::KiteElevation; return O; }()));
 			FLessonObjective Jump1 = Objective(EM::JumpHeight, 1.0f, 2.0f, 5);
 			Jump1.bInARow = true;
 			Jump1.Conditions.Add(Clean);
+			// The lesson is the timing of the bar: a jump only counts with the bar kept out while the kite climbed (the
+			// sheeted-in-while-climbing rule's own measure). Tuned on rides (docs/tutorials.md 2.1): sheeted in early, the
+			// send still lands 1.9 m jumps Stomped, so without this the mistake passed.
+			Jump1.Conditions.Add(Condition(SheetedInWhileClimbing(0, FText::GetEmpty()).Measure, -UE_BIG_NUMBER, SheetedInBar));
 			L.Steps.Add(Step(LOCTEXT("B2.Step2", "Bar in at 12"), TEXT("IA_Sheet"), ELessonCue::TimingRing, Jump1));
 			L.Steps.Last().SlowMo = SlowMo(ELessonSlowMoTrigger::KiteAtTop, LessonTiming::SheetPerfectMinDeg, LOCTEXT("B2.SlowMo", "Bar in now"));
 			L.Pass = Jump1;
@@ -418,10 +465,10 @@ namespace LessonCatalogPrivate
 			const FLessonSlowMoCue DiveCue = SlowMo(ELessonSlowMoTrigger::RiderDescending, B3DiveCueHeightM, LOCTEXT("B3.SlowMo", "Dive the kite now"));
 			L.Steps.Add(Step(LOCTEXT("B3.Step1", "Dive the kite now"), TEXT("IA_Steer"), ELessonCue::TimingRing, Dive));
 			L.Steps.Last().SlowMo = DiveCue;
-			FLessonObjective Land = Objective(EM::JumpHeight, 3.0f, 5.0f);
+			FLessonObjective Land = Objective(EM::JumpHeight, B3MinHeightM, 5.0f);
 			Land.Conditions.Add(Clean);
 			Land.Conditions.Add(Condition(Jump(EM::DiveBeforeTouchdown), 0.15f, 1.0f));
-			L.Steps.Add(Step(LOCTEXT("B3.Step2", "Jump 3 m and dive to land"), TEXT("IA_Jump"), ELessonCue::None, Land));
+			L.Steps.Add(Step(LOCTEXT("B3.Step2", "Jump higher and dive to land"), TEXT("IA_Jump"), ELessonCue::None, Land));
 			L.Steps.Last().SlowMo = DiveCue;
 			L.Pass = Land;
 			const FText Early = LOCTEXT("B3.Fault.Early", "Dived early: the kite was too low to catch you");
@@ -465,7 +512,7 @@ namespace LessonCatalogPrivate
 			L.Pass = Turn;
 			L.Faults.Add(Fault(TEXT("KitePast12"), Channel(EC::KiteClockAbs, EA::Touchdown, ER::At), ECmp::Greater, 40.0f, 2,
 				LOCTEXT("B5.Fault.Past12", "No room to dive")));
-			L.Faults.Add(Fault(TEXT("TooFast"), Jump(EM::TakeoffSpeed), ECmp::Greater, TooFastTakeoffMS, 1,
+			L.Faults.Add(Fault(TEXT("TooFast"), Jump(EM::TakeoffSpeed), ECmp::Greater, B5TooFastTakeoffMS, 1,
 				LOCTEXT("B5.Fault.TooFast", "Pop harder to kill your speed")));
 			L.Faults.Append(LandingCauseFaults(0));
 			L.Stars.HigherBar.Add(Stomped);
@@ -476,8 +523,11 @@ namespace LessonCatalogPrivate
 		{
 			FLessonDef L = Lesson(TEXT("B6"), TEXT("B"), LOCTEXT("B6.Title", "Downloop transition"),
 				LOCTEXT("B6.Summary", "Loop the kite through the bottom of the window to turn."), { TEXT("B5") });
-			L.Setup = JumpSetup(10.0f); // very light wind
-			L.Setup.StartSpeedKnots = 10.0f;
+			// On a loop kite. Tuned on rides (docs/tutorials.md 2.1): in 10 kn the medium board does not plane and in 12 kn
+			// it slows off the plane before any loop; on the Boost a downloop from the window edge goes into the water, while
+			// the three-strut loop kite turns tight enough to come round and back up.
+			L.Setup = JumpSetup(B6WindKnots);
+			L.Setup.Kite = EKiteModel::Loop;
 			FLessonObjective Loop = Objective(EM::Transition, 1.0f);
 			Loop.Conditions.Add(Condition(Channel(EC::CompletedLoops, EA::Event, ER::Change, -4.0f, LessonEval::TransitionSettleSeconds), 1.0f));
 			Loop.Conditions.Add(Condition(Channel(EC::Fallen, EA::Event, ER::Max, -4.0f, LessonEval::TransitionSettleSeconds), 0.0f, 0.0f));

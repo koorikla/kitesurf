@@ -171,8 +171,15 @@ namespace LessonTelemetry
 {
 	/** A kite climbing faster than this counts as climbing for BarWhileClimbing (deg/s). */
 	inline constexpr float ClimbRateThresholdDegS = 5.0f;
+	/**
+	 * The kite at the top of a send, where sheeting in is right (deg): one number for B2's "kite at 12" step, the
+	 * slow-motion cue, the sheet-in timing grade (LessonTiming) and the sheeted-in-while-climbing rule. Tuned on
+	 * rides (docs/tutorials.md 2.1): from the bar in the middle, B2's 14 kn send settles at 77 to 80 deg unloaded and
+	 * tops out at 74 to 79 deg loaded for the pop, so the estimate of 80 was not reached reliably.
+	 */
+	inline constexpr float KiteTopDeg = 75.0f;
 	/** Above this elevation the kite is at 12, where sheeting in is right (deg). */
-	inline constexpr float ClimbCeilingDeg = 80.0f;
+	inline constexpr float ClimbCeilingDeg = KiteTopDeg;
 	/** The ring buffer's default size: 25 s at 60 Hz, so a 20 s hold (lesson A3) fits with room to spare. */
 	inline constexpr int32 DefaultCapacity = 1500;
 }

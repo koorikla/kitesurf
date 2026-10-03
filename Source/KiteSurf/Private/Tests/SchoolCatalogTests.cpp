@@ -111,6 +111,8 @@ namespace SchoolCatalogTest
 		FJumpScene P;
 		P.HeadingAfter = 270.0f;
 		P.ClockAtLanding = 10.0f;
+		// A jump transition takes off slowly (B5's too-fast line is for 2.5 m/s and over).
+		P.TakeoffSpeedMS = 1.0f;
 		return P;
 	}
 
@@ -128,7 +130,7 @@ namespace SchoolCatalogTest
 		const FString S = Id.ToString();
 		if (S == TEXT("A1")) { Out = Dives(45.0f, 1.0f, 4.0f); return true; }
 		if (S == TEXT("A2")) { Out = SteadyRide(10.0f); return true; }
-		if (S == TEXT("A3")) { Out = SteadyRide(22.0f, [](FLessonSample& L, float) { L.SpeedMS = 15.0f * 0.5144f; }); return true; }
+		if (S == TEXT("A3")) { Out = SteadyRide(22.0f, [](FLessonSample& L, float) { L.SpeedMS = 12.0f * 0.5144f; }); return true; }
 		if (S == TEXT("A4")) { Out = SteadyRide(20.0f, [](FLessonSample& L, float T) { L.UpwindM = 3.0f * T; }); return true; }
 		if (S == TEXT("A5")) { Out = Transition([](FLessonSample& L, float T) { L.SpeedMS = T < 5.0f ? 8.0f : 7.0f; }); return true; }
 		if (S == TEXT("A6")) { Out = SteadyRide(15.0f, [](FLessonSample& L, float) { L.bToeside = true; }); return true; }

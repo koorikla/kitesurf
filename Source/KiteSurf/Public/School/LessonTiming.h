@@ -25,9 +25,10 @@ enum class ELessonTimingGrade : uint8
  * grade. Every threshold here is an estimate.
  *
  * - Sheet-in steps (glyph IA_Sheet): graded live, the moment the bar comes in through SheetInBar,
- *   against the kite reaching 80 to 90 deg: under SheetGoodMinDeg Early, under SheetPerfectMinDeg
- *   Good, at the top Perfect unless the kite has waited there (Good after SheetPerfectWaitSeconds,
- *   Late after SheetLateWaitSeconds).
+ *   against the kite at the top (IsKiteAtTop: SheetPerfectMinDeg, or SlowMoTopBandDeg under it once it
+ *   has stopped climbing, the same moment the slow-motion cue marks): under SheetGoodMinDeg Early,
+ *   short of the top Good, at the top Perfect unless the kite has waited there (Good after
+ *   SheetPerfectWaitSeconds, Late after SheetLateWaitSeconds).
  * - The others are graded when their attempt is judged:
  *   - the landing dive (DiveBeforeTouchdown) and the kite's lead at a transition: the value against
  *     the objective's band (A7's: 0 to 1.5 s), a high value (dived or crossed too soon) Early;
@@ -41,10 +42,10 @@ namespace LessonTiming
 	inline constexpr float SheetInBar = 0.75f;
 	/** Sheet-in graded only with the kite at least this high: lower down it is riding, not a send (deg). */
 	inline constexpr float SheetMinKiteDeg = 45.0f;
-	/** The kite at the top: sheet in now (deg). */
-	inline constexpr float SheetPerfectMinDeg = 80.0f;
+	/** The kite at the top: sheet in now (deg). LessonTelemetry::KiteTopDeg, tuned on rides (docs/tutorials.md 2.1). */
+	inline constexpr float SheetPerfectMinDeg = LessonTelemetry::KiteTopDeg;
 	/** Below the top but close: Good (deg). */
-	inline constexpr float SheetGoodMinDeg = 65.0f;
+	inline constexpr float SheetGoodMinDeg = 60.0f;
 	/** At the top for longer than this before the bar came in: Good, not Perfect (s). */
 	inline constexpr float SheetPerfectWaitSeconds = 0.35f;
 	/** At the top for longer than this: Late (s). */
@@ -77,11 +78,11 @@ namespace LessonTiming
 	/** KiteAtTop arms again once the kite is this far below its threshold (deg). */
 	inline constexpr float SlowMoRearmDeg = 15.0f;
 	/**
-	 * KiteAtTop also fires within this much under its threshold once the kite stops climbing (deg): a
-	 * loaded send tops out lower than an unloaded one (about 74 deg on B2's 14 kn set-up), and the top
-	 * of the climb is the moment to sheet in.
+	 * KiteAtTop also fires within this much under its threshold once the kite stops climbing (deg), and the
+	 * sheet-in grade counts that as the top too (IsKiteAtTop): a loaded send tops out lower than an unloaded
+	 * one (74 to 79 deg on B2's 14 kn set-up), and the top of the climb is the moment to sheet in.
 	 */
-	inline constexpr float SlowMoTopBandDeg = 10.0f;
+	inline constexpr float SlowMoTopBandDeg = 5.0f;
 	/** "Stopped climbing": the elevation rises slower than this between samples (deg/s). */
 	inline constexpr float SlowMoTopRateDegS = 2.0f;
 	/** RiderDescending fires only on a jump that climbed at least this high (m above the water). */
@@ -117,8 +118,18 @@ namespace LessonTiming
 	/** "EARLY", "GOOD", "PERFECT", "LATE"; empty for None. */
 	KITESURF_API FString GradeText(ELessonTimingGrade Grade);
 
-	/** Sheet-in at this kite elevation, after the kite had been at the top (over SheetPerfectMinDeg) for SecondsAtTop. */
-	KITESURF_API ELessonTimingGrade GradeSheetIn(float KiteElevationDeg, float SecondsAtTop);
+	/**
+	 * The kite is at the top of a send for a threshold of TopDeg: at or over it, or within SlowMoTopBandDeg under it
+	 * and no longer climbing (ClimbRateDegS at most SlowMoTopRateDegS). The slow-motion cue and the sheet-in grade
+	 * both use it, so the moment the cue says "Bar in now" grades Perfect.
+	 */
+	KITESURF_API bool IsKiteAtTop(float KiteElevationDeg, float ClimbRateDegS, float TopDeg = SheetPerfectMinDeg);
+
+	/**
+	 * Sheet-in at this kite elevation and climb rate (deg/s; leave it out for a kite still climbing), after the kite
+	 * had been at the top for SecondsAtTop.
+	 */
+	KITESURF_API ELessonTimingGrade GradeSheetIn(float KiteElevationDeg, float SecondsAtTop, float ClimbRateDegS = UE_BIG_NUMBER);
 
 	/**
 	 * A value against a band [Min, Max]: outside it Early or Late (bHighIsEarly says which side is

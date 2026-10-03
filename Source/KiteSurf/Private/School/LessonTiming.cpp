@@ -16,13 +16,18 @@ FString LessonTiming::GradeText(ELessonTimingGrade Grade)
 	}
 }
 
-ELessonTimingGrade LessonTiming::GradeSheetIn(float KiteElevationDeg, float SecondsAtTop)
+bool LessonTiming::IsKiteAtTop(float KiteElevationDeg, float ClimbRateDegS, float TopDeg)
+{
+	return KiteElevationDeg >= TopDeg || (KiteElevationDeg >= TopDeg - SlowMoTopBandDeg && ClimbRateDegS <= SlowMoTopRateDegS);
+}
+
+ELessonTimingGrade LessonTiming::GradeSheetIn(float KiteElevationDeg, float SecondsAtTop, float ClimbRateDegS)
 {
 	if (KiteElevationDeg < SheetGoodMinDeg)
 	{
 		return ELessonTimingGrade::Early;
 	}
-	if (KiteElevationDeg < SheetPerfectMinDeg)
+	if (!IsKiteAtTop(KiteElevationDeg, ClimbRateDegS))
 	{
 		return ELessonTimingGrade::Good;
 	}
@@ -85,8 +90,11 @@ bool LessonTiming::DetectSheetIn(const FLessonTelemetry& Telemetry, ELessonTimin
 		return false;
 	}
 	// How long the kite has been at the top without a break, up to now.
-	const float AtTop = Telemetry.TrailingTimeInBand(ELessonChannel::KiteElevation, SheetPerfectMinDeg, 180.0f);
-	OutGrade = GradeSheetIn(Now.KiteElevationDeg, AtTop);
+	const float AtTop = Telemetry.TrailingTimeWhere([&Telemetry](int32 I)
+	{
+		return IsKiteAtTop(Telemetry.Get(I).KiteElevationDeg, Telemetry.ChannelAt(I, ELessonChannel::KiteClimbRate));
+	});
+	OutGrade = GradeSheetIn(Now.KiteElevationDeg, AtTop, Telemetry.ChannelAt(N - 1, ELessonChannel::KiteClimbRate));
 	return true;
 }
 
@@ -215,7 +223,7 @@ bool LessonTiming::DetectSlowMoCue(const FLessonSlowMoCue& Cue, const FLessonSam
 			Arm.bArmed = true;
 		}
 		const bool bOnWater = Sample.BoardState != EBoardState::Airborne;
-		const bool bAtTop = Elevation >= Cue.Threshold || (bStopped && Elevation >= Cue.Threshold - SlowMoTopBandDeg);
+		const bool bAtTop = IsKiteAtTop(Elevation, bStopped ? 0.0f : UE_BIG_NUMBER, Cue.Threshold);
 		if (Arm.bArmed && bOnWater && !Sample.bFallen && bAtTop && Sample.BarPosition < SheetInBar)
 		{
 			Arm.bArmed = false;

@@ -136,14 +136,19 @@ void AKiteSurfHUD::UpdateJumpReadout(const UBoardMovementComponent* Board, float
 	{
 		// A jump has just finished: show what it came to.
 		SeenJumpCount = Board->GetJumpCount();
+		const bool bLandedClean = Board->WasLastLandingClean();
 		if (Board->GetLastJumpApexHeight() >= MinHeightCm)
 		{
 			JumpReadoutText = FormatJumpResult(Board->GetLastJumpApexHeight(), Board->GetLastJumpDistance(), Board->GetLastJumpAirtime());
 			JumpResultRemainingTime = 4.0f;
-			bJumpReadoutNewBest = Board->GetLastJumpApexHeight() > BestHeightBeforeJumpCm && BestHeightBeforeJumpCm > 0.0f;
+			bJumpReadoutNewBest = IsNewBestJump(Board->GetLastJumpApexHeight(), BestHeightBeforeJumpCm, bLandedClean);
 			bJumpReadoutLive = false;
 		}
-		BestHeightBeforeJumpCm = Board->GetBestJumpHeight();
+		// The best counts landed jumps only: a crash is not a height the rider can claim.
+		if (bLandedClean)
+		{
+			BestHeightBeforeJumpCm = FMath::Max(BestHeightBeforeJumpCm, Board->GetLastJumpApexHeight());
+		}
 		return;
 	}
 
@@ -525,7 +530,7 @@ void AKiteSurfHUD::DrawHUD()
 		BelowReadoutY += CardH + 20.0f;
 	}
 
-	if (!JumpReadoutText.IsEmpty() && bJumpReadoutNewBest && !bJumpReadoutLive)
+	if (ShouldShowNewBest())
 	{
 		const FString BestText = TEXT("NEW BEST");
 		float BestW = 0.0f;
@@ -799,11 +804,30 @@ void AKiteSurfHUD::DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, f
 	LessonLayer.DrawArcCue(*this, FVector2D(CenterX, CenterY), Radius);
 }
 
+FString AKiteSurfHUD::FormatFPS(float RealFrameSeconds)
+{
+	return FString::Printf(TEXT("FPS: %.0f"), RealFrameSeconds > 0.0f ? 1.0f / RealFrameSeconds : 0.0f);
+}
+
+float AKiteSurfHUD::GetRealFrameSeconds(const UWorld* World)
+{
+	return World ? World->DeltaRealTimeSeconds : 0.0f;
+}
+
+bool AKiteSurfHUD::IsNewBestJump(float ApexCm, float BestLandedBeforeCm, bool bLandedClean)
+{
+	return bLandedClean && BestLandedBeforeCm > 0.0f && ApexCm > BestLandedBeforeCm;
+}
+
+bool AKiteSurfHUD::ShouldShowNewBest() const
+{
+	const bool bCrashCard = !JumpCardText.IsEmpty() && JumpCardGrade == ELandingGrade::Crash;
+	return !JumpReadoutText.IsEmpty() && bJumpReadoutNewBest && !bJumpReadoutLive && !bCrashCard;
+}
+
 void AKiteSurfHUD::DrawFPS(float ScreenX, float ScreenY)
 {
-	float DeltaTime = GetWorld()->GetDeltaSeconds();
-	float FPS = DeltaTime > 0.0f ? (1.0f / DeltaTime) : 0.0f;
-	FString FPSText = FString::Printf(TEXT("FPS: %.0f"), FPS);
+	const FString FPSText = FormatFPS(GetRealFrameSeconds(GetWorld()));
 	DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.5f), ScreenX - 10.0f, ScreenY - 5.0f, 110.0f, 30.0f);
 	DrawText(FPSText, FLinearColor::Green, ScreenX, ScreenY, nullptr, 1.1f);
 }

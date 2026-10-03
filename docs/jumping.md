@@ -57,6 +57,48 @@ Upon re-entering the water surface ($v_z \le 0$ and $z \le z_{\text{water}} + 10
   - Rider stays at crash location for `CrashRespawnDelay` (1.0 s), 1.5 s from the crash in all.
   - Rider respawns upright (pitch=0, roll=0, at water level) at 8 kn on the tack they were on (`ResetToTack`), with the kite parked at 45 degrees on that side.
 
+## Rider rotation (not yet wired)
+
+`URiderAttitudeComponent` (`Source/KiteSurf/Public/Tricks/`) is the rider's rotation in the air for tricks (T1.2 in `docs/tricks.md`). **The pawn does not step it yet**: the air orientation in the game is still `AirSpinRate` and the auto-align above. Wiring it into `StepSimulation`, after the line force and before `StepBoard`, comes in a later change. Until then it runs only in the `KiteSurf.Trick.*` tests.
+
+The model, one fixed step (SI inside, cm and kg*cm/s^2 only at the boundary):
+- **State**: the body quaternion and the angular momentum L about the centre of mass. The inertia is diagonal in the body frame (Front, Right, Up) and blends from stretched to tucked, so `omega = I^-1 L` and a tuck spins the rider faster with no extra rule.
+- **Take-off**: the rotation starts from the kinematic pose on the water, so there is no pop. A pre-wind gives a target rate on the chosen axis: the full rate, times how far the pre-wind was built, times `PreWindLoadFloor + (1 - PreWindLoadFloor) * load`. That axis is committed.
+- **Torques**:
+  - **Line torque**: `LineTorqueScale * r x F` at the hook (`HookOffsetFromComCm`), and only while the lines are taut. It pulls Up towards the lines and does no work on rotation about them. Hanging still, the rider leans back atan(12/20) = 31 deg.
+  - **Air control**: the stick sets a target rate. The torque is capped at `AirControlFractionPerS` of a full pre-wind per second, so the take-off decides most of the rotation.
+  - **Landing assist**: a PD towards the nearest valid attitude, which is upright with the board along the travel, either way round. It acts only with no stick input, under `AssistWindowSeconds` from contact and within `AssistMaxErrorDeg`.
+- **Posture damping and drag**: posture damping decays rotation off the committed axis, or all rotation when no axis is committed; drag acts on every axis. Both are exact exponential decays, so they cannot overshoot at any step size.
+- **Rotation**: the free rigid-body motion for the step, exact for a symmetric top. With no torque, |L| and the energy are conserved.
+- **Board**: the strapped board is the body times a strap offset. The offset eases from the take-off heel and pitch to flat under the feet.
+
+The tunables are under the category `Tuning|Rotation`:
+
+| Property | Default | Notes |
+| :--- | :--- | :--- |
+| `InertiaStretchedKgM2` / `InertiaTuckedKgM2` | (13, 13, 2) / (7, 7, 1.5) kg*m^2 | Front, Right, Up; rider plus board. |
+| `TuckSmoothSeconds` | 0.15 s | Critically damped tuck. |
+| `HookOffsetFromComCm` | (12, 0, 20) cm | From the centre of mass, not the pelvis (`HarnessHookOffsetCm`). |
+| `LineTorqueScale` | 0.1 | Calibrated: see below. |
+| `PreWindRollRateDegS` / `PreWindFlipRateDegS` / `PreWindSpinRateDegS` | 250 / 260 / 360 deg/s | Full pre-wind at full load. |
+| `DefaultRollAxisTiltDeg` / `RollAxisTiltRangeDeg` | 65 / 45 deg | A tilt of 65 deg is needed so that a default roll counts as an inversion. |
+| `FlipSectorDeg` / `FlipSectorHysteresisDeg` / `SpinAxisTiltMaxDeg` | 20 / 5 / 20 deg | Stick mapping. |
+| `PreWindLoadFloor` | 0.5 | |
+| `AirControlFractionPerS` / `AirControlResponseSeconds` | 0.3 1/s / 0.25 s | |
+| `PostureDampingPerS` / `PostureMaxTorqueNm` | 3 1/s / 60 N*m | |
+| `AirAngularDragPerS` | 0.05 1/s | |
+| `AssistStrength` / `AssistWindowSeconds` / `AssistMaxErrorDeg` | 1 / 0.7 s / 60 deg | |
+| `AssistNaturalFreqHz` / `AssistDampingRatio` / `AssistMaxTorqueNm` | 1.2 Hz / 0.9 / 120 N*m | |
+| `StrapSettleSeconds` / `ComOffsetSettleSeconds` | 0.3 / 0.5 s | |
+
+Every default is an *estimate*.
+
+**Calibration.** `LineTorqueScale` and `PreWindRollRateDegS` were set together on the bare component: a full pre-wind back roll at full load, against 800 N of hang tension pulling straight up. That is the worst case for the line torque, since the roll axis is 65 deg off the line.
+- With the plan's starting values (0.15 and 200 deg/s), the rider tips half over and falls back the way they came. That is not a roll.
+- Just above the energy needed to get over the top, the duration climbs steeply, past 3 s.
+- At 0.1 and 250 deg/s the roll goes round in 1.76 s, and 1.70 to 1.85 s at 720 to 880 N, inside the 1.5 to 2.5 s target (`KiteSurf.Trick.BackRollFromPreWind`).
+- Repeat the calibration on a real jump once the attitude is wired, and again once the kite sits overhead in the air (physics phase 2).
+
 ## Default Tunable Properties
 
 Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")` (the lift-off pair under `Tuning`):

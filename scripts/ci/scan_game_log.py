@@ -5,6 +5,7 @@ Scan Unreal Engine game log for critical defects:
 - VK_ERROR
 - Fatal error
 - LoadErrors:
+- Material ... missing usage flag (the mesh renders with the default material)
 """
 import sys
 import os
@@ -15,6 +16,7 @@ PATTERNS = [
     re.compile(r"VK_ERROR"),
     re.compile(r"Fatal error"),
     re.compile(r"LoadErrors:"),
+    re.compile(r"missing usage flag"),
 ]
 
 def main():

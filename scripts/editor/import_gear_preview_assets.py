@@ -96,7 +96,8 @@ def make_backdrop_material():
     brightness.set_editor_property('default_value', 1.0)
     lit = binary(unreal.MaterialExpressionMultiply, sky_and_sea, brightness, -250, 150)
     mel.connect_material_property(lit, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
-
+    # Nanite is on project-wide, so the card is a Nanite mesh; -game cannot add the flag itself.
+    material.set_editor_property('used_with_nanite', True)
     mel.recompile_material(material)
     editor_assets.save_loaded_asset(material, only_if_is_dirty=False)
     print(f'Created {name}')

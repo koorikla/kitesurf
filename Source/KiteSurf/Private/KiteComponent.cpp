@@ -120,6 +120,8 @@ UKiteComponent::UKiteComponent()
 	bLooping = false;
 	LoopSide = 0.0f;
 	LoopClockDeg = 35.0f;
+	AirLoopFullBarThreshold = 0.85f;
+	AirLoopHoldSeconds = 0.3f;
 	bCrashed = false;
 	bLinesTaut = true;
 	PrevKiteWorldPosition = FVector::ZeroVector;
@@ -673,11 +675,47 @@ float UKiteComponent::ComputeSteering(float DeltaTime, float Bar, const FVector&
 	// so the loop carries on through the rest of the window. Steering towards the other side
 	// is a request to fly there, which the assist below carries out over the top.
 	const float SteerSide = Bar >= 0.0f ? 1.0f : -1.0f;
+
+	// In the air a full bar held for AirLoopHoldSeconds loops the kite its way wherever it is, and a
+	// full bar the other way mid-loop starts a loop that way: S-loops and contra loops. A shorter tap
+	// flies the kite across. A full bar already held as the rider leaves the water is the send, and
+	// flies the kite across as before until it is eased or reversed.
+	bool bAirFullBar = false;
+	if (bRiderAirborne)
+	{
+		const bool bFullBar = FMath::Abs(Bar) >= AirLoopFullBarThreshold;
+		if (!bSteeredAirborne)
+		{
+			AirHeldFullBarSide = bFullBar ? SteerSide : 0.0f;
+		}
+		else if (!bFullBar || SteerSide != AirHeldFullBarSide)
+		{
+			AirHeldFullBarSide = 0.0f;
+		}
+		const bool bTowardsLoop = bFullBar && SteerSide != AirHeldFullBarSide;
+		if (bTowardsLoop && SteerSide == AirFullBarSide)
+		{
+			AirFullBarSeconds += DeltaTime;
+		}
+		else
+		{
+			AirFullBarSide = bTowardsLoop ? SteerSide : 0.0f;
+			AirFullBarSeconds = bTowardsLoop ? DeltaTime : 0.0f;
+		}
+		bAirFullBar = bTowardsLoop && AirFullBarSeconds >= AirLoopHoldSeconds - KINDA_SMALL_NUMBER;
+	}
+	else
+	{
+		AirFullBarSide = 0.0f;
+		AirFullBarSeconds = 0.0f;
+	}
+	bSteeredAirborne = bRiderAirborne;
+
 	if (!bSteering || (bLooping && SteerSide != LoopSide))
 	{
 		bLooping = false;
 	}
-	if (bSteering && !bLooping && (bLoopHeld || GetClockDeg() * SteerSide >= LoopClockDeg))
+	if (bSteering && !bLooping && (bLoopHeld || bAirFullBar || GetClockDeg() * SteerSide >= LoopClockDeg))
 	{
 		bLooping = true;
 		LoopSide = SteerSide;

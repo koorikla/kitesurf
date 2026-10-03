@@ -58,7 +58,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnKiteRelaunched);
  * air (SetRiderAirborne) bar centred flies the kite to the zenith over them and holds it there. The
  * assist judges where the window is from the wind the rider feels across the water: the true wind
  * less their horizontal velocity. With the loop input held the bar turns the kite directly, so
- * holding it flies a loop.
+ * holding it flies a loop. In the air a full bar does the same from anywhere in the window, and
+ * reversed mid-loop starts a loop the other way (AirLoopFullBarThreshold).
  */
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class KITESURF_API UKiteComponent : public UActorComponent
@@ -111,6 +112,28 @@ public:
 	/** How far round the window on its own side (deg of clock) the kite must be for the bar held that way to loop it rather than fly it there. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float LoopClockDeg;
+
+	/**
+	 * With the rider in the air (SetRiderAirborne), a bar at least this far over (of 1, the bar as it
+	 * reaches the kite after the dead time) loops the kite its way from anywhere in the window, not
+	 * only from LoopClockDeg round on its own side; reversed to it mid-loop it ends that loop and
+	 * starts one the other way. That is what flies S-loops and contra loops (docs/tricks/T2.md T2.4).
+	 * A smaller bar still flies the kite across, and a full bar already held when the rider leaves
+	 * the water (the send) does not count until it has been eased under this or pulled the other
+	 * way, so a send held through the take-off flies as before. The full bar has to be held for
+	 * AirLoopHoldSeconds first. On the water the LoopClockDeg rule alone applies. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+	float AirLoopFullBarThreshold;
+
+	/**
+	 * How long a full bar (AirLoopFullBarThreshold, the bar as it reaches the kite) must be held in
+	 * the air before it starts or reverses a loop (s). A shorter tap flies the kite across as any
+	 * other bar does, so arrow-key steering (always a full bar) can still fly the kite in the air.
+	 * Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", Units = "s"))
+	float AirLoopHoldSeconds;
 
 	/** The kite sizes on offer (m^2), smallest first. */
 	static TConstArrayView<float> GetKiteSizesM2();
@@ -502,8 +525,9 @@ public:
 	 * The rider says each step whether they are in the air (the pawn does, from the board). In the air
 	 * with the bar centred the assist flies the kite to 12 o'clock over them and holds it there
 	 * (AirborneZenithGain), whatever bParkHoldAssist says: a kite overhead is what carries a rider
-	 * through a jump. Bar over still travels, bar towards the kite's own side still loops, and the
-	 * floor rule still applies.
+	 * through a jump. A bar over by less than AirLoopFullBarThreshold still travels, a full bar loops
+	 * the kite its way from anywhere in the window (AirLoopFullBarThreshold), bar towards the kite's
+	 * own side still loops, and the floor rule still applies.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Kite")
 	void SetRiderAirborne(bool bAirborne) { bRiderAirborne = bAirborne; }
@@ -674,6 +698,13 @@ protected:
 	bool bRiderAirborne = false;
 	bool bLooping;
 	float LoopSide;
+	/** The rider was in the air at the last ComputeSteering: tells the step they left the water on. */
+	bool bSteeredAirborne = false;
+	/** The side (+1, -1) of a full bar held since the rider left the water, which does not loop in the air; 0 when none. */
+	float AirHeldFullBarSide = 0.0f;
+	/** The side (+1, -1) of the full bar being held in the air towards a loop, and for how long (s); 0 when none. */
+	float AirFullBarSide = 0.0f;
+	float AirFullBarSeconds = 0.0f;
 	bool bCrashed;
 	bool bLinesTaut;
 	float CrashedSeconds;

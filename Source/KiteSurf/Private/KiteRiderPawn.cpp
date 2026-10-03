@@ -586,7 +586,15 @@ void AKiteRiderPawn::UpdateMouseBar()
 		float DeltaY = 0.0f;
 		PC->GetInputMouseDelta(DeltaX, DeltaY);
 		MouseSteerInput = FMath::Clamp(MouseSteerInput + DeltaX * MouseSteerSensitivity, -1.0f, 1.0f);
-		SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+		if (bMotionBarActive)
+		{
+			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral - DeltaY * MouseSheetSensitivity, 0.0f, 1.0f);
+			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+		}
+		else
+		{
+			SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+		}
 		SteerKite(KeySteerInput + MouseSteerInput);
 	}
 	else if (MouseSteerInput != 0.0f)
@@ -863,10 +871,18 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 
 	UpdateMotionBar(DeltaTime);
 
-	// With the motion bar in the rider's hands, the stick, triggers and keys leave the bar alone.
-	if (!bMotionBarActive && !FMath::IsNearlyZero(SheetRateInput))
+	// The stick, triggers and keys still adjust the bar when the motion controller is in use.
+	if (!FMath::IsNearlyZero(SheetRateInput))
 	{
-		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
+		if (bMotionBarActive)
+		{
+			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral + SheetRateInput * SheetRatePerSec * DeltaTime, 0.0f, 1.0f);
+			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+		}
+		else
+		{
+			SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
+		}
 	}
 
 	if (GetController())

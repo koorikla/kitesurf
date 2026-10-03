@@ -78,17 +78,22 @@ enum class ETrickInversion : uint8
 	FrontFlip UMETA(DisplayName = "Front flip")
 };
 
-/** What kind of kite loop was flown during a jump (classification rules in docs/tricks.md 6.6). */
+/**
+ * What kind of kite loop was flown during a jump (docs/tricks.md 6.6; the rules and their
+ * thresholds are in FLoopClassifySettings and TrickRecognition::ClassifyLoops).
+ */
 UENUM(BlueprintType)
 enum class ETrickLoopKind : uint8
 {
-	Kiteloop UMETA(DisplayName = "Kiteloop"),
+	Kiteloop  UMETA(DisplayName = "Kiteloop"),
 	/** Started high (8 m or more), kite down to 20 degrees or less, 3 body weights or more of pull. */
-	Megaloop UMETA(DisplayName = "Megaloop"),
-	/** Flown on the way down with the kite high: a landing aid more than a power loop. */
-	HeliLoop UMETA(DisplayName = "Heli loop"),
+	Megaloop  UMETA(DisplayName = "Megaloop"),
+	/** Flown after the apex with the kite kept high (it drops little from where the loop started): a landing aid more than a power loop. */
+	HeliLoop  UMETA(DisplayName = "Heli loop"),
 	/** Half a loop one way, then half the other. */
-	SLoop    UMETA(DisplayName = "S-loop")
+	SLoop     UMETA(DisplayName = "S-loop"),
+	/** An S-loop with one more half loop or more, alternating each time. */
+	SnakeLoop UMETA(DisplayName = "Snake loop")
 };
 
 /** When a roll inside a loop started relative to the loop's pull (the yank). */

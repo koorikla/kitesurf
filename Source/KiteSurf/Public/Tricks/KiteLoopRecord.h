@@ -52,11 +52,19 @@ struct FKiteLoopRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float PeakTensionN = 0.0f;
 
+	/** Kite simulation time of the highest line tension, the loop's yank (s); tells an early roll from a late one. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float PeakTensionTimeSeconds = 0.0f;
+
 	/** Rider height above the water when the loop started (cm, world Z). */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float RiderZAtStartCm = 0.0f;
 
-	/** Sign of the rider's velocity along crosswind-right when the loop started, for telling a contra loop. */
+	/**
+	 * Which way the rider was travelling when the loop started, for telling a contra loop: +1 along
+	 * crosswind-right (Up x Downwind, to the right looking downwind), -1 to the left, 0 when the
+	 * rider was going too nearly straight up- or downwind to say (FKiteLoopTrackerSettings::TravelSideMinDot).
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	int32 RiderTravelSide = 0;
 };

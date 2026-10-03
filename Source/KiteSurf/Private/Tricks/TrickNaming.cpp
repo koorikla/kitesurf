@@ -95,6 +95,7 @@ namespace
 		case ETrickLoopKind::Megaloop: Word = Loop.bContra ? TEXT("contra megaloop") : TEXT("megaloop"); break;
 		case ETrickLoopKind::HeliLoop: Word = TEXT("heli loop"); break;
 		case ETrickLoopKind::SLoop:    Word = TEXT("S-loop"); break;
+		case ETrickLoopKind::SnakeLoop: Word = TEXT("snake loop"); break;
 		default:                       Word = Loop.bContra ? TEXT("contra loop") : TEXT("kiteloop"); break;
 		}
 		if (Loop.RollTiming == ELoopRollTiming::Early)
@@ -377,6 +378,7 @@ namespace
 		case ETrickLoopKind::Megaloop: return TEXT("M");
 		case ETrickLoopKind::HeliLoop: return TEXT("H");
 		case ETrickLoopKind::SLoop:    return TEXT("S");
+		case ETrickLoopKind::SnakeLoop: return TEXT("N");
 		default:                       return TEXT("K");
 		}
 	}

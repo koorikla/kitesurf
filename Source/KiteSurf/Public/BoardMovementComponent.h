@@ -228,9 +228,11 @@ public:
 	float GetLastLandingAbsorbCm() const { return LastLandingAbsorbCm; }
 
 	/**
-	 * True if the last landing was hot: the rider sank faster than HotLandingSinkMS or the kite was
-	 * under HotLandingKiteElevationDeg as they touched down (docs/research.md C7). Not a crash by
-	 * itself: at best a Sketchy grade (GetLastLandingVerdict).
+	 * True if the last landing was hot: the kite was under HotLandingKiteElevationDeg as they
+	 * touched down, not holding them up (docs/research.md C7). Not a crash by itself: at best a
+	 * Sketchy grade (GetLastLandingVerdict). A hard landing from a fast sink is its own cause,
+	 * TooHard, decided from the landing g alone (batch C, docs/tricks/review.md section 4), not
+	 * read here.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	bool WasLastLandingHot() const { return bLastLandingHot; }
@@ -789,8 +791,8 @@ public:
 	 * The landing grades (LandingEvaluator::Evaluate, docs/tricks.md 6.7): the tilt and yaw each
 	 * grade allows, the kite and g a stomp needs, and the speed kept per grade. Past the Sketchy
 	 * limits the landing is a crash (they replace the old single MaxLandingAngle of 30 deg). Its
-	 * CrashLandingG, HotLandingSinkMS and HotLandingKiteElevationDeg are not read: the board's own
-	 * properties of those names are used, so there is one number for each.
+	 * CrashLandingG and HotLandingKiteElevationDeg are not read: the board's own properties of
+	 * those names are used, so there is one number for each.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
 	FLandingThresholds LandingThresholds;
@@ -811,10 +813,6 @@ public:
 	/** A landing harder than this (g) is a crash, however well the board is lined up. Research: measured landings 4.2 to 5.5 g. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "1.0"))
 	float CrashLandingG;
-
-	/** A landing sinking faster than this into the water (m/s) is hot (research: 3 to 6 m/s with the kite overhead, 8 to 12 with it low). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0"))
-	float HotLandingSinkMS;
 
 	/** A landing with the kite under this elevation above the rider (deg) is hot: the kite is not holding them up. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0", ClampMax = "90.0"))

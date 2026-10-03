@@ -91,9 +91,12 @@ FLandingVerdict LandingEvaluator::Evaluate(const FLandingInputs& In, const FLand
 		Grade = ELandingGrade::Clean;
 	}
 
-	// A hot or hard landing caps the grade at sketchy, whatever the attitude.
+	// A hot or hard landing caps the grade at sketchy, whatever the attitude. Too hard is decided
+	// from the landing g alone (batch C, docs/tricks/review.md section 4): the g already includes
+	// the absorb distance and the crouch, so a fast raw sink that a long, crouched absorb has
+	// already taken out is not graded down a second time by its own rate.
 	const bool bKiteLow = !(In.KiteElevationDeg >= T.HotLandingKiteElevationDeg);
-	const bool bTooHard = !(In.SinkMS <= T.HotLandingSinkMS) || !(In.LandingG <= T.SketchyMinLandingG);
+	const bool bTooHard = !(In.LandingG <= T.SketchyMinLandingG);
 	if (bKiteLow || bTooHard || In.bHotLanding)
 	{
 		// The kite is named first: it is what drags a rider off a landing. The board's hot flag on

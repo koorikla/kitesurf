@@ -1565,8 +1565,10 @@ bool FKiteSurfPhysicsRidesASwellWithoutTunnelling::RunTest(const FString& Parame
 // the board's immersion), and the landing's load is 1 + v^2 / (2 g s): about 1.7 g at 2 m/s, 3.7 g at
 // 4 m/s and 7.1 g at 6 m/s, the ratio of the squares. A full crouch (the jump button held in the air) doubles s
 // (CrouchAbsorbBonus 1) and lowers both. The board really does stop over s: the water's push on it peaks
-// at the landing's g and it goes s into the water. At 7 m/s the landing is hot; standing it is 9.3 g,
-// past CrashLandingG (8), and crashes; crouched it is 5.2 g and is ridden away.
+// at the landing's g and it goes s into the water. Standing, 7 m/s is 9.3 g, past CrashLandingG (8),
+// and crashes; crouched it is 5.2 g and is ridden away. The kite is kept overhead throughout, so
+// none of these is flagged hot: since batch C (docs/tricks/review.md section 4) hot is the kite
+// alone, and a hard landing is its own cause, too hard, read from the g, not the raw sink rate.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsLandingGFromSink, "KiteSurf.Physics.LandingGFromSink", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsLandingGFromSink::RunTest(const FString& Parameters)
@@ -1677,8 +1679,10 @@ bool FKiteSurfPhysicsLandingGFromSink::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("Crouched, it goes twice as far (cm)"), HardCrouched.StrokeCm, HardCrouched.AbsorbCm, 3.0f);
 	TestTrue(TEXT("The 2 and 6 m/s landings are clean and ridden away"), Soft.bClean && Hard.bClean && Soft.bRidingAfter && Hard.bRidingAfter);
 	TestFalse(TEXT("They are not hot"), Soft.bHot || Hard.bHot);
-	TestTrue(FString::Printf(TEXT("At 7 m/s the landing is hot (%.2f m/s)"), Hot.SinkMS), Hot.bHot && HotCrouched.bHot);
-	TestTrue(FString::Printf(TEXT("Standing it is hot but landed, under the crash load (%.2f g)"), Hot.LandingG), Hot.bClean && Hot.LandingG > 6.0f && Hot.LandingG < 10.0f);
+	// Batch C (docs/tricks/review.md section 4): hot is the kite alone, kept overhead here, so a
+	// fast sink does not make it hot by itself, however hard it lands.
+	TestFalse(FString::Printf(TEXT("At 7 m/s, kite overhead, still not hot (%.2f m/s)"), Hot.SinkMS), Hot.bHot || HotCrouched.bHot);
+	TestTrue(FString::Printf(TEXT("Standing it is hard but landed, under the crash load (%.2f g)"), Hot.LandingG), Hot.bClean && Hot.LandingG > 6.0f && Hot.LandingG < 10.0f);
 	TestTrue(FString::Printf(TEXT("Crouched it is landed and ridden away (%.2f g)"), HotCrouched.LandingG), HotCrouched.bClean && HotCrouched.bRidingAfter && HotCrouched.LandingG < 10.0f);
 	TestTrue(FString::Printf(TEXT("Slammed in standing at 9.5 m/s it is a crash (%.2f g)"), Slam.LandingG), Slam.bCrashed && Slam.LandingG > 10.0f);
 	return true;

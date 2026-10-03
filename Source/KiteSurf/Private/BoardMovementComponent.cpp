@@ -130,7 +130,6 @@ UBoardMovementComponent::UBoardMovementComponent()
 	LandingAbsorbDistanceCm = LandingMath::DefaultLandingAbsorbDistanceCm; // 45 cm standing: research 0.2 to 0.4 m of legs and immersion plus the water's give
 	CrouchAbsorbBonus = 1.0f;           // a full crouch doubles it
 	CrashLandingG = 10.0f; // measured landings are 4.2 to 5.5 g; 10 is a hard landing a rider can still stand, and what the trick grading uses
-	HotLandingSinkMS = 6.0f;
 	HotLandingKiteElevationDeg = 45.0f;
 	CrashDecelDuration = 0.5f;  // 0.5 s
 	CrashRespawnDelay = 1.0f;   // 1.0 s (total crash-to-reset: 1.5 s)
@@ -963,8 +962,11 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 				// The landing's load (research 3.4): the sink v is taken out over the absorb distance s,
 				// the legs and the board's immersion, longer for a crouch, at 1 + v^2 / (2 g s) g. It is
-				// hot when the rider sinks fast or the kite is low (not holding them up); it is a crash if
-				// the board is not lined up with its course or the load is more than the legs can take.
+				// hot when the kite is low (not holding them up); it is a crash if the board is not lined
+				// up with its course or the load is more than the legs can take. A hard landing from a
+				// fast sink is its own cause, too hard, decided from the load alone (batch C,
+				// docs/tricks/review.md section 4): the g already includes the absorb distance and the
+				// crouch, so a fast raw sink into a long, crouched absorb is not graded down twice.
 				LastLandingSinkMS = KiteUnits::CmToM(SinkCmS);
 				LastLandingAbsorbCm = LandingAbsorbDistanceCm * (1.0f + FMath::Max(CrouchAbsorbBonus, 0.0f) * LoadAmount);
 				LastLandingG = LandingGForSink(LastLandingSinkMS, LastLandingAbsorbCm);
@@ -976,7 +978,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 						KiteElevationDeg = KiteComp->GetElevationDeg();
 					}
 				}
-				bLastLandingHot = LastLandingSinkMS > HotLandingSinkMS || KiteElevationDeg < HotLandingKiteElevationDeg;
+				bLastLandingHot = KiteElevationDeg < HotLandingKiteElevationDeg;
 
 				// The grade (docs/tricks.md 6.7): the geometry above, the sink, the g and the kite.
 				FLandingInputs LandingInputs;
@@ -991,7 +993,6 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				LandingInputs.bBarInHands = bRiderBarInHands;
 				FLandingThresholds Thresholds = LandingThresholds;
 				Thresholds.CrashLandingG = CrashLandingG;
-				Thresholds.HotLandingSinkMS = HotLandingSinkMS;
 				Thresholds.HotLandingKiteElevationDeg = HotLandingKiteElevationDeg;
 				LastLandingInputs = LandingInputs;
 				LastLandingVerdict = LandingEvaluator::Evaluate(LandingInputs, Thresholds);

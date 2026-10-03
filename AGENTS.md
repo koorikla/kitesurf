@@ -14,6 +14,7 @@ air game: very high jumps, kite loops, tricks and scoring.
 | `docs/ARCHITECTURE.md` | Units, public APIs and tick order |
 | `docs/TASKS.md` | Roadmap and current phase |
 | `docs/research.md` | Big air research and the candidate backlog with acceptance criteria |
+| `docs/tutorials.md` | Interactive kite school: lesson progression, design and plan |
 | `docs/tricks.md` | Trick catalogue (big air, freestyle, strapless) and the trick implementation plan |
 | `.agents/skills/` | Skills for working in this repository (index below) |
 

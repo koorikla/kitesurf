@@ -12,6 +12,9 @@ class APawn;
 /** The kite school's log: lesson starts, the director's state changes, results. */
 KITESURF_API DECLARE_LOG_CATEGORY_EXTERN(LogKiteSchool, Log, All);
 
+/** Someone asked for the lesson menu (the result card's "Lesson menu"); the School menu (S5) answers it. */
+DECLARE_MULTICAST_DELEGATE(FOnLessonMenuRequested);
+
 /** One lesson as the lesson menu (S5) shows it: a tile on the chapter map. */
 USTRUCT(BlueprintType)
 struct KITESURF_API FLessonListItem
@@ -132,6 +135,17 @@ public:
 	 * nothing is pending or it could not start.
 	 */
 	ALessonDirector* StartPendingLesson(APawn* Rider);
+
+	/**
+	 * The result card's "Lesson menu" (HUD lesson layer, S4): asks whoever is bound to
+	 * OnLessonMenuRequested to open the lesson menu. The School menu (S5) binds it. True when someone
+	 * is bound and was asked; false (nothing happens) by default, and the caller falls back to the
+	 * pause menu.
+	 */
+	bool RequestLessonMenu();
+
+	/** Bound by the School menu (S5); see RequestLessonMenu. */
+	FOnLessonMenuRequested OnLessonMenuRequested;
 
 	/** Whether StartLesson may open a map (on by default). Tests switch it off. */
 	void SetTravelEnabled(bool bEnabled) { bTravelEnabled = bEnabled; }

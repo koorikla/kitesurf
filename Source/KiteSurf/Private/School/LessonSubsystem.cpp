@@ -3,6 +3,7 @@
 #include "School/LessonDirector.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
@@ -27,6 +28,17 @@ bool ULessonSubsystem::RecordLessonResult(FName LessonId, bool bPassed, int32 St
 	const bool bRaised = Progress.RecordAttempt(LessonId, bPassed, Stars, Value, bNoAssists, FDateTime::UtcNow());
 	SaveProgress();
 	return bRaised;
+}
+
+bool ULessonSubsystem::RequestLessonMenu()
+{
+	if (!OnLessonMenuRequested.IsBound())
+	{
+		UE_LOG(LogKiteSchool, Display, TEXT("Lesson menu requested: no lesson menu bound (S5); falling back"));
+		return false;
+	}
+	OnLessonMenuRequested.Broadcast();
+	return true;
 }
 
 bool ULessonSubsystem::IsUnlocked(FName LessonId) const
@@ -191,6 +203,54 @@ namespace LessonSubsystemPrivate
 			const bool bStarted = bForce ? Lessons->StartLessonIgnoringPrerequisites(Id) : Lessons->StartLesson(Id);
 			UE_LOG(LogKiteSchool, Display, TEXT("kitesurf.Lesson %s%s: %s"), *Id.ToString(), bForce ? TEXT(" force") : TEXT(""),
 				bStarted ? TEXT("started") : TEXT("not started (unknown or locked; 'force' skips the prerequisites)"));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs LessonActionCommand(
+		TEXT("kitesurf.LessonAction"),
+		TEXT("Acts on the running lesson as the result card and the drop-back offer do: next, retry, dropback, menu or exit; 'timelimit <s>' sets the run's time limit (testing: a TIME UP card sooner). Usage: kitesurf.LessonAction <next|retry|dropback|menu|exit|timelimit <s>>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			UKiteSurfGameInstance* GI = FindPlayedGameInstance(World);
+			UWorld* GameWorld = GI ? GI->GetWorld() : nullptr;
+			ALessonDirector* Director = nullptr;
+			if (GameWorld)
+			{
+				for (TActorIterator<ALessonDirector> It(GameWorld); It; ++It)
+				{
+					if (It->IsRunning())
+					{
+						Director = *It;
+						break;
+					}
+				}
+			}
+			const FString Action = Args.IsValidIndex(0) ? Args[0].ToLower() : FString();
+			if (!Director)
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("kitesurf.LessonAction %s: no lesson running"), *Action);
+				return;
+			}
+			bool bDone = false;
+			if (Action == TEXT("next"))          { bDone = Director->Next(); }
+			else if (Action == TEXT("retry"))    { bDone = Director->Retry(); }
+			else if (Action == TEXT("dropback")) { bDone = Director->AcceptDropBack(); }
+			else if (Action == TEXT("exit"))     { Director->ExitToFreeRide(); bDone = true; }
+			else if (Action == TEXT("timelimit") && Args.IsValidIndex(1))
+			{
+				Director->LessonTimeLimitSeconds = FMath::Max(FCString::Atof(*Args[1]), 0.0f);
+				bDone = true;
+			}
+			else if (Action == TEXT("menu"))
+			{
+				ULessonSubsystem* Lessons = GI->GetSubsystem<ULessonSubsystem>();
+				bDone = Lessons && Lessons->RequestLessonMenu();
+			}
+			else
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("Usage: kitesurf.LessonAction <next|retry|dropback|menu|exit|timelimit <s>>"));
+				return;
+			}
+			UE_LOG(LogKiteSchool, Display, TEXT("kitesurf.LessonAction %s: %s"), *Action, bDone ? TEXT("done") : TEXT("not possible now"));
 		}));
 }
 

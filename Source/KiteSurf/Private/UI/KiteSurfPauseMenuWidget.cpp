@@ -6,6 +6,7 @@
 #include "UI/KiteSurfGearWidget.h"
 #include "UI/KiteSurfSchoolWidget.h"
 #include "School/LessonDirector.h"
+#include "School/SchoolOnboarding.h"
 #include "EngineUtils.h"
 #include "Tricks/TrickSessionSubsystem.h"
 #include "Components/Button.h"
@@ -65,7 +66,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 	bLessonItems = GetRunningLesson() != nullptr;
 
 	// A button shown only in a lesson (bLessonItem) or only in free ride.
-	auto MakeItemButton = [this](TSharedPtr<SButton>& OutButton, const TCHAR* Label, TFunction<void()> OnClicked, bool bLessonItem) -> TSharedRef<SWidget>
+	auto MakeItemButton = [this](TSharedPtr<SButton>& OutButton, TAttribute<FText> Label, TFunction<void()> OnClicked, bool bLessonItem) -> TSharedRef<SWidget>
 	{
 		return SAssignNew(OutButton, SButton)
 			.IsFocusable(false)
@@ -79,7 +80,7 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 			})
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString(Label))
+				.Text(Label)
 				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
 				.Margin(FMargin(10.0f, 8.0f))
 			];
@@ -202,25 +203,25 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 				.AutoHeight()
 				.Padding(25.0f, 6.0f)
 				[
-					MakeItemButton(SlateSchoolButton, TEXT("SCHOOL"), [this]() { OnSchoolClicked(); }, false)
+					MakeItemButton(SlateSchoolButton, FText::FromString(TEXT("SCHOOL")), [this]() { OnSchoolClicked(); }, false)
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(25.0f, 6.0f)
 				[
-					MakeItemButton(SlateRetryLessonButton, TEXT("RETRY LESSON"), [this]() { OnRetryLessonClicked(); }, true)
+					MakeItemButton(SlateRetryLessonButton, FText::FromString(TEXT("RETRY LESSON")), [this]() { OnRetryLessonClicked(); }, true)
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(25.0f, 6.0f)
 				[
-					MakeItemButton(SlateLessonMenuButton, TEXT("LESSON MENU"), [this]() { OnSchoolClicked(); }, true)
+					MakeItemButton(SlateLessonMenuButton, FText::FromString(TEXT("LESSON MENU")), [this]() { OnSchoolClicked(); }, true)
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				.Padding(25.0f, 6.0f)
 				[
-					MakeItemButton(SlateFreeRideButton, TEXT("FREE RIDE"), [this]() { OnFreeRideClicked(); }, true)
+					MakeItemButton(SlateFreeRideButton, TAttribute<FText>::CreateLambda([this]() { return GetFreeRideLabel(); }), [this]() { OnFreeRideClicked(); }, true)
 				]
 				// Settings Button
 				+ SVerticalBox::Slot()
@@ -484,9 +485,36 @@ void UKiteSurfPauseMenuWidget::OnFreeRideClicked()
 {
 	if (ALessonDirector* Director = GetRunningLesson())
 	{
-		Director->ExitToFreeRide();
+		// In the first-run tutorial this is SKIP TUTORIAL: it also sets bSkipOnboarding (S7).
+		USchoolOnboardingSubsystem* Onboarding = GetOnboarding();
+		if (Onboarding && Onboarding->IsTutorialLesson(Director))
+		{
+			Onboarding->SkipTutorial(Director);
+		}
+		else
+		{
+			Director->ExitToFreeRide();
+		}
 	}
 	OnResumeClicked();
+}
+
+USchoolOnboardingSubsystem* UKiteSurfPauseMenuWidget::GetOnboarding() const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	return GameInstance ? GameInstance->GetSubsystem<USchoolOnboardingSubsystem>() : nullptr;
+}
+
+bool UKiteSurfPauseMenuWidget::ShowsSkipTutorial() const
+{
+	const USchoolOnboardingSubsystem* Onboarding = GetOnboarding();
+	return Onboarding && Onboarding->IsTutorialLesson(GetRunningLesson());
+}
+
+FText UKiteSurfPauseMenuWidget::GetFreeRideLabel() const
+{
+	return FText::FromString(ShowsSkipTutorial() ? TEXT("SKIP TUTORIAL") : TEXT("FREE RIDE"));
 }
 
 void UKiteSurfPauseMenuWidget::OnMainMenuClicked()

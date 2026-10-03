@@ -51,7 +51,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OnSchoolLessonStarted(FName LessonId);
 
-	/** Opens the gear screen; the ride starts when it is confirmed. */
+	/**
+	 * Opens the gear screen; the ride starts when it is confirmed. On a first run (onboarding neither
+	 * completed nor skipped) it starts the kite school's first lesson instead
+	 * (USchoolOnboardingSubsystem::StartFirstRunTutorial, docs/tutorials.md S7).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OnPlayClicked();
 

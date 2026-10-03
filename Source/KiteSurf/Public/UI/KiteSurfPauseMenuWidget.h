@@ -87,9 +87,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnRetryLessonClicked();
 
-	/** FREE RIDE: the running lesson ends (ALessonDirector::ExitToFreeRide), and the ride resumes. */
+	/**
+	 * FREE RIDE: the running lesson ends (ALessonDirector::ExitToFreeRide), and the ride resumes. In the
+	 * first-run tutorial (lessons A1 to A3, docs/tutorials.md S7) it reads SKIP TUTORIAL and also sets
+	 * bSkipOnboarding (USchoolOnboardingSubsystem::SkipTutorial).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnFreeRideClicked();
+
+	/** Whether the FREE RIDE item reads SKIP TUTORIAL: a first-run tutorial lesson is running. */
+	bool ShowsSkipTutorial() const;
+
+	/** The FREE RIDE item's label: SKIP TUTORIAL in the first-run tutorial, FREE RIDE otherwise. */
+	FText GetFreeRideLabel() const;
 
 	/** The lesson running in this ride, or null in free ride. */
 	class ALessonDirector* GetRunningLesson() const;
@@ -117,6 +127,8 @@ public:
 
 private:
 	void BuildNavigation();
+	/** The game instance's first-run tutorial, or null (a world without a game instance). */
+	class USchoolOnboardingSubsystem* GetOnboarding() const;
 	FKiteMenuNavigator Navigator;
 
 	TSharedPtr<SButton> SlateResumeButton;

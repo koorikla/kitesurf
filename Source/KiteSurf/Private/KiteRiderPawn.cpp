@@ -154,6 +154,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderFloatLeanDeg = 30.0f;
 	RiderAirHangLeanDeg = 38.0f;
 	RiderLoadLeanDeg = 20.0f;
+	RiderHarnessLeanDeg = 15.0f;
 	RiderSwitchDelaySeconds = 0.4f;
 	RiderSwitchTurnRateDeg = 540.0f;
 	HarnessHookOffsetCm = FVector(22.0f, 0.0f, 16.0f);
@@ -821,7 +822,7 @@ void AKiteRiderPawn::LogPhysicsTelemetry()
 	}
 	if (!bLoggedTelemetryHeader)
 	{
-		UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust,heel_deg,leeway_deg,side_n,normal_side_n,board_drag_n,water_z,surface_vz,water_up_n,absorbing"));
+		UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust,heel_deg,leeway_deg,side_n,normal_side_n,board_drag_n,water_z,surface_vz,water_up_n,absorbing,yaw_deg,upwind_of_beam_deg,harness,harness_lean,stance"));
 		bLoggedTelemetryHeader = true;
 	}
 	// Positions in cm and velocities in cm/s, as the engine has them.
@@ -836,13 +837,18 @@ void AKiteRiderPawn::LogPhysicsTelemetry()
 	// its normal force and its drag (N), signed across the board (positive to its right) or along it.
 	const FVector BoardRight = FVector::CrossProduct(FVector::UpVector, FRotator(0.0f, SimRotation.Rotator().Yaw, 0.0f).Vector());
 	// Then the water under the board (cm), how fast it rises there (cm/s), the water's vertical force
-	// on the board (N) and whether the touchdown absorber is on.
-	UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,%.4f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%.3f,%d,%.3f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d"),
+	// on the board (N) and whether the touchdown absorber is on. Then the board's heading (deg), its
+	// angle upwind of the beam reach of the pull, whether the harness limited it (1, or 2 with the carve
+	// held against the limit), the rider's lean back against the harness (0..1) and the rail they face
+	// (+1 the board's right).
+	const int32 HarnessState = BoardStep.bHarnessActive ? (BoardStep.bAgainstHarness ? 2 : 1) : 0;
+	UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,%.4f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%.3f,%d,%.3f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%.2f,%.2f,%d,%.3f,%.0f"),
 		SimTimeSeconds, RiderPos.X, RiderPos.Y, RiderPos.Z, RiderVel.X, RiderVel.Y, RiderVel.Z,
 		KitePos.X, KitePos.Y, KitePos.Z, KiteVel.X, KiteVel.Y, KiteVel.Z,
 		Kite->GetLineTensionN(), KiteStep.AlphaDeg, KiteStep.LiftCoefficient, static_cast<int32>(BoardMovement->GetBoardState()), Gust,
 		BoardStep.HeelDeg, BoardStep.LeewayDeg, FVector::DotProduct(BoardStep.SideForceN, BoardRight), FVector::DotProduct(BoardStep.NormalSideForceN, BoardRight), BoardStep.DragForceN.Size(),
-		BoardStep.WaterHeightCm, BoardStep.SurfaceVerticalSpeedCmS, BoardStep.WaterVerticalForceN, BoardStep.bAbsorbing ? 1 : 0);
+		BoardStep.WaterHeightCm, BoardStep.SurfaceVerticalSpeedCmS, BoardStep.WaterVerticalForceN, BoardStep.bAbsorbing ? 1 : 0,
+		FRotator::NormalizeAxis(SimRotation.Rotator().Yaw), BoardStep.UpwindOfBeamDeg, HarnessState, BoardMovement->GetHarnessLeanAmount(), RiderStanceSide);
 #endif
 }
 
@@ -909,8 +915,12 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 	float HeadingDeg = FRotator::NormalizeAxis(GetActorRotation().Yaw);
 	HeadingDeg = HeadingDeg < 0.0f ? HeadingDeg + 360.0f : HeadingDeg;
 	const float Gust = Wind ? Wind->GetGustFactorAtTime(RiderAt, SimTime) : 1.0f;
-	const FString RiderText = FString::Printf(TEXT("%.1f kn  heading %.0f\nleeway %.1f deg  heel %.1f deg\nside %.0f N  normal %.0f N\n%s%s\nwater %.0f cm rising %.1f m/s, holds %.0f N%s\nlast landing %.1f g%s\ngust %.2f"),
-		KiteUnits::CmSToKnots(BoardVelocityNow.Size2D()), HeadingDeg, BoardStep.LeewayDeg, BoardStep.HeelDeg, BoardStep.SideForceN.Size(), BoardStep.NormalSideForceN.Size(),
+	// The harness: the heading against the beam reach of the pull and its limit, and the lean back.
+	const FString HarnessText = BoardStep.bHarnessActive
+		? FString::Printf(TEXT("%+.0f deg off the pull's beam (limit %.0f)%s  lean %.2f"), BoardStep.UpwindOfBeamDeg, BoardMovement->MaxUpwindHeadingDeg, BoardStep.bAgainstHarness ? TEXT(", AGAINST") : TEXT(""), BoardMovement->GetHarnessLeanAmount())
+		: FString::Printf(TEXT("harness free  lean %.2f"), BoardMovement->GetHarnessLeanAmount());
+	const FString RiderText = FString::Printf(TEXT("%.1f kn  heading %.0f\n%s\nleeway %.1f deg  heel %.1f deg\nside %.0f N  normal %.0f N\n%s%s\nwater %.0f cm rising %.1f m/s, holds %.0f N%s\nlast landing %.1f g%s\ngust %.2f"),
+		KiteUnits::CmSToKnots(BoardVelocityNow.Size2D()), HeadingDeg, *HarnessText, BoardStep.LeewayDeg, BoardStep.HeelDeg, BoardStep.SideForceN.Size(), BoardStep.NormalSideForceN.Size(),
 		BoardStateName(BoardMovement->GetBoardState()), BoardMovement->IsFloating() ? TEXT(", floating") : TEXT(""),
 		RiderAt.Z - BoardStep.WaterHeightCm, BoardStep.SurfaceVerticalSpeedCmS / KiteUnits::CmPerM, BoardStep.WaterVerticalForceN, BoardStep.bAbsorbing ? TEXT(", absorbing") : TEXT(""),
 		BoardMovement->GetLastLandingG(), BoardMovement->WasLastLandingHot() ? TEXT(" HOT") : TEXT(""), Gust);
@@ -1151,12 +1161,15 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
 		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
 	}
-	// Loading: the rider sits back away from the kite, weight low over the back of the board.
+	// Loading: the rider sits back away from the kite, weight low over the back of the board. Holding
+	// the carve against the harness's limit (the board pointed as far from the pull as the body can
+	// twist), they lean back against the hook.
 	const float Load = BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f;
-	if (Load > 0.0f)
+	const float HarnessLean = BoardMovement ? BoardMovement->GetHarnessLeanAmount() : 0.0f;
+	if (Load > 0.0f || HarnessLean > 0.0f)
 	{
 		const FVector Away = bHasKite ? -TowardsKite : -Facing;
-		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
+		BodyUp += Away * (FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load)) + FMath::Tan(FMath::DegreesToRadians(RiderHarnessLeanDeg * HarnessLean)));
 	}
 	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
 

@@ -70,6 +70,12 @@ struct FBoardStepDebug
 	float WaterVerticalForceN = 0.0f;
 	/** True while the touchdown absorber is taking the board's sink out. */
 	bool bAbsorbing = false;
+	/** True while the harness limited the heading this step: on the water, not floating, lines taut (UBoardMovementComponent::MaxUpwindHeadingDeg). */
+	bool bHarnessActive = false;
+	/** The heading's angle upwind of the beam reach of the pull (deg), after the step's turn; 0 when the harness was not active. See UBoardMovementComponent::GetUpwindOfBeamDeg. */
+	float UpwindOfBeamDeg = 0.0f;
+	/** True while the carve input was held against the harness limit this step, which builds the harness lean. */
+	bool bAgainstHarness = false;
 };
 
 /** A clean landing, with its load in g: 1 + v^2 / (2 g s), v the sink into the water, s the absorb distance (UBoardMovementComponent::GetLastLandingG). */
@@ -528,11 +534,14 @@ public:
 	float HeelResponse;
 
 	/**
-	 * Heel the full carve input adds towards the inside of the turn (deg), on top of the balance: the
-	 * rider leans into the carve, so the water's normal force on the board tilts into the turn and
-	 * pulls the velocity round after the heading (docs/physics/plan-2.md item 3c). Turning towards the
-	 * kite it takes the edge off and lets the pull across turn the board; turning away it digs the
-	 * rail in harder. The board is drawn at this heel too.
+	 * Most heel a carve adds towards the inside of the turn (deg), on top of the balance: the rider
+	 * leans into the carve, so the water's normal force on the board tilts into the turn and pulls the
+	 * velocity round after the heading (docs/physics/plan-2.md item 3c). The lean is the one the turn
+	 * needs, tan(lean) = v w / g with v the board's speed and w the rate the carve is turning it at
+	 * (docs/physics/plan-3.md item 3; research: 35 deg at 6.5 m/s and 60 deg/s), up to this: a slow
+	 * board, or one the harness stops turning, leans little. Turning towards the kite it takes the edge
+	 * off and lets the pull across turn the board; turning away it digs the rail in harder. The board
+	 * is drawn at this heel too.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
 	float CarveHeelDeg;
@@ -568,6 +577,65 @@ public:
 	/** Angle between the board's velocity over the water and its axis, either end first (deg), as last stepped; positive sliding to its right. */
 	UFUNCTION(BlueprintPure, Category = "Board|Physics")
 	float GetLeewayDeg() const { return LastStepDebug.LeewayDeg; }
+
+	/**
+	 * The harness (docs/physics/plan-3.md item 3). The hook is on the front of the rider's waist and
+	 * the feet are in the straps, so the board can only point so far from the pull of the lines before
+	 * the body cannot twist further. The beam reach of the pull is the heading square to the line
+	 * force's horizontal direction, on the side the board is travelling; on the water, not floating and
+	 * with the lines taut, the carve cannot take the heading more than this upwind of it (deg), on
+	 * either tack and in either stance. Pointing that high the kite's pull is behind the board, which
+	 * slows; more stick is lean against the harness (HarnessLeanAmount). A heading outside the limit
+	 * because the pull moved (the kite flown somewhere else) is brought back at HarnessYawRateDegPerS.
+	 * With slack lines, floating, crashing or in the air there is no limit. Carving towards the kite
+	 * is not limited.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness", meta = (ClampMin = "0.0", ClampMax = "89.0"))
+	float MaxUpwindHeadingDeg;
+
+	/** The harness limits the heading (MaxUpwindHeadingDeg). Off, the carve turns the board through any angle from the pull, as before plan-3 item 3. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness")
+	bool bHarnessLimit;
+
+	/** How fast the harness lean builds while the carve input is held against the limit (1/s), up to the input's size. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness", meta = (ClampMin = "0.0"))
+	float HarnessLeanRatePerS;
+
+	/** How fast the harness lean lets go once the input is no longer held against the limit (1/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness", meta = (ClampMin = "0.0"))
+	float HarnessLeanReleaseRatePerS;
+
+	/**
+	 * Heel the full harness lean adds on top of the balance (deg), like the load's LoadExtraHeelDeg: the
+	 * rider leaning back against the hook drives the edge in harder, so the heel and the planing hull's
+	 * pressure drag slow the board. Up to MaxHeelDeg with the rest of the heel.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness", meta = (ClampMin = "0.0"))
+	float HarnessLeanHeelDeg;
+
+	/** How fast the harness turns a heading that is outside MaxUpwindHeadingDeg back inside it (deg/s), on the water with the lines taut. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Harness", meta = (ClampMin = "0.0"))
+	float HarnessYawRateDegPerS;
+
+	/** How far the rider leans back against the harness, 0..1: it builds while the carve input pushes the heading against MaxUpwindHeadingDeg. For the rider's pose and the debug text. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetHarnessLeanAmount() const { return HarnessLeanAmount; }
+
+	/**
+	 * The heading's angle upwind of the beam reach of the pull (deg) in the last step: 0 square to the
+	 * pull, positive turned away from the kite, -90 pointing at it. 0 when the harness was not active
+	 * (IsHarnessActive).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetUpwindOfBeamDeg() const { return LastStepDebug.UpwindOfBeamDeg; }
+
+	/** True if the harness limited the heading in the last step: on the water, not floating, with the lines taut and pulling sideways. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	bool IsHarnessActive() const { return LastStepDebug.bHarnessActive; }
+
+	/** The angle of a heading (deg) upwind of the beam reach of a pull along PullYawDeg: |NormalizeAxis(HeadingYawDeg - PullYawDeg)| - 90. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	static float UpwindOfBeamForHeading(float HeadingYawDeg, float PullYawDeg);
 
 	/**
 	 * Drag area (drag coefficient times frontal area, m^2) of the rider and board in the air. While
@@ -668,6 +736,10 @@ private:
 	float LoadAmount = 0.0f;
 	bool bLoadHeld = false;
 	float SmoothedCarveInput;
+	/** How far the rider leans back against the harness, 0..1 (GetHarnessLeanAmount). */
+	float HarnessLeanAmount = 0.0f;
+	/** The rate the carve turned the board at in the last step (deg/s), positive to the right; the lean into the turn follows it. */
+	float CarveYawRateDegPerS = 0.0f;
 	bool bLiftedByKite;
 	/** The board's heel (deg), signed as GetHeelDeg: BalanceHeelDeg less the lean into a carve. */
 	float HeelDeg = 0.0f;
@@ -699,6 +771,16 @@ private:
 	 * the surface's vertical speed under the board since the last step (DeltaTime s ago).
 	 */
 	void SampleWaterUnderBoard(const FVector& Location, float Yaw, float DeltaTime);
+
+	/**
+	 * The harness's limit on this step's turn of the heading from YawDeg to TargetYawDeg, with the pull
+	 * along PullYawDeg (docs/physics/plan-3.md item 3); returns the yaw the board may turn to (deg). A
+	 * turn that would take the heading past MaxUpwindHeadingDeg upwind of the beam reach of the pull
+	 * stops at the limit; a heading already past it comes back at HarnessYawRateDegPerS, or faster if
+	 * the turn asked for that. Turns towards the kite are not limited. bOutHeldAgainst says whether the
+	 * turn asked to go further away from the kite than it was allowed to.
+	 */
+	float LimitTurnByHarness(float YawDeg, float TargetYawDeg, float PullYawDeg, float DeltaTime, bool& bOutHeldAgainst) const;
 
 	/** Where and how high the water under the board's centre was at the last step, for the surface's vertical speed. */
 	bool bHasWaterTrack = false;

@@ -417,6 +417,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderLoadLeanDeg;
 
+	/** Extra lean back against the harness at full UBoardMovementComponent::GetHarnessLeanAmount, the carve held against the limit of how far the board can point from the pull (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
+	float RiderHarnessLeanDeg;
+
 	/** Most the rider hangs back from the harness in the air, with the kite low and pulling (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderAirHangLeanDeg;

@@ -42,6 +42,11 @@ namespace
 	// A loaded rider's legs keep the board within this height above its ride height until the lines
 	// lift them off (cm): the band the 20 cm water-contact clamp kept every board in before plan-2 item 4.
 	constexpr float LoadHoldHeightCm = 20.0f;
+
+	// Below this horizontal line pull (N) its direction across the water means little (the kite overhead,
+	// or the lines barely loaded), and the harness does not limit the heading (docs/physics/plan-3.md
+	// item 3).
+	constexpr float HarnessMinHorizontalPullN = 50.0f;
 }
 
 UBoardMovementComponent::UBoardMovementComponent()
@@ -107,6 +112,14 @@ UBoardMovementComponent::UBoardMovementComponent()
 	LateralLiftSlopePerRad = 2.5f;   // 2 to 3 /rad for these low aspect ratios
 	LeewayStallDeg = 12.0f;
 	TailWeightRailScale = 4.0f;      // weight fully back sinks the tail and buries the rail
+
+	// The harness limits how far the board can point from the pull (docs/physics/plan-3.md item 3).
+	MaxUpwindHeadingDeg = 50.0f;     // past the beam reach of the pull, away from the kite; tune 40 to 60
+	bHarnessLimit = true;
+	HarnessLeanRatePerS = 1.0f;      // a full lean against the hook in a second
+	HarnessLeanReleaseRatePerS = 3.0f;
+	HarnessLeanHeelDeg = 20.0f;      // the lean back drives the edge in, like the load
+	HarnessYawRateDegPerS = 90.0f;   // a heading the pull has left behind comes back in well under a second
 
 	// Jump tunables (Spec defaults)
 	PopImpulseKgCmPerS = 21000.0f; // kg*cm/s: about 2.5 m/s from the legs alone; height comes from the kite
@@ -719,6 +732,17 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		// 6. Orientation Alignment: keep roll/pitch aligned with water normal + edge angle
 		SmoothedCarveInput = FMath::FInterpTo(SmoothedCarveInput, CurrentEdgeInput, DeltaTime, CarveResponse);
 		FRotator TargetRotation = Rotation;
+
+		// The harness (docs/physics/plan-3.md item 3): standing on the board on the water with the lines
+		// taut and pulling across the water, the heading is held within MaxUpwindHeadingDeg upwind of
+		// the beam reach of the pull. The pull's direction is the line force's, the board's only
+		// external force.
+		const UKiteComponent* HarnessKite = GetOwner() ? GetOwner()->FindComponentByClass<UKiteComponent>() : nullptr;
+		const bool bHarnessActive = bHarnessLimit && !bIsAirborne && !bHydrodynamicsDisabled && !IsFloating() && HarnessKite && HarnessKite->AreLinesTaut()
+			&& ExternalForce2D.SizeSquared() > FMath::Square(KiteUnits::NToUnrealForce(HarnessMinHorizontalPullN));
+		const float PullYawDeg = bHarnessActive ? FMath::RadiansToDegrees(FMath::Atan2(ExternalForce2D.Y, ExternalForce2D.X)) : 0.0f;
+		bool bTurnedByCarve = false;
+		bool bSwitchedEnds = false;
 		if (bIsAirborne)
 		{
 			// In the air the carve input spins the board. Left alone, the rider brings it back in
@@ -761,6 +785,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				TargetRotation.Roll = -TargetRotation.Roll;
 				HeelDeg = -HeelDeg; // the same rail in the water, seen from the new nose
 				BalanceHeelDeg = -BalanceHeelDeg;
+				bSwitchedEnds = true;
 			}
 			// Edging changes board heading relative to velocity
 			else if (FMath::Abs(ForwardSpeed) > 50.0f && FMath::Abs(SmoothedCarveInput) > 0.02f)
@@ -770,6 +795,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				const float DeltaYaw = FRotator::NormalizeAxis(DesiredHeading - Rotation.Yaw);
 				const float MaxTurnStep = CarveTurnRate * FMath::Abs(SmoothedCarveInput) * FMath::Clamp(Speed2D / PlaningThresholdCmS, 0.5f, 1.0f) * DeltaTime;
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + FMath::Clamp(DeltaYaw, -MaxTurnStep, MaxTurnStep));
+				bTurnedByCarve = true;
 			}
 			// Off the plane the rider can pivot the board freely, and lines it up for the kite to
 			// pull it back onto the plane (the water-start position).
@@ -793,9 +819,14 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				}
 				const float PullHeading = FMath::RadiansToDegrees(FMath::Atan2(PivotDirection.Y, PivotDirection.X));
 				float YawError = FRotator::NormalizeAxis(PullHeading - Rotation.Yaw);
-				if (FMath::Abs(YawError) > 90.0f)
+				// Either end of a twin-tip will do, the nearer one; but in the harness not a nose pointing
+				// further from the pull than the body can twist, which the board could only reach by
+				// turning away from the kite (one of the two always points towards it).
+				const bool bNoseThereAllowed = !bHarnessActive || UpwindOfBeamForHeading(PullHeading, PullYawDeg) <= MaxUpwindHeadingDeg;
+				const bool bTailThereAllowed = !bHarnessActive || UpwindOfBeamForHeading(PullHeading + 180.0f, PullYawDeg) <= MaxUpwindHeadingDeg;
+				if ((FMath::Abs(YawError) > 90.0f && bTailThereAllowed) || !bNoseThereAllowed)
 				{
-					YawError = FRotator::NormalizeAxis(YawError + 180.0f); // either end of a twin-tip will do
+					YawError = FRotator::NormalizeAxis(YawError + 180.0f);
 				}
 				// Full rate when stopped, easing to a fifth just below planing speed, so a slow drift
 				// in the wrong direction still comes round.
@@ -804,6 +835,30 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				TargetRotation.Yaw = FRotator::NormalizeAxis(Rotation.Yaw + FMath::Clamp(YawError, -MaxStep, MaxStep));
 			}
 		}
+
+		// The harness holds whatever turned the board this step within the limit (a twin-tip swapping
+		// ends keeps the end it travels on, so it is left alone); the carve input pushed against it
+		// becomes the rider's lean back against the hook, which builds up to the input's size and lets
+		// go once the input is no longer held against the limit.
+		bool bAgainstHarness = false;
+		if (bHarnessActive)
+		{
+			if (!bSwitchedEnds)
+			{
+				TargetRotation.Yaw = LimitTurnByHarness(Rotation.Yaw, TargetRotation.Yaw, PullYawDeg, DeltaTime, bAgainstHarness);
+				bAgainstHarness &= bTurnedByCarve;
+			}
+			LastStepDebug.bHarnessActive = true;
+			LastStepDebug.UpwindOfBeamDeg = UpwindOfBeamForHeading(TargetRotation.Yaw, PullYawDeg);
+		}
+		// The rate the carve turned the board at, after the harness: the rider's lean into the turn
+		// in the next step is the one this turn needs.
+		CarveYawRateDegPerS = (bTurnedByCarve && DeltaTime > KINDA_SMALL_NUMBER) ? FRotator::NormalizeAxis(TargetRotation.Yaw - Rotation.Yaw) / DeltaTime : 0.0f;
+		LastStepDebug.bAgainstHarness = bAgainstHarness;
+		const float LeanTarget = bAgainstHarness ? FMath::Abs(CurrentEdgeInput) : 0.0f;
+		HarnessLeanAmount = HarnessLeanAmount < LeanTarget
+			? FMath::Min(HarnessLeanAmount + FMath::Max(HarnessLeanRatePerS, 0.0f) * DeltaTime, LeanTarget)
+			: FMath::Max(HarnessLeanAmount - FMath::Max(HarnessLeanReleaseRatePerS, 0.0f) * DeltaTime, LeanTarget);
 
 		// 7. Apply movement via SafeMoveUpdatedComponent
 		const FVector MoveDelta = Velocity * DeltaTime;
@@ -908,6 +963,39 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 	}
 }
 
+float UBoardMovementComponent::UpwindOfBeamForHeading(float HeadingYawDeg, float PullYawDeg)
+{
+	// The beam reach of the pull is square to it on the side the heading is on: 90 deg either way from
+	// the pull. Past it, away from the kite, is upwind of it.
+	return FMath::Abs(FRotator::NormalizeAxis(HeadingYawDeg - PullYawDeg)) - 90.0f;
+}
+
+float UBoardMovementComponent::LimitTurnByHarness(float YawDeg, float TargetYawDeg, float PullYawDeg, float DeltaTime, bool& bOutHeldAgainst) const
+{
+	// The angle from the pull to the heading, on the side of the pull the board is on (0 pointing at the
+	// kite, 90 on the beam reach, 180 straight away from it), before and after the turn; the turn is
+	// followed from that side, so a turn through the kite's direction onto its other side is a turn
+	// towards it, allowed, and one that would carry the heading round past straight away from the kite
+	// is stopped at the limit on the way.
+	const float FromPullDeg = FRotator::NormalizeAxis(YawDeg - PullYawDeg);
+	const float Side = FromPullDeg >= 0.0f ? 1.0f : -1.0f;
+	const float TurnDeg = FRotator::NormalizeAxis(TargetYawDeg - YawDeg);
+	const float OffPullBefore = Side * FromPullDeg;
+	const float OffPullWanted = OffPullBefore + Side * TurnDeg;
+	const float OffPullLimit = 90.0f + FMath::Clamp(MaxUpwindHeadingDeg, 0.0f, 89.0f);
+	// Inside the limit the turn may go up to it; outside it (the pull moved) the harness brings the
+	// board back at its own rate, unless the turn itself comes back faster.
+	const float OffPullAllowed = OffPullBefore <= OffPullLimit
+		? OffPullLimit
+		: FMath::Max(OffPullBefore - FMath::Max(HarnessYawRateDegPerS, 0.0f) * DeltaTime, OffPullLimit);
+	bOutHeldAgainst = OffPullWanted > OffPullAllowed && Side * TurnDeg > 0.0f;
+	if (OffPullWanted <= OffPullAllowed)
+	{
+		return TargetYawDeg;
+	}
+	return FRotator::NormalizeAxis(YawDeg + Side * (OffPullAllowed - OffPullBefore));
+}
+
 float UBoardMovementComponent::LandingGForSink(float SinkMS, float AbsorbDistanceCm)
 {
 	// A constant deceleration v^2 / (2 s) takes the sink out over s, on top of the rider's weight. The
@@ -960,18 +1048,26 @@ FVector UBoardMovementComponent::UpdateHeelAndNormalSideForce(float DeltaTime, c
 		{
 			TargetHeelDeg = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(PullAcrossN), CarriedN));
 		}
-		TargetHeelDeg = FMath::Min(TargetHeelDeg + LoadAmount * LoadExtraHeelDeg, MaxHeelDeg);
+		// The load and the lean back against the harness both drive the edge in past the balance.
+		TargetHeelDeg = FMath::Min(TargetHeelDeg + LoadAmount * LoadExtraHeelDeg + HarnessLeanAmount * HarnessLeanHeelDeg, MaxHeelDeg);
 		// Against the pull; with no pull across the board the rider stays on the rail they are on.
 		const float PullSide = FMath::Abs(PullAcrossN) > KINDA_SMALL_NUMBER ? FMath::Sign(PullAcrossN) : (BalanceHeelDeg < 0.0f ? -1.0f : 1.0f);
 		TargetHeelDeg *= PullSide;
 	}
 	BalanceHeelDeg += (TargetHeelDeg - BalanceHeelDeg) * (1.0f - FMath::Exp(-FMath::Max(HeelResponse, 0.0f) * DeltaTime));
 
-	// Carving, the rider leans into the turn as the board yaws, with the same smoothed input
-	// (docs/physics/plan-2.md item 3c): a turn to the right (positive input) tilts the normal force
-	// to the board's right, which is negative heel. Towards the kite that takes the edge off and the
-	// pull across turns the board; away from it the rail digs in.
-	const float CarveLeanDeg = bOnWater ? SmoothedCarveInput * CarveHeelDeg : 0.0f;
+	// Carving, the rider leans into the turn the board is making (docs/physics/plan-2.md item 3c): a
+	// turn to the right tilts the normal force to the board's right, which is negative heel. Towards
+	// the kite that takes the edge off and the pull across turns the board; away from it the rail digs
+	// in. The lean is the one the turn needs, tan(lean) = v w / g (research: 35 deg at 6.5 m/s and
+	// 60 deg/s), w the rate the carve turned the board at in the last step, up to CarveHeelDeg. Until
+	// plan-3 item 3 it was CarveHeelDeg times the input whatever the board did: on a board slowed
+	// nearly to a stop that lean pushed it sideways far harder than the pull across, swung its
+	// velocity round, and the carve, which leads the velocity, followed it through the wind. A turn
+	// the harness stops has no lean into it; the lean back against the hook takes its place.
+	const float TurnRadS = FMath::DegreesToRadians(CarveYawRateDegPerS);
+	const float TurnLeanDeg = FMath::Min(FMath::RadiansToDegrees(FMath::Atan(KiteUnits::CmToM(Velocity.Size2D()) * FMath::Abs(TurnRadS) / KiteUnits::GravityMS2)), FMath::Max(CarveHeelDeg, 0.0f));
+	const float CarveLeanDeg = bOnWater ? FMath::Sign(CarveYawRateDegPerS) * TurnLeanDeg : 0.0f;
 	HeelDeg = FMath::Clamp(BalanceHeelDeg - CarveLeanDeg, -MaxHeelDeg, MaxHeelDeg);
 	LastStepDebug.HeelDeg = HeelDeg;
 
@@ -1150,6 +1246,8 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 	bWasInWaterContact = true;
 	HeelDeg = 0.0f;
 	BalanceHeelDeg = 0.0f;
+	HarnessLeanAmount = 0.0f;
+	CarveYawRateDegPerS = 0.0f;
 	bIsCrashing = false;
 	CrashTimer = 0.0f;
 	CrashInitialVelocity = FVector::ZeroVector;

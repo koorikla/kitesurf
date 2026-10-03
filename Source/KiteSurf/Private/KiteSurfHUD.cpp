@@ -1485,7 +1485,8 @@ void AKiteSurfHUD::DrawHeat(float ScreenW, float ScreenH)
 		}
 		const float ListPad = 10.0f * UiScale;
 		const float Left = ScreenW - Margin - ListW - 2.0f * ListPad;
-		const float Top = FMath::Max(250.0f, ScreenH * 0.24f);
+		// Clear of the wind flag's panel (drawn at a fixed 64 px, about 195 px tall).
+		const float Top = FMath::Max(272.0f, ScreenH * 0.26f);
 		DrawRect(Panel, Left, Top, ListW + 2.0f * ListPad, ListH + 2.0f * ListPad);
 		float LineY = Top + ListPad;
 		for (int32 Index = 0; Index < List.Num(); ++Index)
@@ -1549,7 +1550,8 @@ void AKiteSurfHUD::DrawHeat(float ScreenW, float ScreenH)
 	}
 	CardH -= Spacing;
 	const float Pad = 24.0f * UiScale;
-	const float Top = FMath::Max(ScreenH * 0.25f, Margin + Pad);
+	// Where the session's card goes: below the jump readout, the trick card and its NEW BEST line.
+	const float Top = FMath::Max(ScreenH * 0.3f, Margin + Pad);
 	DrawRect(FLinearColor(0.01f, 0.03f, 0.08f, 0.85f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, CardH + 2.0f * Pad);
 	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.9f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, 3.0f * UiScale);
 	float Y = Top;

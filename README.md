@@ -72,6 +72,9 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Pre-wind a rotation: hold a direction while loading | WASD while holding Space | Left stick while holding the bottom face button |
 | In the air: roll / flip / spin. Towards the side of the screen your back is on is a back roll (a flat spin if you popped with no pre-wind); S / pulled back is a backflip | A / D, W / S | Left stick |
 | Hold jump in the air: tuck (spins faster) | Space | Bottom face button |
+| In the air: grab the board with the front / back hand (hold) | Q / E | LB / RB |
+| While grabbing: pick the zone (nose, toe edge, heel edge, tail) | W / S: nose / tail; A / D towards your chest: toe edge, your back: heel edge | Left stick, same directions |
+| In the air: back foot out of the strap (hold; back in before landing) | C | Left stick click |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, gear, session, school, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |

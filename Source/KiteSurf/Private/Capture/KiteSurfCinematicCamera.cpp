@@ -86,6 +86,7 @@ bool AKiteSurfCinematicCamera::ParseShot(const FString& Name, EKiteSurfShot& Out
 		{ TEXT("Orbit"), EKiteSurfShot::Orbit },
 		{ TEXT("Wide"), EKiteSurfShot::Wide },
 		{ TEXT("KiteView"), EKiteSurfShot::KiteView },
+		{ TEXT("Close"), EKiteSurfShot::Close },
 	};
 	for (const TPair<const TCHAR*, EKiteSurfShot>& Entry : Names)
 	{
@@ -152,6 +153,16 @@ FKiteSurfShotFrame AKiteSurfCinematicCamera::ComputeShotFrame(EKiteSurfShot InSh
 		Frame.LookAt = RiderLocation;
 		Frame.FieldOfViewDeg = 70.0f;
 		break;
+	case EKiteSurfShot::Close:
+		// On the kite's side of the rider and a little ahead, level with the board: the chest, the toe
+		// edge and the hands face the lens.
+		Frame.Location = RiderLocation - Axes.Upwind * 330.0f + Axes.Heading * 260.0f + Up * 40.0f;
+		// Never under the water (a crash sinks the rider): rendering from below the surface lost the
+		// Vulkan device in an offscreen run.
+		Frame.Location.Z = FMath::Max(Frame.Location.Z, WaterZ + 80.0f);
+		Frame.LookAt = RiderLocation + Up * 60.0f;
+		Frame.FieldOfViewDeg = 50.0f;
+		break;
 	case EKiteSurfShot::Chase:
 	default:
 		Frame.Location = OnWater - Axes.Heading * 1000.0f + Up * 300.0f;
@@ -159,7 +170,7 @@ FKiteSurfShotFrame AKiteSurfCinematicCamera::ComputeShotFrame(EKiteSurfShot InSh
 		Frame.FieldOfViewDeg = 90.0f;
 		break;
 	}
-	if (InShot != EKiteSurfShot::KiteView)
+	if (InShot != EKiteSurfShot::KiteView && InShot != EKiteSurfShot::Close)
 	{
 		// The rider first; then the kite too, by opening the lens as far as needed (to a point) and,
 		// if that is not enough, by standing further back. A planted shot stays where it is.

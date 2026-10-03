@@ -9,6 +9,7 @@
 class UBoardMovementComponent;
 class UKiteComponent;
 class URiderAttitudeComponent;
+class FGrabState;
 
 /**
  * Follows the rider's jumps and names, grades and scores each one (docs/tricks/T0.md sections 3
@@ -31,6 +32,8 @@ class URiderAttitudeComponent;
  *   on the owner), counted by the recorder's FRotationRecognizer on every step the attitude is
  *   simulated: inversions, spin half turns and the landing stance.
  * - Landing cause: GetLastLandingVerdict().Cause, the evaluator's reason for grading it down.
+ * - Grabs and the one-footer (T2.1, T2.2): the owner's FGrabState (SetGrabSource), stepped before
+ *   the board, so on the touchdown step a grab still held is counted to the landing.
  *
  * Finished jumps go to UKiteSurfGameInstance::RecordTrickLanding when the world has that game
  * instance; nothing is written to disk here.
@@ -45,6 +48,9 @@ public:
 
 	/** The board and kite to follow. The pawn sets them in its constructor. */
 	void SetSources(UBoardMovementComponent* InBoard, UKiteComponent* InKite);
+
+	/** The rider's grabs and one-footer (AKiteRiderPawn's FGrabState); null for none. The pawn sets it in its constructor. */
+	void SetGrabSource(const FGrabState* InGrabs) { GrabSource = InGrabs; }
 
 	/** One fixed step, after the kite's and the board's: reads them and steps the jump session. */
 	void StepTracker(float StepSeconds);
@@ -90,6 +96,9 @@ private:
 	/** The rider attitude, found on the owner at the first step; null for a pawn without one (no rotation is counted). */
 	UPROPERTY(Transient)
 	TObjectPtr<URiderAttitudeComponent> Attitude;
+
+	/** Owned by the pawn, which outlives this component. */
+	const FGrabState* GrabSource = nullptr;
 
 	FJumpSession Session;
 	FJumpRecord LiveJump;

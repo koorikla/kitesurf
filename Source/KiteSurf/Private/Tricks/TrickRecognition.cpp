@@ -138,7 +138,7 @@ float TrickRecognition::PeakTensionSinceTakeoffSeconds(const FJumpLoop& Loop)
 }
 
 FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, const FLoopClassifySettings& Settings,
-	const FLandingGradeSettings& GradeSettings)
+	const FLandingGradeSettings& GradeSettings, float MinGrabHoldSeconds)
 {
 	FTrickSignature Signature;
 	Signature.Loops = ClassifyLoops(Record.Loops, Settings);
@@ -148,6 +148,16 @@ FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, c
 	Signature.SpinHalfTurns = FMath::Max(Record.SpinHalfTurns, 0);
 	Signature.SpinSense = Signature.SpinHalfTurns > 0 ? Record.SpinSense : ETrickSense::None;
 	Signature.LandingStance = Record.LandingStance;
+
+	// Grabs and the one-footer (T2.1, T2.2): a grab counts once it has been held long enough.
+	for (const FTrickGrab& Grab : Record.Grabs)
+	{
+		if (Grab.HoldSeconds >= MinGrabHoldSeconds)
+		{
+			Signature.Grabs.Add(Grab);
+		}
+	}
+	Signature.bOneFooter = Record.bOneFooter;
 
 	// Early or late roll: the first inversion's start against the yank of the first completed kite or
 	// megaloop, given to every kite and megaloop entry so a chain still names as one.

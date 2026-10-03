@@ -71,6 +71,20 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestEqual(TEXT("IA_Pause is Boolean"), PauseAction->ValueType, EInputActionValueType::Boolean);
 	}
 
+	// The trick buttons are held: Boolean, each mapped once on the keyboard and once on the pad.
+	const TCHAR* TrickActionNames[] = { TEXT("IA_GrabFront"), TEXT("IA_GrabBack"), TEXT("IA_OneFoot") };
+	TArray<UInputAction*> TrickActions;
+	for (const TCHAR* Name : TrickActionNames)
+	{
+		UInputAction* Action = LoadObject<UInputAction>(nullptr, *FString::Printf(TEXT("/Game/Input/%s.%s"), Name, Name));
+		TestNotNull(FString::Printf(TEXT("%s asset exists and loads"), Name), Action);
+		if (Action)
+		{
+			TestEqual(FString::Printf(TEXT("%s is Boolean"), Name), Action->ValueType, EInputActionValueType::Boolean);
+			TrickActions.Add(Action);
+		}
+	}
+
 	UInputMappingContext* IMC = LoadObject<UInputMappingContext>(nullptr, TEXT("/Game/Input/IMC_Default.IMC_Default"));
 	TestNotNull(TEXT("IMC_Default asset exists and loads"), IMC);
 	if (IMC)
@@ -91,6 +105,19 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		}
 		TestTrue(TEXT("IMC_Default maps IA_Jump"), bHasJumpMapping);
 		TestTrue(TEXT("IMC_Default maps IA_Pause"), bHasPauseMapping);
+		for (const UInputAction* TrickAction : TrickActions)
+		{
+			int32 Count = 0;
+			for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+			{
+				if (Mapping.Action == TrickAction)
+				{
+					++Count;
+					TestEqual(FString::Printf(TEXT("%s on %s has no modifier"), *TrickAction->GetName(), *Mapping.Key.ToString()), Mapping.Modifiers.Num(), 0);
+				}
+			}
+			TestEqual(FString::Printf(TEXT("%s has a key and a button"), *TrickAction->GetName()), Count, 2);
+		}
 
 		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis, EKeys::Gamepad_RightY };
 		TSet<FKey> FoundNegativeKeys;
@@ -134,11 +161,19 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			{ EKeys::A, TEXT("IA_Edge") }, { EKeys::D, TEXT("IA_Edge") }, { EKeys::Gamepad_LeftX, TEXT("IA_Edge") },
 			{ EKeys::W, TEXT("IA_WeightShift") }, { EKeys::S, TEXT("IA_WeightShift") }, { EKeys::Gamepad_LeftY, TEXT("IA_WeightShift") },
 			{ EKeys::SpaceBar, TEXT("IA_Jump") }, { EKeys::Escape, TEXT("IA_Pause") }, { EKeys::R, TEXT("IA_Reset") },
+			// Grabs and the one-footer (T2.1, T2.2; docs/tricks.md 6.3).
+			{ EKeys::Q, TEXT("IA_GrabFront") }, { EKeys::Gamepad_LeftShoulder, TEXT("IA_GrabFront") },
+			{ EKeys::E, TEXT("IA_GrabBack") }, { EKeys::Gamepad_RightShoulder, TEXT("IA_GrabBack") },
+			{ EKeys::C, TEXT("IA_OneFoot") }, { EKeys::Gamepad_LeftThumbstick, TEXT("IA_OneFoot") },
 		};
-		// Looping needs no key of its own: it is the bar held towards the kite's side.
+		// Looping needs no key of its own: it is the bar held towards the kite's side. The shift keys and
+		// RB may be bound to tricks (RB is the back hand's grab, T2.1) but never to the steering
+		// (docs/tricks/README.md decision 7).
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
-			TestFalse(FString::Printf(TEXT("%s is not bound to a loop modifier"), *Mapping.Key.ToString()), Mapping.Key == EKeys::LeftShift || Mapping.Key == EKeys::RightShift || Mapping.Key == EKeys::Gamepad_RightShoulder);
+			const bool bModifierKey = Mapping.Key == EKeys::LeftShift || Mapping.Key == EKeys::RightShift || Mapping.Key == EKeys::Gamepad_RightShoulder;
+			TestFalse(FString::Printf(TEXT("%s is not bound to IA_Steer as a loop modifier"), *Mapping.Key.ToString()),
+				bModifierKey && Mapping.Action && Mapping.Action->GetName() == TEXT("IA_Steer"));
 		}
 
 		for (const FExpectedMapping& Expected : ExpectedMappings)
@@ -172,6 +207,13 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has WeightShiftAction"), CDO->GetWeightShiftAction());
 			TestNotNull(TEXT("BP_KiteRider has JumpAction"), CDO->GetJumpAction());
 			TestNotNull(TEXT("BP_KiteRider has PauseAction"), CDO->GetPauseAction());
+			TestNotNull(TEXT("BP_KiteRider has GrabFrontAction"), CDO->GetGrabFrontAction());
+			TestNotNull(TEXT("BP_KiteRider has GrabBackAction"), CDO->GetGrabBackAction());
+			TestNotNull(TEXT("BP_KiteRider has OneFootAction"), CDO->GetOneFootAction());
+			if (CDO->GetGrabBackAction())
+			{
+				TestEqual(TEXT("BP_KiteRider's GrabBackAction is IA_GrabBack"), CDO->GetGrabBackAction()->GetName(), FString(TEXT("IA_GrabBack")));
+			}
 			TestNotNull(TEXT("BP_KiteRider CDO has Kite component"), CDO->GetKite());
 			TestNotNull(TEXT("BP_KiteRider CDO has BoardMovement component"), CDO->GetBoardMovement());
 		}

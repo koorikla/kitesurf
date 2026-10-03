@@ -985,6 +985,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				LandingInputs.LandingG = LastLandingG;
 				LandingInputs.KiteElevationDeg = KiteElevationDeg;
 				LandingInputs.bHotLanding = bLastLandingHot;
+				LandingInputs.BackFoot = RiderBackFoot;
 				FLandingThresholds Thresholds = LandingThresholds;
 				Thresholds.CrashLandingG = CrashLandingG;
 				Thresholds.HotLandingSinkMS = HotLandingSinkMS;

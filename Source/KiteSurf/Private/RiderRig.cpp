@@ -100,7 +100,7 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 	// from a strap than the leg reaches: a rider leaning right out sits lower.
 	const float LegReach = (ThighLengthCm + ShinLengthCm) * 0.985f;
 	float Height = StandingPelvisHeightCm * (1.0f - CrouchDropFraction * FMath::Clamp(Input.Crouch, 0.0f, 1.0f));
-	for (int32 Try = 0; Try < 12; ++Try)
+	for (int32 Try = 0; Try < 12 && !Input.PelvisAnchor.IsSet(); ++Try)
 	{
 		Pose.Pelvis = BoardCentre + BoardUp * AnkleHeightCm + BodyUp * Height;
 		bool bReaches = true;
@@ -116,6 +116,11 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		}
 		Height *= 0.94f;
 	}
+	if (Input.PelvisAnchor.IsSet())
+	{
+		// The body holds still and the board comes to it (a grab in the air).
+		Pose.Pelvis = Input.PelvisAnchor.GetValue();
+	}
 
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
@@ -125,6 +130,13 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		// Knees forwards and a little apart.
 		Leg.Pole = Facing + Right * (0.35f * SideSign);
 		Leg.Joint = SolveTwoBone(Leg.Root, Ankles[Side], Leg.Pole, ThighLengthCm, ShinLengthCm, Leg.End);
+	}
+
+	// The fold at the hips: about the torso's own side axis, which the hips lie on, so the legs are
+	// untouched and only the shoulders (and so the arms) and the drawn torso come forwards.
+	if (Input.TorsoPitchDeg != 0.0f)
+	{
+		Pose.Torso = (Pose.Torso * FQuat(FVector::YAxisVector, FMath::DegreesToRadians(Input.TorsoPitchDeg))).GetNormalized();
 	}
 
 	// Until told where the bar is, the hands are held out in front at waist height.

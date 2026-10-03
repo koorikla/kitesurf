@@ -6,6 +6,7 @@
 #include "RiderCharacter.h"
 #include "KiteMotionBar.h"
 #include "RiderRig.h"
+#include "Tricks/GrabState.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -152,6 +153,9 @@ public:
 	UInputAction* GetJumpAction() const { return JumpAction.Get(); }
 	UInputAction* GetPauseAction() const { return PauseAction.Get(); }
 	UInputAction* GetRecenterMotionAction() const { return RecenterMotionAction.Get(); }
+	UInputAction* GetGrabFrontAction() const { return GrabFrontAction.Get(); }
+	UInputAction* GetGrabBackAction() const { return GrabBackAction.Get(); }
+	UInputAction* GetOneFootAction() const { return OneFootAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
@@ -222,6 +226,55 @@ public:
 	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void OnJumpPressed(const FInputActionValue& Value);
 	void OnJumpReleased(const FInputActionValue& Value);
+
+	/**
+	 * Grabs and the one-footer (T2.1, T2.2): IA_GrabFront (LB, Q), IA_GrabBack (RB, E) and IA_OneFoot
+	 * (L3, C), Started and Completed. In the air only (FGrabState): a grab button sends that hand to
+	 * the board, and while one is held the left stick picks the zone (rotation axes: towards the
+	 * chest the toe edge, the back the heel edge, up the nose, down the tail) instead of rotating the
+	 * rider, whose rotation keeps its momentum. Both grab buttons together are kept for the
+	 * board-off (T2.3) and do nothing yet. The one-footer takes the back foot out of its strap while
+	 * held; it must be back in before the landing. Public so tests press them.
+	 */
+	void OnGrabFrontPressed(const FInputActionValue& Value) { bGrabFrontHeld = true; }
+	void OnGrabFrontReleased(const FInputActionValue& Value) { bGrabFrontHeld = false; }
+	void OnGrabBackPressed(const FInputActionValue& Value) { bGrabBackHeld = true; }
+	void OnGrabBackReleased(const FInputActionValue& Value) { bGrabBackHeld = false; }
+	void OnOneFootPressed(const FInputActionValue& Value) { bOneFootHeld = true; }
+	void OnOneFootReleased(const FInputActionValue& Value) { bOneFootHeld = false; }
+
+	/**
+	 * The scripted path for the trick buttons (tests, kitesurf.Trick): holds the grab and one-footer
+	 * buttons and the grab zone stick, in rotation axes (X +1 towards the rider's back, the heel
+	 * edge; -1 the toe edge; Y +1 the nose, -1 the tail), with no screen-side mapping. The player's
+	 * stick takes the zone back on its next move.
+	 */
+	void SetTrickInput(bool bGrabFront, bool bGrabBack, bool bOneFoot, FVector2D ZoneStick = FVector2D::ZeroVector);
+
+	/** The grabs and the one-footer, stepped in the fixed step before the rider attitude. */
+	const FGrabState& GetGrabState() const { return GrabState; }
+	FGrabState& GetGrabState() { return GrabState; }
+
+	/** The grab zone stick FGrabState reads, in rotation axes. */
+	FVector2D GetGrabZoneStick() const { return GrabZoneStick; }
+
+	/** How far the drawn board was pulled towards the grabbing hand on the last drawn frame (cm, world). */
+	FVector GetGrabBoardPullCm() const { return GrabBoardPullCm; }
+
+	/**
+	 * In a grab the body holds still and the drawn board is pulled towards the grabbing hand's
+	 * shoulder until its socket is this share of the arm's reach away (the arm a little bent). Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Tricks", meta = (ClampMin = "0.3", ClampMax = "0.99"))
+	float GrabReachFraction;
+
+	/** The most the drawn board is pulled towards a grabbing hand (cm). The legs still reach the straps. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Tricks", meta = (ClampMin = "0.0"))
+	float GrabMaxBoardPullCm;
+
+	/** Where a back foot out of its strap goes, in the board's stance space (cm: X to the nose, Y to the toe edge, Z up): off the tail, on the heel side, lifted. Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Tricks")
+	FVector OneFootKickStanceCm;
 
 	/** The left stick / WASD as the player holds it (X from IA_Edge, Y from IA_WeightShift), before it is routed. */
 	FVector2D GetPlayerRiderStick() const { return PlayerRiderStick; }
@@ -814,6 +867,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> RecenterMotionAction;
 
+	/** Grab with the front hand in the air (LB, Q). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> GrabFrontAction;
+
+	/** Grab with the back hand in the air (RB, E). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> GrabBackAction;
+
+	/** Back foot out of its strap in the air (left stick click, C). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> OneFootAction;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Gameplay")
 	void ResetRider();
@@ -911,6 +976,9 @@ private:
 	/** The attitude's pose on the water, from the simulation's own state: Up along the riding lean, Front the stance facing. */
 	FQuat ComputeSlavedBodyQuat() const;
 
+	/** Steps the grabs and the one-footer for one fixed step and hands the board the back foot. Before the rider attitude. */
+	void StepGrabs(float StepSeconds);
+
 	/** Steps the rider attitude for one fixed step and hands the board its air orientation. Called between the line force and the board. */
 	void StepRiderAttitude(float StepSeconds);
 
@@ -933,6 +1001,15 @@ private:
 
 	FVector2D PlayerRiderStick = FVector2D::ZeroVector;
 	bool bPlayerRiderInput = false;
+
+	FGrabState GrabState;
+	bool bGrabFrontHeld = false;
+	bool bGrabBackHeld = false;
+	bool bOneFootHeld = false;
+	FVector2D GrabZoneStick = FVector2D::ZeroVector;
+	/** SetTrickInput owns the zone stick until the player's stick moves. */
+	bool bScriptedGrabZoneStick = false;
+	FVector GrabBoardPullCm = FVector::ZeroVector;
 	/** Jump was pressed in the air and is still held: the tuck. A press that began on the water (a kite lift-off with the button still down) does not tuck until pressed again. */
 	bool bPlayerTuckHeld = false;
 	float ScreenBackSign = 1.0f;

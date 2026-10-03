@@ -112,6 +112,17 @@ struct FJumpRecorderInput
 	/** Body angular velocity (rad/s, world): URiderAttitudeComponent::GetAngularVelocity. */
 	FVector AngularVelocityRadS = FVector::ZeroVector;
 
+	// --- Grabs and the one-footer (T2.1, T2.2): the pawn's FGrabState ---
+
+	/** This flight's grabs so far: FGrabState::GetGrabs. Null when the pawn has no grab state. Read during Step only. */
+	const TArray<FTrickGrab>* Grabs = nullptr;
+
+	/** FGrabState::IsOneFooter: the back foot has been out long enough to count. */
+	bool bOneFooter = false;
+
+	/** FGrabState::GetOneFootSeconds (s). */
+	float OneFootSeconds = 0.0f;
+
 	// --- Kite ---
 
 	/** Line tension (N). */
@@ -175,7 +186,8 @@ struct FJumpRecorderSettings
  *   horizontal speed and tension. A jump still open is dropped first.
  * - Skip: a jump is open, the board is no longer airborne, not crashing, and JumpCount did not
  *   change: the board treated it as a skip off the surface, and it is dropped.
- * - While open: the peak tension, the lowest kite elevation and the highest board position, and
+ * - While open: the peak tension, the lowest kite elevation and the highest board position, the
+ *   grabs and the one-footer as the snapshot has them (Grabs, bOneFooter, OneFootSeconds), and
  *   the rider's rotation: an FRotationRecognizer begun at the take-off (frame from the velocity,
  *   the board's nose and the body) and stepped on every step with bAttitudeActive. The live
  *   record carries the rotation credited so far (GetCurrent); the finalised record the result at

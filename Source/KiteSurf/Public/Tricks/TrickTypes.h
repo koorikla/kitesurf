@@ -41,7 +41,26 @@ enum class ELandingCause : uint8
 	BarLost         UMETA(DisplayName = "Bar lost"),
 	PassUnfinished  UMETA(DisplayName = "Pass not finished"),
 	/** Strapless (T4): the board was under the feet but not lined up with them. */
-	BoardNotAligned UMETA(DisplayName = "Board not aligned")
+	BoardNotAligned UMETA(DisplayName = "Board not aligned"),
+	/** One-footer (T2.2): the back foot was still out of its strap at contact. */
+	FootOutOfStrap  UMETA(DisplayName = "Back foot out"),
+	/** One-footer (T2.2): the back foot was on its way back into the strap at contact. */
+	FootLate        UMETA(DisplayName = "Back foot in late")
+};
+
+/**
+ * Where the back foot is relative to its strap (T2.2, the one-footer), as the landing evaluator
+ * reads it at contact (FGrabState::GetFootAtTouchdown).
+ */
+UENUM(BlueprintType)
+enum class EFootStrapState : uint8
+{
+	/** In the strap. */
+	In        UMETA(DisplayName = "In"),
+	/** On its way back in, less than half way out: the landing is at best sketchy (FootLate). */
+	Returning UMETA(DisplayName = "Returning"),
+	/** Half way out or more: the landing is a crash (FootOutOfStrap). */
+	Out       UMETA(DisplayName = "Out")
 };
 
 /** Which way the body faces the kite while riding, at take-off or landing. */

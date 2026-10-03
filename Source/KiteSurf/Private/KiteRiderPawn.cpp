@@ -11,6 +11,7 @@
 #include "Tricks/TrickTrackerComponent.h"
 #include "Tricks/RiderAttitudeComponent.h"
 #include "Tricks/RiderAxes.h"
+#include "Tricks/BoardGrabPoints.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -223,6 +224,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Jump records and tricks: polls the board and the kite after each board step.
 	TrickTracker = CreateDefaultSubobject<UTrickTrackerComponent>(TEXT("TrickTracker"));
 	TrickTracker->SetSources(BoardMovement, Kite);
+	TrickTracker->SetGrabSource(&GrabState);
 
 	// The rider's rotation in the air: stepped by StepSimulation before the board (it does not tick).
 	RiderAttitude = CreateDefaultSubobject<URiderAttitudeComponent>(TEXT("RiderAttitude"));
@@ -231,6 +233,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	PreWindBuildSeconds = 0.5f;
 	PreWindStickThreshold = 0.3f;
 	AirRotationDeadzone = 0.15f;
+	GrabReachFraction = 0.92f;
+	GrabMaxBoardPullCm = 60.0f;
+	OneFootKickStanceCm = FVector(-58.0f, -16.0f, 24.0f);
 	VerticalAccelFilterSeconds = 0.1f;
 	RiderHandoverSeconds = 0.2f;
 
@@ -438,6 +443,22 @@ void AKiteRiderPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		if (RecenterMotionAction)
 		{
 			EnhancedInputComponent->BindAction(RecenterMotionAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnRecenterMotionTriggered);
+		}
+		// Grabs and the one-footer (T2.1, T2.2): held, so Started and Completed.
+		if (GrabFrontAction)
+		{
+			EnhancedInputComponent->BindAction(GrabFrontAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnGrabFrontPressed);
+			EnhancedInputComponent->BindAction(GrabFrontAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnGrabFrontReleased);
+		}
+		if (GrabBackAction)
+		{
+			EnhancedInputComponent->BindAction(GrabBackAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnGrabBackPressed);
+			EnhancedInputComponent->BindAction(GrabBackAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnGrabBackReleased);
+		}
+		if (OneFootAction)
+		{
+			EnhancedInputComponent->BindAction(OneFootAction, ETriggerEvent::Started, this, &AKiteRiderPawn::OnOneFootPressed);
+			EnhancedInputComponent->BindAction(OneFootAction, ETriggerEvent::Completed, this, &AKiteRiderPawn::OnOneFootReleased);
 		}
 	}
 
@@ -789,6 +810,15 @@ void AKiteRiderPawn::SetAirRotationInput(FVector2D Stick)
 	AirRotationStick = Stick.GetClampedToMaxSize(1.0f);
 }
 
+void AKiteRiderPawn::SetTrickInput(bool bGrabFront, bool bGrabBack, bool bOneFoot, FVector2D ZoneStick)
+{
+	bGrabFrontHeld = bGrabFront;
+	bGrabBackHeld = bGrabBack;
+	bOneFootHeld = bOneFoot;
+	GrabZoneStick = ZoneStick.GetClampedToMaxSize(1.0f);
+	bScriptedGrabZoneStick = true;
+}
+
 void AKiteRiderPawn::SetTuck(float Amount)
 {
 	bPlayerRiderInput = false;
@@ -799,6 +829,7 @@ void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
 {
 	PlayerRiderStick.Y = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
 	bPlayerRiderInput = true;
+	bScriptedGrabZoneStick = false;
 	UpdateScreenBackSignLatch();
 	RoutePlayerRiderInput();
 }
@@ -868,6 +899,12 @@ void AKiteRiderPawn::RoutePlayerRiderInput()
 		AirRotationStick = Rotation;
 		PreWindStick = FVector2D::ZeroVector;
 		TuckInput = bPlayerTuckHeld ? 1.0f : 0.0f;
+		// The same stick picks the grab zone while a grab button is held (StepRiderAttitude then
+		// leaves the rotation alone).
+		if (!bScriptedGrabZoneStick)
+		{
+			GrabZoneStick = Rotation;
+		}
 		return;
 	}
 
@@ -942,6 +979,7 @@ void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
 	PlayerRiderStick.X = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
 	bPlayerRiderInput = true;
+	bScriptedGrabZoneStick = false;
 	UpdateScreenBackSignLatch();
 	RoutePlayerRiderInput();
 }
@@ -1089,6 +1127,9 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	// The hands and the back foot (T2.1, T2.2): before the attitude, which takes the grab's tuck, and
+	// the board, which grades the foot if it lands.
+	StepGrabs(StepSeconds);
 	// The rider's rotation, with this step's line force and the board as it starts the step; the board
 	// then turns and lands with it (docs/tricks/T1.md T1.2.7).
 	StepRiderAttitude(StepSeconds);
@@ -1102,7 +1143,11 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 			LastGroundEdgeHold = FMath::Abs(BoardMovement->GetEdgeInput());
 		}
 	}
-	if (TrickTracker) TrickTracker->StepTracker(StepSeconds);
+	if (TrickTracker)
+	{
+		TrickTracker->SetGrabSource(&GrabState);
+		TrickTracker->StepTracker(StepSeconds);
+	}
 
 	if (RootComponent)
 	{
@@ -1164,6 +1209,26 @@ FQuat AKiteRiderPawn::ComputeSlavedBodyQuat() const
 	const FVector BodyUp = ComputeLevelBodyUp(Facing, TowardsKite, bHasKite, false, BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f,
 		BoardMovement ? BoardMovement->GetHarnessLeanAmount() : 0.0f).GetSafeNormal();
 	return FRotationMatrix::MakeFromZX(BodyUp.IsNearlyZero() ? FVector::UpVector : BodyUp, Facing).ToQuat();
+}
+
+void AKiteRiderPawn::StepGrabs(float StepSeconds)
+{
+	FGrabStateInput In;
+	In.bFront = bGrabFrontHeld;
+	In.bBack = bGrabBackHeld;
+	In.bOneFoot = bOneFootHeld;
+	In.bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+	In.ZoneStick = GrabZoneStick;
+	GrabState.Step(In, StepSeconds);
+	if (GrabState.DidHandArriveThisStep())
+	{
+		// The hand closes on the board.
+		PlayHaptic(0.2f, 0.05f, false);
+	}
+	if (BoardMovement)
+	{
+		BoardMovement->SetRiderBackFoot(GrabState.GetFootAtTouchdown());
+	}
 }
 
 void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
@@ -1235,7 +1300,14 @@ void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
 	In.WaterNormal = WaterNormal;
 	In.RotationStick = AirRotationStick;
 	In.bRotationInput = AirRotationStick.Size() > AirRotationDeadzone;
-	In.Tuck = TuckInput;
+	if (GrabState.IsZoneStickActive())
+	{
+		// The stick is picking a grab zone: no control torque, the rotation keeps its momentum.
+		In.RotationStick = FVector2D::ZeroVector;
+		In.bRotationInput = false;
+	}
+	// The grab tucks the body (its zone's tuck as the hand reaches), on top of the jump-held tuck.
+	In.Tuck = FMath::Max(TuckInput, GrabState.GetTuckTarget());
 	In.PreWindStick = PreWindDirection;
 	In.PreWindAmount = PreWindAmount;
 	In.TakeoffLoad = LastGroundLoad;
@@ -1265,6 +1337,9 @@ void AKiteRiderPawn::ResetRiderAttitude()
 	PreWindDirection = FVector2D::ZeroVector;
 	bHasLastStepVerticalSpeed = false;
 	RiderAirBlend = 0.0f;
+	// The grab state is not reset here: a crash landing calls this from the board's crash event, before
+	// the tracker reads this flight's grabs. Off the water's air state the hands and the foot go back
+	// on their own (FGrabState).
 	if (bAttitudeOwnsBoardVisual)
 	{
 		ClearBoardVisualOverride();
@@ -1739,6 +1814,56 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		RigInput.PelvisUp = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(LevelUp, AirBody.GetAxisZ()), W).RotateVector(LevelUp);
 	}
 	RiderPose = RiderRig::SolveBody(RigInput);
+
+	// Grabs and the one-footer (T2.1, T2.2), drawn between the last two steps. The nose is on the side
+	// of the body the drawn board's +X points to, and the front hand and foot are on that side.
+	const float GrabWeight = FMath::Lerp(GrabState.GetPrevReachWeight(), GrabState.GetReachWeight(), LastRenderAlpha);
+	const float FootWeight = FMath::SmoothStep(0.0f, 1.0f, FMath::Lerp(GrabState.GetPrevFootOut(), GrabState.GetFootOut(), LastRenderAlpha));
+	const float NoseSideSign = FVector::DotProduct(RigInput.Board.GetUnitAxis(EAxis::X), RiderPose.Torso.GetAxisY()) >= 0.0f ? 1.0f : -1.0f;
+	const int32 FrontRigSide = NoseSideSign > 0.0f ? 1 : 0;
+	const bool bGrabDrawn = GrabState.IsHandOffBar() && GrabWeight > 0.0f;
+	const ETrickHand GrabHand = GrabState.GetHand();
+	const ETrickGrabZone GrabZone = GrabState.GetZone();
+	const int32 GrabRigSide = GrabHand == ETrickHand::Front ? FrontRigSide : 1 - FrontRigSide;
+	GrabBoardPullCm = FVector::ZeroVector;
+	if (bGrabDrawn || FootWeight > 0.0f)
+	{
+		FRiderRigInput TrickInput = RigInput;
+		if (bGrabDrawn)
+		{
+			// The body holds still (the pelvis where the riding pose put it), folds at the hips towards
+			// the zone, and the drawn board comes up towards the grabbing hand's shoulder until the socket
+			// is within GrabReachFraction of the arm's reach, as far as GrabMaxBoardPullCm. Only the drawn
+			// board moves: the physics root does not. The board can only be moved while the attitude
+			// draws it (in the air and through the landing's hand-over).
+			TrickInput.PelvisAnchor = RiderPose.Pelvis;
+			TrickInput.TorsoPitchDeg = GrabWeight * FGrabState::TorsoFoldDegForZone(GrabZone);
+			FRiderRigPose Folded = RiderPose;
+			Folded.Torso = (RiderPose.Torso * FQuat(FVector::YAxisVector, FMath::DegreesToRadians(TrickInput.TorsoPitchDeg))).GetNormalized();
+			const FVector Shoulder = RiderRig::ShoulderPosition(Folded, GrabRigSide);
+			const FVector Socket = BoardGrabPoints::SocketWorld(RigInput.Board, GrabZone, GrabHand, NoseSideSign);
+			const float WantedCm = (RiderRig::UpperArmLengthCm + RiderRig::ForearmLengthCm) * GrabReachFraction;
+			const float DistanceCm = static_cast<float>(FVector::Dist(Shoulder, Socket));
+			if (bAttitudeOwnsBoardVisual && BoardVisual && DistanceCm > WantedCm)
+			{
+				GrabBoardPullCm = (Shoulder - Socket).GetSafeNormal() * (FMath::Min(DistanceCm - WantedCm, GrabMaxBoardPullCm) * GrabWeight);
+				TrickInput.Board.AddToTranslation(GrabBoardPullCm);
+				BoardVisual->SetWorldLocation(BoardVisual->GetComponentLocation() + GrabBoardPullCm);
+			}
+			TrickInput.Hands[GrabRigSide].Target = ERiderHandTarget::BoardSocket;
+			TrickInput.Hands[GrabRigSide].BoardSocket = BoardGrabPoints::SocketFor(GrabZone, GrabHand, NoseSideSign);
+		}
+		if (FootWeight > 0.0f)
+		{
+			// The back foot kicks out of its strap off the tail, on the heel side.
+			const int32 BackFootSide = 1 - FrontRigSide;
+			const FVector Strap = TrickInput.Board.TransformPosition(BoardGrabPoints::ToBoardLocal(BoardGrabPoints::BackStrap, NoseSideSign));
+			const FVector Kicked = TrickInput.Board.TransformPosition(BoardGrabPoints::ToBoardLocal(OneFootKickStanceCm, NoseSideSign));
+			TrickInput.Feet[BackFootSide].AnkleTarget = FMath::Lerp(Strap, Kicked, FootWeight);
+		}
+		RigInput = TrickInput;
+		RiderPose = RiderRig::SolveBody(RigInput);
+	}
 	// The bar hangs in front of the body the rig drew: the level facing on the water, the body's own in the air.
 	const bool bBodyPose = RigInput.BodyQuat.IsSet();
 	const FVector BarFacing = bBodyPose ? RiderPose.Torso.GetAxisX() : Facing;
@@ -1792,8 +1917,19 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 			ControlBarMesh->SetWorldLocationAndRotation(BarCentre, FRotationMatrix::MakeFromXY(LineDir, TiltedSpan).ToQuat());
 		}
 
-		// Hands on the bar, either side of its middle; the elbows bend to reach.
-		RiderRig::SolveArms(RiderPose, BarCentre - TiltedSpan * HandSpacingCm, BarCentre + TiltedSpan * HandSpacingCm);
+		// Hands on the bar, either side of its middle; the elbows bend to reach. A grabbing hand goes to
+		// its socket on the drawn board, from the bar over the reach (T2.1); the other stays on the bar.
+		const FVector BarHands[2] = { BarCentre - TiltedSpan * HandSpacingCm, BarCentre + TiltedSpan * HandSpacingCm };
+		if (bGrabDrawn && GrabWeight < 1.0f)
+		{
+			FRiderHandInput& GrabbingHand = RigInput.Hands[GrabRigSide];
+			const FVector Socket = RiderRig::HandTarget(RiderPose, RigInput, GrabRigSide, BarHands[GrabRigSide]);
+			const FVector Pole = FMath::Lerp(RiderRig::DefaultElbowPole(RiderPose, GrabRigSide), RiderRig::GrabElbowPole(RiderPose, GrabRigSide), GrabWeight);
+			GrabbingHand.Target = ERiderHandTarget::Free;
+			GrabbingHand.WorldTarget = FMath::Lerp(BarHands[GrabRigSide], Socket, GrabWeight);
+			GrabbingHand.ElbowPole = Pole;
+		}
+		RiderRig::SolveArmsPerHand(RiderPose, RigInput, BarHands[0], BarHands[1]);
 	}
 
 	// Draw the parts where the rig put them.

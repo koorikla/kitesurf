@@ -21,7 +21,9 @@ enum class EKiteSurfShot : uint8
 	/** Planted well ahead and to the side when the shot starts; pans to follow as the rider passes. */
 	Wide,
 	/** Behind and above the kite, looking down the lines at the rider. */
-	KiteView
+	KiteView,
+	/** A close-up of the rider from the kite's side (their chest) and a little ahead, about 4 m away and level with the board, without the kite: for checking a pose such as a grab. */
+	Close
 };
 
 /** Where the camera is and what it looks at for one frame of a shot. */

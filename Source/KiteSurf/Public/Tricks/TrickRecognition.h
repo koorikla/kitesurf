@@ -114,8 +114,12 @@ namespace TrickRecognition
 	 * With an inversion and a roll start (RollStartSinceTakeoffSeconds >= 0), every kite and
 	 * megaloop entry gets LoopRollTiming of that start against the yank of the record's first
 	 * completed loop that is not a heli loop (PeakTensionSinceTakeoffSeconds).
+	 *
+	 * Grabs (T2.1): the record's grabs held at least MinGrabHoldSeconds, in order, so a grab let go
+	 * too soon is neither named nor scored. The one-footer (T2.2): the record's bOneFooter.
 	 */
 	KITESURF_API FTrickSignature SignatureFromJump(const FJumpRecord& Record,
 		const FLoopClassifySettings& Settings = FLoopClassifySettings(),
-		const FLandingGradeSettings& GradeSettings = FLandingGradeSettings());
+		const FLandingGradeSettings& GradeSettings = FLandingGradeSettings(),
+		float MinGrabHoldSeconds = 0.3f);
 }

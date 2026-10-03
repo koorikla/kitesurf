@@ -76,6 +76,22 @@ def build_assets():
         editor_asset_lib.save_asset('/Game/Input/IA_RecenterMotion', False)
         print(f'IA_RecenterMotion configured and saved: {ia_recenter_motion}')
 
+        # 9-11. Tricks in the air (T2.1, T2.2; docs/tricks.md 6.3), all Digital bool, held:
+        # IA_GrabFront and IA_GrabBack send a hand to the board (the left stick picks the zone while
+        # one is held), IA_OneFoot takes the back foot out of its strap. Both grab buttons together
+        # are the board-off's chord (T2.3), handled in code, not an action.
+        trick_actions = {}
+        for trick_name in ['IA_GrabFront', 'IA_GrabBack', 'IA_OneFoot']:
+            ia_trick = get_or_create_asset(trick_name, '/Game/Input', unreal.InputAction, None)
+            ia_trick.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+            editor_asset_lib.save_loaded_asset(ia_trick)
+            editor_asset_lib.save_asset(f'/Game/Input/{trick_name}', False)
+            print(f'{trick_name} configured and saved: {ia_trick}')
+            trick_actions[trick_name] = ia_trick
+        ia_grab_front = trick_actions['IA_GrabFront']
+        ia_grab_back = trick_actions['IA_GrabBack']
+        ia_one_foot = trick_actions['IA_OneFoot']
+
         # Assets from earlier control schemes
         for stale in ['/Game/Input/IA_EdgePressure', '/Game/Input/IA_Loop']:
             if editor_asset_lib.does_asset_exist(stale):
@@ -123,10 +139,17 @@ def build_assets():
             (ia_reset, 'R', False),
             (ia_reset, 'Gamepad_FaceButton_Right', False),
             # Recentre the motion bar: the right stick click, free while the motion bar has the
-            # bar (the right stick is idle then); Home on the keyboard. LB/RB, X, Y and L3 are
-            # planned for tricks (docs/tricks.md 6.3), the D-pad is the menus'.
+            # bar (the right stick is idle then); Home on the keyboard. X and Y are planned for
+            # freestyle (docs/tricks.md 6.3), the D-pad is the menus'.
             (ia_recenter_motion, 'Gamepad_RightThumbstick', False),
             (ia_recenter_motion, 'Home', False),
+            # Grabs and the one-footer, in the air only (AKiteRiderPawn, FGrabState).
+            (ia_grab_front, 'Q', False),
+            (ia_grab_front, 'Gamepad_LeftShoulder', False),
+            (ia_grab_back, 'E', False),
+            (ia_grab_back, 'Gamepad_RightShoulder', False),
+            (ia_one_foot, 'C', False),
+            (ia_one_foot, 'Gamepad_LeftThumbstick', False),
         ]
 
         for action, key_str, _ in mappings_spec:
@@ -164,6 +187,9 @@ def build_assets():
         if hasattr(cdo_rider, 'reset_action'):
             cdo_rider.set_editor_property('reset_action', ia_reset)
         cdo_rider.set_editor_property('recenter_motion_action', ia_recenter_motion)
+        cdo_rider.set_editor_property('grab_front_action', ia_grab_front)
+        cdo_rider.set_editor_property('grab_back_action', ia_grab_back)
+        cdo_rider.set_editor_property('one_foot_action', ia_one_foot)
 
         # Camera distance, pitch and field of view are tunables on AKiteRiderPawn (applied every
         # tick by UpdateCamera); the Blueprint only smooths the boom.

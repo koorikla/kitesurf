@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Tricks/KiteLoopRecord.h"
+#include "Tricks/TrickSignature.h"
 #include "Tricks/TrickTypes.h"
 #include "JumpRecord.generated.h"
 
@@ -151,6 +152,26 @@ struct FJumpRecord
 	/** When the first inversion's rotation started, from take-off (s); negative when nothing inverted. Feeds TrickRecognition::LoopRollTiming. */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	float RollStartSinceTakeoffSeconds = -1.0f;
+
+	// --- Grabs and the one-footer (T2.1, T2.2): the pawn's FGrabState. Empty when the pawn has none. ---
+
+	/**
+	 * Every grab of the jump in the order the hands reached the board: hand, zone (latched when the
+	 * hand reached its socket) and how long it was held from then (s). A grab still held at the
+	 * landing is counted to the landing; a release during the reach gives a hold of 0. Only grabs
+	 * held at least the scoring's GrabMinHoldSeconds (0.3 s) are named and scored
+	 * (TrickRecognition::SignatureFromJump).
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	TArray<FTrickGrab> Grabs;
+
+	/** The back foot was fully out of its strap for at least FGrabStateTuning::MinOneFootSeconds (0.3 s): a one-footer. */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	bool bOneFooter = false;
+
+	/** How long the back foot was fully out of its strap in this jump (s). */
+	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
+	float OneFootSeconds = 0.0f;
 
 	/** Why the board's landing verdict graded the landing down (UBoardMovementComponent::GetLastLandingVerdict); None for a good landing. */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")

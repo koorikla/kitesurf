@@ -131,6 +131,27 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Trick"),
+			TEXT("Holds the trick buttons on the player's rider (T2.1, T2.2), scripted: the grabs (LB/Q front hand, RB/E back hand) and the one-footer (L3/C), with the grab zone stick in rotation axes (X -1 the toe edge, +1 the heel edge; Y +1 the nose, -1 the tail; centred: the toe edge). In the air only. Usage: kitesurf.Trick <Front 0|1> <Back 0|1> <OneFoot 0|1> [<ZoneX -1..1> <ZoneY -1..1>]"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->SetTrickInput(Arg(0) > 0.5f, Arg(1) > 0.5f, Arg(2) > 0.5f, FVector2D(Arg(3), Arg(4)));
+						const FGrabState& Grabs = It->GetGrabState();
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Trick front %d back %d one-foot %d zone (%.2f, %.2f): hand off the bar %d (%s, %s), holding %d for %.2f s, foot out %.2f, %d grab(s) this flight"),
+							Arg(0) > 0.5f, Arg(1) > 0.5f, Arg(2) > 0.5f, Arg(3), Arg(4), Grabs.IsHandOffBar(),
+							*UEnum::GetValueAsString(Grabs.GetHand()), *UEnum::GetValueAsString(Grabs.GetZone()), Grabs.IsHolding(), Grabs.GetHoldSeconds(),
+							Grabs.GetFootOut(), Grabs.GetGrabs().Num());
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Bar"),
 			TEXT("Holds the player's sheet input (Up / Down, right stick, triggers) through the same handler they use: with the bar returning to the middle, the bar goes that fraction of the way to fully in (+) or out (-) and springs back on 0. Usage: kitesurf.Bar <-1..1: +1 power>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -265,7 +286,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Shot"),
-			TEXT("Films the player's rider with a cinematic camera, cutting to the shot. Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>"),
+			TEXT("Films the player's rider with a cinematic camera, cutting to the shot. Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView|Close>"),
 			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandleShot),
 			ECVF_Default
 		);
@@ -492,6 +513,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.PreWind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Stick"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Trick"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.JumpButton"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Bar"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
@@ -558,7 +580,7 @@ private:
 		EKiteSurfShot Shot = EKiteSurfShot::Chase;
 		if (!Args.IsValidIndex(0) || !AKiteSurfCinematicCamera::ParseShot(Args[0], Shot))
 		{
-			UE_LOG(LogKiteSurf, Warning, TEXT("Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>"));
+			UE_LOG(LogKiteSurf, Warning, TEXT("Usage: kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView|Close>"));
 			return;
 		}
 		AKiteRiderPawn* Rider = FindPlayerRider();

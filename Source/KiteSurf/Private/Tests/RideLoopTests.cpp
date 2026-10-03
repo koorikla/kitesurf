@@ -1200,6 +1200,78 @@ bool FKiteSurfRideFloatsUntilPlaning::RunTest(const FString& Parameters)
 	return true;
 }
 
+// A floating rider is slow through the water (docs/physics/plan-2.md item 3d): a body sitting in the
+// water and a sunk board drag in every direction, 0.5 rho_w FloatingDragAreaM2 v^2 at full depth. Under
+// a kite parked at 12 with the bar out in 15 kn they drift at under 1 kn; without that drag (the model
+// since plan-2 item 3 took the board's base grip away) they drift at over 2 kn. The kite can still pull
+// them out: in 20 kn with the bar in and the kite at the window edge the rider is planing within 20 s.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater, "KiteSurf.Physics.FloatingRiderIsSlowThroughTheWater", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater::RunTest(const FString& Parameters)
+{
+	const float DriftSeconds = 15.0f;
+	const float AverageSeconds = 5.0f;
+	struct FDrift { float Knots = 0.0f; float FastestKnots = 0.0f; bool bFloating = false; bool bValid = false; };
+	auto FloatUnderTheZenith = [&](FRideFixture& Ride) -> FDrift
+	{
+		FDrift Drift;
+		if (!Ride.IsValid())
+		{
+			return Drift;
+		}
+		Ride.Simulate(3.0f);
+		Ride.Pawn->SheetKite(0.0f);
+		Ride.Kite->SetWindowPosition(0.0f, 10.0f);
+		Ride.Simulate(DriftSeconds - AverageSeconds);
+		const int32 Frames = FMath::RoundToInt(AverageSeconds / RideDeltaTime);
+		for (int32 Frame = 0; Frame < Frames; ++Frame)
+		{
+			Ride.Simulate(RideDeltaTime);
+			Drift.Knots += Ride.SpeedKnots() / Frames;
+			Drift.FastestKnots = FMath::Max(Drift.FastestKnots, Ride.SpeedKnots());
+		}
+		Drift.bFloating = Ride.Board->IsFloating();
+		Drift.bValid = true;
+		return Drift;
+	};
+
+	FRideFixture Floating;
+	const FDrift WithDrag = FloatUnderTheZenith(Floating);
+	FRideFixture NoDrag;
+	if (NoDrag.IsValid())
+	{
+		NoDrag.Board->FloatingDragAreaM2 = 0.0f;
+	}
+	const FDrift WithoutDrag = FloatUnderTheZenith(NoDrag);
+
+	// From floating in 20 kn: the bar in, the kite at the window edge.
+	FRideFixture Strong(20.0f);
+	const FDrift StrongDrift = FloatUnderTheZenith(Strong);
+	float PlaningAfterSeconds = -1.0f;
+	if (Strong.IsValid())
+	{
+		Strong.Pawn->SheetKite(1.0f);
+		Strong.Kite->SetWindowPosition(65.0f, 8.0f);
+		for (int32 Frame = 0, Frames = FMath::RoundToInt(20.0f / RideDeltaTime); Frame < Frames && PlaningAfterSeconds < 0.0f; ++Frame)
+		{
+			Strong.Simulate(RideDeltaTime);
+			if (Strong.Board->IsPlaning() && !Strong.Board->IsFloating())
+			{
+				PlaningAfterSeconds = (Frame + 1) * RideDeltaTime;
+			}
+		}
+	}
+	UE_LOG(LogKiteSurf, Log, TEXT("FloatingRiderIsSlowThroughTheWater: under the kite at 12, bar out, 15 kn: %.2f kn (fastest %.2f) floating %d; without the floating drag %.2f kn (fastest %.2f); in 20 kn %.2f kn, then bar in at the window edge: planing after %.1f s"),
+		WithDrag.Knots, WithDrag.FastestKnots, WithDrag.bFloating, WithoutDrag.Knots, WithoutDrag.FastestKnots, StrongDrift.Knots, PlaningAfterSeconds);
+
+	TestTrue(TEXT("Rides created"), WithDrag.bValid && WithoutDrag.bValid && StrongDrift.bValid);
+	TestTrue(TEXT("The rider is floating"), WithDrag.bFloating);
+	TestTrue(FString::Printf(TEXT("Under a kite parked at 12 in 15 kn the floating rider drifts at under 1 kn (%.2f kn, fastest %.2f)"), WithDrag.Knots, WithDrag.FastestKnots), WithDrag.FastestKnots < 1.0f);
+	TestTrue(FString::Printf(TEXT("Without the floating drag they drift at over 2 kn (%.2f kn)"), WithoutDrag.Knots), WithoutDrag.Knots > 2.0f);
+	TestTrue(FString::Printf(TEXT("In 20 kn with the bar in the kite pulls the floating rider onto the plane within 20 s (%.1f s)"), PlaningAfterSeconds), PlaningAfterSeconds > 0.0f);
+	return true;
+}
+
 // The HUD shows the steering that reaches the kite next to the rider's bar: the bar itself while
 // looping, the assist's correction otherwise, and nothing while the kite is in the water.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteAppliedSteer, "KiteSurf.Kite.AppliedSteer", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

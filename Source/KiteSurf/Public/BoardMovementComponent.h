@@ -302,6 +302,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float FloatResponse;
 
+	/**
+	 * Drag area of a rider floating in the water with the board sunk (m^2): a body sitting in the
+	 * water and a board under it are slow to pull through it in any direction. While floating the
+	 * water drags them with 0.5 rho_w A v^2 against the horizontal velocity, A this times how far past
+	 * half the floating depth they are (none at IsFloating's threshold, all of it fully sunk), fading
+	 * out by FloatingDragFadeSpeedCmS. Nothing on the plane (docs/physics/plan-2.md item 3d).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float FloatingDragAreaM2;
+
+	/**
+	 * Speed by which a floating rider pulled through the water has come up to plane on their back and
+	 * the board, and FloatingDragAreaM2 no longer acts (cm/s); it fades out from rest (smoothstep). The
+	 * float depth only starts to rise at FloatUntilSpeedFraction of planing speed, and a drag held at
+	 * full depth up to there would take more pull than a parked kite gives to get through: a
+	 * transition, a slow start or a water start would leave the rider stuck. 0 = no fade.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float FloatingDragFadeSpeedCmS;
+
 	/** Below this speed the board pivots to point along the kite's pull (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotMaxSpeedCmS;

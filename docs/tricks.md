@@ -360,7 +360,12 @@ for the rider in the air, stepped inside the pawn's fixed step:
   hard the edge was. A pop with no pre-wind gives none.
 - **Air control torque:** the left stick sets a target rate on the chosen axis. Torque is
   capped at about 30% of a full pre-wind per second (**estimate**), so the take-off still
-  decides most of the rotation.
+  decides most of the rotation. **Batch B** (`docs/tricks/review.md` section 4) moves this
+  towards "hold to rotate, let go to finish": while hooked and the modifier is held, the cap
+  also covers whatever the line torque below contributes along the committed axis, so the
+  achieved rate tracks the stick regardless of line tension; released, a capped torque keeps the
+  axis turning forward at no less than `FinishMinRateDegS` (120°/s, **estimate**) until the body
+  is upright again, instead of hanging or stalling.
 - **Line torque:** the line force acts at the hook while hooked in, and at the hands while
   unhooked. The torque is `r × F` about the centre of mass:
   - **Hooked in:** the hook is 0.10 to 0.15 m in front of the centre of mass (**estimate**,
@@ -372,6 +377,19 @@ for the rider in the air, stepped inside the pawn's fixed step:
     of being scripted.
   - **Scale:** the torque is multiplied by `LineTorqueScale` and calibrated so that a
     full-input back roll at hang tension takes 1.5 to 2.5 s.
+  - **Tension-independent while committed (batch B).** Hooked, once an axis is committed to a
+    real trick (the take-off's pre-wind or a held control, never a bare `SetState`), the part of
+    this torque along that axis is capped at `CommittedLineTorqueMaxNm` (19 N·m, **estimate**:
+    `LineTorqueScale` × the hook offset × the 800 N hang-tension calibration). The swing off that
+    axis, towards the lines, stays uncapped: a hooked back roll now lands with one inversion from
+    400 N (a light ride) to 3.5 kN (the 9 m kite's send in 24 kn, which used to under-rotate and
+    crash; `KiteSurf.Trick.BackRollLandsAcrossTension`). Never applied unhooked: the raley and the
+    S-bend are this torque.
+- **No hooked flips (batch B).** `HookedFlipScale` goes from 0.35 to 0: hooked, the harness holds
+  the hips to the lines too firmly for a flip pre-wind to be anything but a crash
+  (`KiteSurf.Trick.HookedFlipUnderRotates` used to invert and crash at 137° of pitch; hooked flip
+  pre-winds now commit nothing, `KiteSurf.Trick.NoHookedFlip`). Flips stay unhooked (tantrum,
+  front flip).
 - **Landing assist:**
   - **When it acts:** there is no rotation input, the predicted time to contact is under
     0.7 s, and the rider is within ±60° of a valid landing attitude.

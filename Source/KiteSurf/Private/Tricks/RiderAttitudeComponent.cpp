@@ -37,6 +37,9 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	ComAboveBoardCm = 75.0f;
 	LineTorqueScale = 0.1f;
 	HandsLineTorqueScale = 1.4f;
+	// Batch B (docs/tricks/review.md section 4): 0.1 (LineTorqueScale) * 0.233 m (|HookOffsetFromComCm|)
+	// * 800 N (the hang tension BackRollFromPreWind is calibrated at).
+	CommittedLineTorqueMaxNm = 19.0f;
 	PreWindRollRateDegS = 250.0f;
 	PreWindFlipRateDegS = 260.0f;
 	PreWindSpinRateDegS = 360.0f;
@@ -59,8 +62,14 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	AssistStrength = 1.0f;
 	AssistWindowSeconds = 1.0f; // 0.7 in the plan: on a real jump the lines hold a rolled rider 60 to 80 deg off upright until the last second
 	AssistMaxErrorDeg = 90.0f;  // 60 in the plan, for the same reason
+	// Batch B (docs/tricks/review.md section 4): a held, hooked rotation that is let go finishes
+	// forward at no less than this instead of hanging; estimate.
+	FinishMinRateDegS = 120.0f;
 	bAssistWaitsForRaleySwing = true;
-	HookedFlipScale = 0.35f;
+	// Batch B (docs/tricks/review.md section 4, problem 3): hooked, the harness holds the hips to the
+	// lines too firmly for a flip pre-wind to do anything but under-rotate and crash; flips stay
+	// unhooked (tantrum, front flip).
+	HookedFlipScale = 0.0f;
 	InertiaExtendedKgM2 = FVector(12.0f, 12.0f, 1.2f);
 	AssistNaturalFreqHz = 1.2f;
 	AssistDampingRatio = 0.9f;
@@ -156,6 +165,7 @@ void URiderAttitudeComponent::Reset(const FQuat& Body, const FQuat& Board)
 	bWasAirborne = false;
 	bControlWasFlip = false;
 	bTookOffRotating = false;
+	bRotationLeftUpright = false;
 	ComOffsetWorldCm = Q.GetAxisZ() * ComAboveBoardCm;
 	PrevComOffsetWorldCm = ComOffsetWorldCm;
 	AirSeconds = 0.0f;
@@ -174,6 +184,7 @@ void URiderAttitudeComponent::SetState(const FQuat& Body, const FVector& Angular
 	OmegaW = OmegaFrom(Ib);
 	CommittedAxisBody = Q.UnrotateVector(OmegaW).GetSafeNormal();
 	bTookOffRotating = !CommittedAxisBody.IsZero();
+	bRotationLeftUpright = false;
 	bActive = true;
 	bWasAirborne = true;
 	bControlWasFlip = false;
@@ -198,6 +209,7 @@ void URiderAttitudeComponent::BeginAir(const FAttitudeInputs& In)
 	TuckVel = 0.0f;
 	bControlWasFlip = false;
 	bTookOffRotating = false;
+	bRotationLeftUpright = false;
 	L = FVector::ZeroVector;
 	CommittedAxisBody = FVector::ZeroVector;
 
@@ -431,6 +443,7 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 		bWasAirborne = false;
 		bControlWasFlip = false;
 		bTookOffRotating = false;
+		bRotationLeftUpright = false;
 		AirSeconds = 0.0f;
 		LastDebug = FAttitudeDebug();
 		return;
@@ -460,6 +473,12 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 
 	// 1) Torques at the start of the step (N*m, world).
 	FVector Tau = FVector::ZeroVector;
+	// Batch B (docs/tricks/review.md section 4): hooked, with an axis committed to a real trick (the
+	// take-off's pre-wind or a held control set Debug.Family; a bare SetState for a unit test never
+	// does), the line torque and the finishing torque below are tension-independent. Unhooked, both
+	// are skipped: the raley and the S-bend are the line torque, uncapped.
+	const bool bCommittedTrickAxis = !In.bUseLineAttach && !CommittedAxisBody.IsZero() && Debug.Family != RiderAxes::ERotationFamily::None;
+
 	if (In.bLinesTaut)
 	{
 		// r x F at the hook about the centre of mass. It pulls Up towards the lines and does no work
@@ -468,6 +487,16 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 		const FVector RM = Q.RotateVector(AttachCm) / KiteUnits::CmPerM;
 		const FVector FN = In.LineForceUU / KiteUnits::UnrealForcePerN;
 		Debug.LineTorqueNm = (In.bUseLineAttach ? HandsLineTorqueScale : LineTorqueScale) * FVector::CrossProduct(RM, FN);
+		if (bCommittedTrickAxis)
+		{
+			// Tension-independent rolls: cap the part along the committed axis, so a lighter or
+			// heavier pull on the lines does not change how a held roll feels. The swing off that
+			// axis, towards the lines, is untouched.
+			const FVector AxisW = Q.RotateVector(CommittedAxisBody).GetSafeNormal();
+			const double Along = Debug.LineTorqueNm | AxisW;
+			const double ClampedAlong = FMath::Clamp(Along, -double(CommittedLineTorqueMaxNm), double(CommittedLineTorqueMaxNm));
+			Debug.LineTorqueNm += AxisW * (ClampedAlong - Along);
+		}
 		Tau += Debug.LineTorqueNm;
 	}
 
@@ -499,7 +528,19 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 			const double Full = FullRateRadS(Control.Family);
 			const double TargetRate = Control.Magnitude * Full;
 			const double TauMax = AirControlFractionPerS * IAxis * Full;
-			const double TauAlong = FMath::Clamp(IAxis * (TargetRate - (OmegaW | AxisW)) / double(FMath::Max(AirControlResponseSeconds, 0.01f)), -TauMax, TauMax);
+			const double DesiredAlong = FMath::Clamp(IAxis * (TargetRate - (OmegaW | AxisW)) / double(FMath::Max(AirControlResponseSeconds, 0.01f)), -TauMax, TauMax);
+			double TauAlong = DesiredAlong;
+			if (!In.bUseLineAttach)
+			{
+				// Batch B item 2 (docs/tricks/review.md section 4): hooked, the control cap also
+				// covers whatever the line torque already contributes along this axis, so holding
+				// keeps the rate the stick asks for regardless of line tension.
+				TauAlong = DesiredAlong - (Debug.LineTorqueNm | AxisW);
+			}
+			if (CommittedAxisBody.IsZero())
+			{
+				bRotationLeftUpright = false; // a fresh commitment: it has not gone anywhere yet
+			}
 			Debug.ControlTorqueNm = AxisW * TauAlong;
 			Tau += Debug.ControlTorqueNm;
 			CommittedAxisBody = ControlAxisBody;
@@ -510,6 +551,18 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	// The landing assist (zero with rotation input or outside its window); it also fills the
 	// landing error for the evaluator every step.
 	ComputeAssistTorque(In, Debug);
+	// Batch B item 3's own "is it upright" is the body's tilt from world up alone, the same test the
+	// recognizer uses for an inversion (docs/tricks.md 6.6: Up.Z past +-0.3), not
+	// Debug.LandingErrorDeg: that also carries the board's heading to the travel, which a roll's own
+	// yaw coupling can leave far off even once the body itself is the right way up again, so chasing
+	// it would never let go.
+	const double TiltFromUpDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(double(Q.GetAxisZ().Z), -1.0, 1.0)));
+	if (!CommittedAxisBody.IsZero() && TiltFromUpDeg >= AssistMaxErrorDeg)
+	{
+		// The committed rotation has carried the body away from upright at least once; once it comes
+		// back close, below, that is the roll done.
+		bRotationLeftUpright = true;
+	}
 	if (Debug.bAssistActive)
 	{
 		Tau += Debug.AssistTorqueNm;
@@ -517,6 +570,34 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	}
 	else
 	{
+		// Batch B item 3 (docs/tricks/review.md section 4): letting go of a held, hooked rotation
+		// keeps it turning forward instead of hanging or stalling, until it is upright again.
+		if (!In.bRotationInput && bCommittedTrickAxis)
+		{
+			if (TiltFromUpDeg >= AssistMaxErrorDeg)
+			{
+				const FVector AxisW = Q.RotateVector(CommittedAxisBody).GetSafeNormal();
+				const double IAxis = InertiaAbout(AxisW, Ib);
+				const double Full = FullRateRadS(Debug.Family);
+				const double TauMax = AirControlFractionPerS * IAxis * Full;
+				const double FinishRateRadS = FMath::DegreesToRadians(double(FinishMinRateDegS));
+				const double CurrentAlong = OmegaW | AxisW;
+				if (CurrentAlong < FinishRateRadS)
+				{
+					const double TauAlong = FMath::Clamp(IAxis * (FinishRateRadS - CurrentAlong) / double(FMath::Max(AirControlResponseSeconds, 0.01f)), 0.0, TauMax);
+					Debug.ControlTorqueNm = AxisW * TauAlong;
+					Tau += Debug.ControlTorqueNm;
+				}
+			}
+			else if (bRotationLeftUpright)
+			{
+				// Upright again after having gone all the way round: the roll is done. Hand off to
+				// posture damping (below) instead of coasting round again on whatever rate is left;
+				// the real landing assist takes over for the final approach once the time to contact
+				// closes its own window, and the travel align below squares the heading back up.
+				CommittedAxisBody = FVector::ZeroVector;
+			}
+		}
 		// No trick going on: the rider keeps the board along the flight.
 		Debug.TravelAlignTorqueNm = ComputeTravelAlignTorque(In);
 		Tau += Debug.TravelAlignTorqueNm;

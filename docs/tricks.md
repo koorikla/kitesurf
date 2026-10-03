@@ -443,13 +443,21 @@ and the menu-video recorder can perform tricks.
     (±60°).
   - If tension rises during the pass, the bar is lost.
   - The "flick" assist dips the kite for slack when the pass button is pressed.
-- **Stance on the water:**
-  - Riding toeside and riding blind do not exist today: the rider slides round to face the kite
-    after `RiderSwitchDelaySeconds`. Toeside and blind landings need a stance state
-    (heelside, toeside, blind) that the slide-round respects for a few seconds, plus poses for
-    each.
+- **Stance on the water** (T3.5, done; docs/movement.md "Landing stances"):
+  - The pawn has a riding stance (`ETrickStance`, `GetRidingStance`, `GetStanceSeconds`). An
+    unhooked touchdown sets it from the body's heading against the kite and the bar's route
+    (`StanceForWrap`): a backside 180 lands blind (the bar behind the back), a frontside 180
+    toeside (the bar in front, the torso twisted `ToesideTorsoTwistDeg`, 70, back towards the
+    kite). Hooked in it is always heelside, and the rider slides round as before.
+  - Toeside is held `ToesideHoldSeconds` (3.0 s) and blind `BlindHoldSeconds` (2.0 s), both
+    **estimates**, before the slide round brings the rider back to heelside.
+  - X on the water ends it early: from blind a surface pass (tension under
+    `SurfacePassMaxTensionBW`, 0.6, **estimate**; `SurfacePassSeconds`, 0.4 s) and the backside
+    half turn on to heelside; from toeside the half turn back the way the frontside 180 came (it
+    unwinds the lines round the front; a further frontside half turn would wrap them). A surface
+    pass started within the surface grace of the touchdown joins the jump's record.
   - Blind and toeside take-offs, which open the GKA variety families, need riding in those
-    stances. That comes last.
+    stances (T3.7). That comes last.
 
 ### 6.5 Poses and the rig
 

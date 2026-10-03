@@ -174,7 +174,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Pass"),
-			TEXT("Presses the handle pass button (X / LeftShift) on the player's rider (T3.1): unhooked, a pass starts when the lines are slack and the back is to the kite within the press's buffer; the flick assist dips the kite in the air."),
+			TEXT("Presses the handle pass button (X / LeftShift) on the player's rider (T3.1): unhooked, a pass starts when the lines are slack and the back is to the kite within the press's buffer; the flick assist dips the kite in the air. On the water (T3.5) riding blind it is the surface pass and the half turn to heelside, riding toeside the half turn back."),
 			FConsoleCommandDelegate::CreateLambda([]()
 			{
 				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
@@ -183,8 +183,8 @@ public:
 					{
 						It->PressPass();
 						const FBarState& Bar = It->GetBarState();
-						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Pass: pressed (%s, %s, wrap %.0f deg, slack %.2f s)"), Bar.bHooked ? TEXT("hooked in") : TEXT("unhooked"),
-							*UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Bar.WrapDeg, Bar.SlackSeconds);
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Pass: pressed (%s, %s, wrap %.0f deg, slack %.2f s, stance %s)"), Bar.bHooked ? TEXT("hooked in") : TEXT("unhooked"),
+							*UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Bar.WrapDeg, Bar.SlackSeconds, *UEnum::GetDisplayValueAsText(It->GetRidingStance()).ToString());
 					}
 				}
 			}),
@@ -324,7 +324,8 @@ public:
 				}
 				const FBarState& Bar = Rider->GetBarState();
 				const FString BarText = Bar.bHooked ? FString()
-					: FString::Printf(TEXT(", unhooked: %s, arms %.2f, wrap %.0f deg, kite sheet %.2f"), *UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Rider->GetArmExtension(), Bar.WrapDeg, Kite->Sheet);
+					: FString::Printf(TEXT(", unhooked: %s, arms %.2f, wrap %.0f deg, kite sheet %.2f, stance %s %.1f s"), *UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Rider->GetArmExtension(), Bar.WrapDeg, Kite->Sheet,
+						*UEnum::GetDisplayValueAsText(Rider->GetRidingStance()).ToString(), Rider->GetStanceSeconds());
 				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn heading %.0f deg, height %.0f cm, kite clock %.0f deg elevation %.0f deg turned %.0f deg, tension %.0f N, steer %.2f, bar %.2f%s"),
 					*UEnum::GetDisplayValueAsText(Board->GetBoardState()).ToString(), Board->IsFloating() ? TEXT(" floating") : TEXT(""), Board->IsCrashing() ? TEXT(" crashing") : TEXT(""),
 					KiteUnits::CmSToKnots(Board->Velocity.Size2D()), Board->Velocity.Rotation().Yaw, Board->GetCurrentJumpHeight(), Kite->GetClockDeg(), Kite->GetElevationDeg(), Kite->GetTurnDeg(), Kite->GetLineTensionN(),

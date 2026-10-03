@@ -109,6 +109,21 @@ struct FBarTunables
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Bar")
 	float SurfacePassGraceSeconds = 0.3f;
 
+	/**
+	 * On the water a pass starts with the tension under this instead of PassSlackTensionBW: the surface
+	 * pass from riding blind (T3.5), with the feet on the board taking the rest of the pull (body weights).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Bar")
+	float SurfacePassMaxTensionBW = 0.6f;
+
+	/** A pass started on the water takes this long, instead of PassDurationSeconds (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Bar")
+	float SurfacePassSeconds = 0.4f;
+
+	/** Tension over this while a pass started on the water is between the hands loses it, instead of PassLoseTensionBW (body weights). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Bar")
+	float SurfacePassLoseTensionBW = 0.9f;
+
 	/** A pass press waits this long for slack and the back to the kite (s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Bar")
 	float PassRequestBufferSeconds = 0.2f;
@@ -250,6 +265,24 @@ struct FBarState
 	UPROPERTY(BlueprintReadOnly, Category = "Bar")
 	float PassWaterSeconds = 0.0f;
 
+	/**
+	 * The pass under way started on the water (the surface pass from riding blind, T3.5): it takes
+	 * SurfacePassSeconds, is lost over SurfacePassLoseTensionBW, and the grace does not apply.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bar")
+	bool bPassFromWater = false;
+
+	/** The pass under way joins the jump's passes when it is done: started in the air, or on the water within the grace after the touchdown. */
+	UPROPERTY(BlueprintReadOnly, Category = "Bar")
+	bool bPassJoinsJump = true;
+
+	/**
+	 * Time left after the last touchdown in which a pass started on the water still joins that jump
+	 * (s): SurfacePassGraceSeconds in the air, counting down on the water. 0 before any jump.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bar")
+	float SurfaceGraceLeftSeconds = 0.0f;
+
 	/** How long the tension has been under PassSlackTensionBW (s); for the HUD's slack meter. */
 	UPROPERTY(BlueprintReadOnly, Category = "Bar")
 	float SlackSeconds = 0.0f;
@@ -329,7 +362,10 @@ namespace BarStateMachine
 	 * hook toggle (on the water, bar in front with both hands, |W| under 90); hooked, the wrap is 0
 	 * and nothing else applies. Unhooked: the grip limit; the wrap and the bar's place; a buffered
 	 * pass press starts a pass with slack and the back to the kite; a pass finishes after
-	 * PassDurationSeconds (air or surface) or is lost under load or on the water past the grace;
+	 * PassDurationSeconds (air or surface) or is lost under load or on the water past the grace; a pass
+	 * started on the water (T3.5, the surface pass from riding blind) starts under
+	 * SurfacePassMaxTensionBW, takes SurfacePassSeconds, is lost over SurfacePassLoseTensionBW, and
+	 * joins the jump's passes only if it started within SurfacePassGraceSeconds of the touchdown;
 	 * wrapped lines on the water lose the bar; single-hand releases while the bar is in front.
 	 */
 	KITESURF_API FBarEvents Step(FBarState& State, const FBarInputs& Inputs, const FBarTunables& Tunables, float Dt);
@@ -339,6 +375,14 @@ namespace BarStateMachine
 
 	/** Not lost and the effective wrap under WrappedLandDeg: a touchdown now can be ridden away. */
 	KITESURF_API bool CanLandRideable(const FBarState& State, const FBarTunables& Tunables = FBarTunables());
+
+	/**
+	 * A surface pass may still join the jump just landed (T3.5): unhooked with the bar, and either a
+	 * pass started on the water within the grace is under way, or the lines are round the back with no
+	 * pass made (W at +90 or more, back to blind) and the grace has not run out. The jump recorder waits
+	 * for it before it finalises such a landing.
+	 */
+	KITESURF_API bool MaySurfacePassJoinJump(const FBarState& State);
 
 	/** The stance a wrap gives: under 90 (folded) heelside; else blind on the back route, toeside on the front. */
 	KITESURF_API ETrickStance StanceForWrap(float WrapDeg, bool bRouteBehind);

@@ -93,6 +93,12 @@ struct FRiderRigInput
 	 * shoulders, the arms and the drawn torso follow it. 0 leaves the torso along the body.
 	 */
 	float TorsoPitchDeg = 0.0f;
+	/**
+	 * The torso twisted over the hips about the body's Up (deg; + turns the chest towards Right), for
+	 * riding toeside (T3.5): the hips and the legs stay on the body's frame (FRiderRigPose::Hips), the
+	 * torso, the shoulders and so the arms turn. Applied before TorsoPitchDeg. 0 leaves the torso on the hips.
+	 */
+	float TorsoTwistDeg = 0.0f;
 	/** Index 0 is the rider's left foot, 1 their right. */
 	FRiderFootInput Feet[2];
 	/**
@@ -106,7 +112,10 @@ struct FRiderRigInput
 struct FRiderRigPose
 {
 	FVector Pelvis = FVector::ZeroVector;
+	/** The torso: the hips' frame with FRiderRigInput::TorsoTwistDeg and TorsoPitchDeg on it. The shoulders and arms hang off it. */
 	FQuat Torso = FQuat::Identity;
+	/** The pelvis's own frame (X Front, Y Right, Z Up), which the legs hang off: the torso before its twist and fold. */
+	FQuat Hips = FQuat::Identity;
 	FRiderLimbPose Legs[2];
 	FRiderLimbPose Arms[2];
 };
@@ -154,7 +163,7 @@ namespace RiderRig
 	 */
 	KITESURF_API FQuat MakeBodyQuat(const FVector& Facing, const FVector& BodyUp);
 
-	/** Pelvis, torso and legs (PelvisAnchor and TorsoPitchDeg included). The arms are left hanging towards where the hands would hold a bar. */
+	/** Pelvis, torso and legs (PelvisAnchor, TorsoTwistDeg and TorsoPitchDeg included). The arms are left hanging towards where the hands would hold a bar. */
 	KITESURF_API FRiderRigPose SolveBody(const FRiderRigInput& Input);
 
 	/** Puts the hands on these points (or as near as the arms reach). */

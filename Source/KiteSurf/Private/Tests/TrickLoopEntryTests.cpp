@@ -344,11 +344,12 @@ namespace TrickLoopEntryTestsLocal
 	}
 }
 
-// In the air a full bar loops the kite its way from wherever it is. Parked 40 deg round on one side
-// (or overhead), a full bar towards the other side used to fly it across over the top, as it still
-// does on the water: the loop rule wanted the kite 35 deg round on the bar's side. With the rider in
-// the air it now loops at once (the bar reaches the kite after the dead time), the bar's way, and
-// completes. With the air rule turned off (threshold above 1) or a bar of 0.6 the same start flies
+// In the air a full bar held for AirLoopHoldSeconds (0.3 s) loops the kite its way from wherever it
+// is. Parked 40 deg round on one side (or overhead), a full bar towards the other side used to fly it
+// across over the top, as it still does on the water: the loop rule wanted the kite 35 deg round on
+// the bar's side. With the rider in the air it now loops once the bar has been held 0.3 s at the
+// kite (after the dead time), the bar's way, and completes. A 0.2 s full tap flies it across instead
+// (arrow keys are always a full bar); a 0.4 s one loops it. With the air rule turned off (threshold above 1) or a bar of 0.6 the same start flies
 // across first, as before. A full bar held since before the rider left the water is the send and
 // does not loop until it has been eased: the timed jumps fly as they did.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteAirLoopFromAnyClock, "KiteSurf.Kite.AirLoopFromAnyClock", TrickLoopEntryTestsLocal::Flags)
@@ -378,9 +379,10 @@ bool FKiteSurfKiteAirLoopFromAnyClock::RunTest(const FString& Parameters)
 			UE_LOG(LogKiteSurf, Log, TEXT("AirLoopFromAnyClock: %s, in the air: looping %d after %.2f s (dead time %.2f s) at clock %+.1f (from %+.1f), side %+.0f; completed %d dir %+d after %.2f s; crashed %d"),
 				*Which, Air.bLooped, Air.EntrySeconds, DeadTimeSeconds, Air.EntryClockDeg, Air.StartClockDeg, Air.EntrySide, Air.bCompleted, Air.CompletedDirection, Air.CompletedSeconds, Air.bCrashed);
 			TestTrue(Which + TEXT(", in the air: the kite loops"), Air.bLooped);
-			TestTrue(FString::Printf(TEXT("%s, in the air: as soon as the bar reaches the kite (%.2f s, dead time %.2f s)"), *Which, Air.EntrySeconds, DeadTimeSeconds),
-				Air.bLooped && Air.EntrySeconds <= DeadTimeSeconds + 2.0f * EntryDeltaTime);
-			TestTrue(FString::Printf(TEXT("%s, in the air: from where it was parked (clock %+.1f)"), *Which, Air.EntryClockDeg), FMath::Abs(Air.EntryClockDeg - Case.ClockDeg) < 10.0f);
+			const float HoldSeconds = Kite->AirLoopHoldSeconds;
+			TestTrue(FString::Printf(TEXT("%s, in the air: once the bar has been held %.2f s at the kite (%.2f s, dead time %.2f s)"), *Which, HoldSeconds, Air.EntrySeconds, DeadTimeSeconds),
+				Air.bLooped && Air.EntrySeconds >= DeadTimeSeconds + HoldSeconds - EntryDeltaTime && Air.EntrySeconds <= DeadTimeSeconds + HoldSeconds + 2.0f * EntryDeltaTime);
+			TestTrue(FString::Printf(TEXT("%s, in the air: from about where it was parked (clock %+.1f)"), *Which, Air.EntryClockDeg), FMath::Abs(Air.EntryClockDeg - Case.ClockDeg) < 15.0f);
 			TestEqual(Which + TEXT(", in the air: the bar's way"), Air.EntrySide, Case.Bar);
 			TestTrue(FString::Printf(TEXT("%s, in the air: and completes a loop that way (%.2f s, dir %+d)"), *Which, Air.CompletedSeconds, Air.CompletedDirection),
 				Air.bCompleted && Air.CompletedDirection == static_cast<int32>(Case.Bar));
@@ -432,6 +434,37 @@ bool FKiteSurfKiteAirLoopFromAnyClock::RunTest(const FString& Parameters)
 			!Held.bLooped || Held.EntryClockDeg * -1.0f >= Kite->LoopClockDeg - 1.0f);
 		TestTrue(TEXT("Eased and pulled again in the air, the bar loops the kite"), Pulled.bLooped && Pulled.EntrySide == -1.0f);
 	}
+
+	// The hold: in the air a full tap shorter than AirLoopHoldSeconds (0.3 s) flies the kite across as
+	// any bar does, so arrow-key steering (always a full bar) still flies the kite; held 0.4 s it loops.
+	for (const float TapSeconds : { 0.2f, 0.4f })
+	{
+		FEntryStandingFixture Standing;
+		UKiteComponent* Kite = Standing.Kite;
+		Standing.Park(40.0f);
+		Kite->SetRiderAirborne(true);
+		const float StartClockDeg = Kite->GetClockDeg();
+		const FEntry Tap = HoldBar(Standing, -1.0f, TapSeconds);
+		bool bLoopedAfter = false;
+		Kite->SteerKite(0.0f);
+		for (float Elapsed = 0.0f; Elapsed < 1.0f; Elapsed += EntryDeltaTime)
+		{
+			Kite->UpdateKite(EntryDeltaTime);
+			bLoopedAfter |= Kite->IsLooping();
+		}
+		const bool bLooped = Tap.bLooped || bLoopedAfter;
+		UE_LOG(LogKiteSurf, Log, TEXT("AirLoopFromAnyClock: a %.1f s full tap in the air from clock %+.1f (hold %.2f s): looped %d; the kite is at clock %+.1f a second later"),
+			TapSeconds, StartClockDeg, Kite->AirLoopHoldSeconds, bLooped, Kite->GetClockDeg());
+		if (TapSeconds < Kite->AirLoopHoldSeconds)
+		{
+			TestFalse(FString::Printf(TEXT("A %.1f s full tap in the air does not loop the kite"), TapSeconds), bLooped);
+			TestTrue(FString::Printf(TEXT("and flies it towards the other side (clock %+.1f from %+.1f)"), Kite->GetClockDeg(), StartClockDeg), Kite->GetClockDeg() < StartClockDeg);
+		}
+		else
+		{
+			TestTrue(FString::Printf(TEXT("A %.1f s full bar in the air loops the kite"), TapSeconds), bLooped);
+		}
+	}
 	return true;
 }
 
@@ -476,7 +509,7 @@ bool FKiteSurfKiteAirReverseMakesSLoop::RunTest(const FString& Parameters)
 		const float FirstHalfSeconds = Seconds;
 		const float ReverseClockDeg = Kite->GetClockDeg();
 
-		// The reverse: the kite loops the other way as soon as the bar reaches it.
+		// The reverse: the kite loops the other way once the reversed bar has been held at the kite for AirLoopHoldSeconds.
 		Kite->SteerKite(-First);
 		float SwitchSeconds = -1.0f;
 		float SwitchClockDeg = 0.0f;
@@ -499,8 +532,8 @@ bool FKiteSurfKiteAirReverseMakesSLoop::RunTest(const FString& Parameters)
 		UE_LOG(LogKiteSurf, Log, TEXT("AirReverseMakesSLoop (%s): reversed after %.2f s at clock %+.1f; looping the other way %.2f s later (dead time %.2f s) at clock %+.1f; second half %.2f s; records:%s; classified '%s'"),
 			*Which, FirstHalfSeconds, ReverseClockDeg, SwitchSeconds, DeadTimeSeconds, SwitchClockDeg, SecondHalfSeconds, *Text, *KindsOf(Kinds));
 
-		TestTrue(FString::Printf(TEXT("%s: the reversed bar loops the kite the other way as it reaches it (%.2f s, dead time %.2f s)"), *Which, SwitchSeconds, DeadTimeSeconds),
-			SwitchSeconds >= 0.0f && SwitchSeconds <= DeadTimeSeconds + 2.0f * EntryDeltaTime);
+		TestTrue(FString::Printf(TEXT("%s: the reversed bar loops the kite the other way once held %.2f s at the kite (%.2f s, dead time %.2f s)"), *Which, Kite->AirLoopHoldSeconds, SwitchSeconds, DeadTimeSeconds),
+			SwitchSeconds >= 0.0f && SwitchSeconds <= DeadTimeSeconds + Kite->AirLoopHoldSeconds + 2.0f * EntryDeltaTime);
 		TestFalse(Which + TEXT(": the kite stays out of the water"), Kite->IsCrashed());
 		if (!TestEqual(Which + TEXT(": two loop records"), Loops.Num(), 2))
 		{

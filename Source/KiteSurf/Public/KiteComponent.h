@@ -120,11 +120,20 @@ public:
 	 * starts one the other way. That is what flies S-loops and contra loops (docs/tricks/T2.md T2.4).
 	 * A smaller bar still flies the kite across, and a full bar already held when the rider leaves
 	 * the water (the send) does not count until it has been eased under this or pulled the other
-	 * way, so a send held through the take-off flies as before. On the water the LoopClockDeg rule
-	 * alone applies. Estimate.
+	 * way, so a send held through the take-off flies as before. The full bar has to be held for
+	 * AirLoopHoldSeconds first. On the water the LoopClockDeg rule alone applies. Estimate.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float AirLoopFullBarThreshold;
+
+	/**
+	 * How long a full bar (AirLoopFullBarThreshold, the bar as it reaches the kite) must be held in
+	 * the air before it starts or reverses a loop (s). A shorter tap flies the kite across as any
+	 * other bar does, so arrow-key steering (always a full bar) can still fly the kite in the air.
+	 * Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Kite|Steering", meta = (ClampMin = "0.0", Units = "s"))
+	float AirLoopHoldSeconds;
 
 	/** The kite sizes on offer (m^2), smallest first. */
 	static TConstArrayView<float> GetKiteSizesM2();
@@ -693,6 +702,9 @@ protected:
 	bool bSteeredAirborne = false;
 	/** The side (+1, -1) of a full bar held since the rider left the water, which does not loop in the air; 0 when none. */
 	float AirHeldFullBarSide = 0.0f;
+	/** The side (+1, -1) of the full bar being held in the air towards a loop, and for how long (s); 0 when none. */
+	float AirFullBarSide = 0.0f;
+	float AirFullBarSeconds = 0.0f;
 	bool bCrashed;
 	bool bLinesTaut;
 	float CrashedSeconds;

@@ -721,8 +721,9 @@ first-trick-per-tack scoring. This builds on T2.3's detached board.
   and the physics tests. The trick work that changes those files waits for phase 2 to merge:
   - stepping the rider attitude and replacing the kinematic air spin (T1.2 PR E);
   - air rotation input (T1.4) and live rotation tracking (T1.6);
-  - the kite's loop entry for S-loops and contra loops (done: in the air a full bar loops the kite
-    from any clock and a full bar reversed mid-loop starts a loop the other way,
+  - the kite's loop entry for S-loops and contra loops (done: in the air a full bar held for 0.3 s
+    loops the kite from any clock and a full bar reversed mid-loop and held starts a loop the other
+    way, so a keyboard tap still flies the kite across; `AirLoopHoldSeconds`,
     `UKiteComponent::AirLoopFullBarThreshold`, `docs/jumping.md`; until then S-loops could not be
     flown and a contra loop needed the kite parked 35 deg round on the side the rider came from);
   - the board's own take-off and landing values.
@@ -754,6 +755,7 @@ Every value is an **estimate** unless tagged otherwise.
 | Pass slack and duration | Tension under 0.3 body weights for 0.25 s | Pass window 0.2 to 0.4 s (**typical** timing) |
 | Megaloop | Rider at 8 m or more, kite at 20° or less, tension 3 body weights or more | `research.md` C6 |
 | Air loop full bar | 0.85 of the bar, at the kite after the dead time | In the air a bar this far over loops the kite from any clock (`AirLoopFullBarThreshold`); less still flies it across, for the redirect |
+| Air loop hold | 0.3 s of full bar, at the kite after the dead time | Before the full bar starts or reverses a loop in the air (`AirLoopHoldSeconds`); a shorter tap flies the kite across, so arrow keys (always a full bar) can still steer it |
 | Freestyle unhooked pop | 5.4 to 7.4 m/s vertical | **derived** from 1.1 to 1.5 s airtime |
 
 ## 9. Open questions

@@ -95,8 +95,8 @@ edge of the window to 12 o'clock overhead and sits there. In the air, with the b
 kite is flown to 12 over you and held there, so it carries you down. Keep the bar held towards the
 side the kite is already on and it turns down and round: a loop, for as long as you hold it. So
 holding the bar through a change of direction ends in a loop on the new side; let go as the kite
-gets there if you do not want one. In the air a full bar loops the kite from wherever it is, either
-way, and a full bar the other way mid-loop loops it back (half one way and half the other is an
+gets there if you do not want one. In the air a full bar held for a moment (0.3 s; a quick tap
+still flies the kite across) loops the kite from wherever it is, either way, and a full bar the other way mid-loop loops it back (half one way and half the other is an
 S-loop; a loop against your direction of travel is a contra loop). Less than a full bar (the stick
 or the mouse part way) still flies it across, and a send held from the water does not loop until
 you ease it.

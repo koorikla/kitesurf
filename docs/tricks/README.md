@@ -89,3 +89,4 @@ Updated as PRs merge.
 | T1.1a visual board split from the physics root, air camera | #68 | Merged |
 | T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #69 | Merged. Polled public getters; take-off, popped, apex time, landing yaw and the loop turn were synthesised in the tracker |
 | T0.2 board events (`BeginAirborne(bool)`, `OnBoardTakeoff`, `OnBoardApex`, take-off and apex counters, landing angle), T0.3 kite hookup (`FKiteLoopTracker` stepped by the kite, `GetLoopRecords`), tracker fed from them | #73 | Open. The tracker derives nothing itself any more |
+| T2.0 rig hand targets (`FRiderRigInput::Hands`, `SolveArmsPerHand`), board grab points (`Tricks/BoardGrabPoints.h`), strap loops moved to ±30 cm in `SM_KiteBoard` | #76 | Open. Not used by the pawn yet (T2.1 grabs will); torso fold, tuck, pelvis anchor and `SolveGrab` from the T2.0 plan are not in it |

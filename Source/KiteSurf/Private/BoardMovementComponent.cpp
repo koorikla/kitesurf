@@ -37,6 +37,10 @@ namespace
 
 	// The touchdown absorber is done once the board sinks into the water slower than this (cm/s).
 	constexpr float AbsorbDoneSinkCmS = 1.0f;
+
+	// A loaded rider's legs keep the board within this height above its ride height until the lines
+	// lift them off (cm): the band the 20 cm water-contact clamp kept every board in before plan-2 item 4.
+	constexpr float LoadHoldHeightCm = 20.0f;
 }
 
 UBoardMovementComponent::UBoardMovementComponent()
@@ -632,6 +636,17 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			const float DecelCmS2 = FMath::Min(AbsorbDecelCmS2, FMath::Max(RelativeSinkCmS, 0.0f) / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER));
 			const float AbsorberForceZ = FMath::Max(MassKg * (KiteUnits::GravityCmS2 + DecelCmS2) - ExternalForceN.Z * KiteUnits::UnrealForcePerN, 0.0f);
 			SupportForceZ = FMath::Max(SupportForceZ, AbsorberForceZ);
+		}
+		// The loaded hold (docs/physics/plan-2.md item 3): crouched, the rider's legs keep the board on
+		// the water against the lines until they pull up harder than m g (1 + LoadHoldBonus * load), when
+		// the lift-off rule (above) lets it go. LoadHoldHeightCm above its ride height the legs hold the
+		// board down with up to LoadHoldBonus * load * m g, and stop it rising there: its upward speed
+		// relative to the surface is taken out in the step, as the old 20 cm clamp did for every board.
+		if (!bIsAirborne && !bAbsorbing && !bHydrodynamicsDisabled && LoadAmount > 0.0f && -Submersion >= LoadHoldHeightCm)
+		{
+			const float HoldBudgetZ = FMath::Max(LoadHoldBonus, 0.0f) * LoadAmount * -GravityForceZ;
+			const float StopRiseZ = MassKg * FMath::Max(Velocity.Z - SurfaceVerticalSpeed, 0.0f) / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER);
+			SupportForceZ -= FMath::Clamp(TotalForce.Z + SupportForceZ, 0.0f, HoldBudgetZ) + StopRiseZ;
 		}
 		TotalForce.Z += SupportForceZ;
 		LastStepDebug.WaterVerticalForceN = KiteUnits::UnrealForceToN(SupportForceZ);

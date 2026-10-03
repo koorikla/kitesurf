@@ -1935,7 +1935,7 @@ bool FKiteSurfPhysicsAirborneLoopYanks::RunTest(const FString& Parameters)
 
 // A loaded rider (the jump button held: crouched, the edge driven in) hangs on against the lines and
 // is much harder to lift: the board leaves the water when the upward pull passes m g (1 +
-// LoadHoldBonus * load) (docs/physics/plan-2.md item 3). Anything else lifts them as soon as the
+// LoadHoldBonus * load) (docs/physics/plan-2.md item 3), and until then the legs hold it on the water. Anything else lifts them as soon as the
 // lines pull up harder than they weigh. Until item 3 an edge (the carve input or the weight on the
 // tail) held them down too, up to 4.5 body weights with LiftoffWeightFactor and EdgedLiftoffWeightBonus.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpEdgeHoldsRiderDown, "KiteSurf.Jump.EdgeHoldsRiderDown", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -1962,6 +1962,22 @@ bool FKiteSurfJumpEdgeHoldsRiderDown::RunTest(const FString& Parameters)
 		if (Stance == EStance::Loaded)
 		{
 			TestTrue(TEXT("Loaded, the rider holds twice their weight down"), Board->GetBoardState() != EBoardState::Airborne);
+
+			// and keeps holding it: since plan-2 item 4 there is no water-contact clamp, and the legs hold
+			// the board on the water (up to LoadHoldBonus * load * m g, stopping it 20 cm above the water).
+			float HighestCm = -BIG_NUMBER;
+			bool bStayedOn = true;
+			for (int32 Frame = 0; Frame < 60; ++Frame)
+			{
+				Board->AddExternalForce(FVector(0.0f, 0.0f, 2.0f * WeightForce));
+				Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
+				bStayedOn &= Board->GetBoardState() != EBoardState::Airborne;
+				HighestCm = FMath::Max(HighestCm, static_cast<float>(Ride.Pawn->GetActorLocation().Z - Board->GetWaterSurfaceHeightCm()));
+			}
+			UE_LOG(LogKiteSurf, Log, TEXT("EdgeHoldsRiderDown: loaded, pulled up with twice their weight for 1 s the board rose at most %.1f cm above the water, rising at %.1f cm/s at the end"), HighestCm, Board->Velocity.Z);
+			TestTrue(TEXT("for a second"), bStayedOn);
+			TestTrue(FString::Printf(TEXT("within 20 cm of the water (%.1f cm)"), HighestCm), HighestCm <= 21.0f);
+			TestTrue(FString::Printf(TEXT("and not rising (%.1f cm/s)"), Board->Velocity.Z), FMath::Abs(Board->Velocity.Z) < 5.0f);
 
 			// Past the hold's limit they go.
 			Board->AddExternalForce(FVector(0.0f, 0.0f, (1.0f + Board->LoadHoldBonus + 0.2f) * WeightForce));

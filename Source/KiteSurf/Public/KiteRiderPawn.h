@@ -18,6 +18,7 @@ class UBoardWakeComponent;
 class UWindStreakComponent;
 class UKiteComponent;
 class UTrickTrackerComponent;
+class URiderAttitudeComponent;
 class UInputMappingContext;
 class UInputAction;
 class UAudioComponent;
@@ -82,7 +83,9 @@ public:
 
 	/**
 	 * One fixed step of the whole rig, in this order: the kite with the rider where they are, the
-	 * line force to the board, the board. Tick runs as many of these as the frame holds.
+	 * line force to the board, the rider's attitude (URiderAttitudeComponent, which hands the board
+	 * its air orientation), the board, then the trick tracker. Tick runs as many of these as the
+	 * frame holds.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Simulation")
 	void StepSimulation(float StepSeconds);
@@ -151,6 +154,75 @@ public:
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	/** Names, grades and scores the rider's jumps; stepped after the board in StepSimulation. */
 	UTrickTrackerComponent* GetTrickTracker() const { return TrickTracker.Get(); }
+	/** The rider's rotation in the air (T1.2): stepped before the board in StepSimulation, slaved to the riding pose on the water. */
+	URiderAttitudeComponent* GetRiderAttitude() const { return RiderAttitude.Get(); }
+
+	/**
+	 * Steps the rider attitude and gives the board its air orientation from it. Off, the attitude is
+	 * not stepped and the board keeps its old kinematic air orientation (AirSpinRate, auto-align,
+	 * weight-shift pitch), as with no attitude component.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation")
+	bool bUseRiderAttitude;
+
+	/**
+	 * The pre-wind stick, as the rider holds it while loading (T1.4 routes the left stick here):
+	 * X +1 towards a back roll, -1 a front roll; Y +1 up, -1 down (pulled, a backflip). While the
+	 * load is held on the water and the stick is past PreWindStickThreshold, the pre-wind builds to
+	 * full over PreWindBuildSeconds; the take-off turns it into the rotation the rider leaves the water
+	 * with. Scripted for now: tests and kitesurf.PreWind set it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
+	void SetPreWind(FVector2D Stick);
+
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	FVector2D GetPreWindStick() const { return PreWindStick; }
+
+	/** How far the pre-wind has been built, 0..1. Back to 0 once the rider is on the water and not loading. */
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	float GetPreWindAmount() const { return PreWindAmount; }
+
+	/**
+	 * The rotation stick in the air, same axes as SetPreWind: past AirRotationDeadzone it drives the
+	 * attitude's capped control torque and turns the landing assist off. Scripted for now: tests and
+	 * kitesurf.Input set it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
+	void SetAirRotationInput(FVector2D Stick);
+
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	FVector2D GetAirRotationInput() const { return AirRotationStick; }
+
+	/** Tuck in the air, 0 (stretched) to 1 (tucked): a tuck spins the rider faster. */
+	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
+	void SetTuck(float Amount);
+
+	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
+	float GetTuck() const { return TuckInput; }
+
+	/** Time for the pre-wind to build to full while loading with the stick held (s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.01"))
+	float PreWindBuildSeconds;
+
+	/** The pre-wind stick builds only past this (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PreWindStickThreshold;
+
+	/** The air rotation stick acts only past this (0..1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AirRotationDeadzone;
+
+	/** Time constant of the filter on the measured vertical acceleration the attitude's time to contact uses (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.001"))
+	float VerticalAccelFilterSeconds;
+
+	/**
+	 * How long the drawn rider takes to hand over between the riding pose and the attitude's body
+	 * (s): from the take-off, and back after a landing, the torso and the pelvis line blend so the
+	 * figure does not jump. The drawn board eases back onto the root over the same time.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.0"))
+	float RiderHandoverSeconds;
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
 	/**
@@ -321,8 +393,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSheetInput() const { return CurrentSheetInput; }
 
-	/** Sets every held input at once, as the keys or sticks would. Used by the kitesurf.Input console command to script smoke runs. */
-	void ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop);
+	/**
+	 * Sets every held input at once, as the keys or sticks would. Used by the kitesurf.Input console
+	 * command to script smoke runs. AirRotation and Tuck go to SetAirRotationInput and SetTuck.
+	 */
+	void ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop, FVector2D AirRotation = FVector2D::ZeroVector, float Tuck = 0.0f);
 
 	/** Shows the chosen rider on the board. */
 	UFUNCTION(BlueprintCallable, Category = "Rider")
@@ -486,6 +561,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UTrickTrackerComponent> TrickTracker;
 
+	/** The rider's body orientation and angular momentum in the air (T1.2). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<URiderAttitudeComponent> RiderAttitude;
+
 	// Sound: loops that play all the time and are faded and pitched by UpdateAudioModulation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> WindLoopComponent;
@@ -629,6 +708,56 @@ private:
 	bool bAboveYankTension = false;
 	void UpdateCamera(float DeltaTime);
 	void UpdateRiderPose(float DeltaTime);
+
+	/**
+	 * The riding lean of the body: away from the pull, back in the water while floating, back over
+	 * the tail while loading (Load, 0..1). Facing is the level facing, TowardsKite the level direction to the
+	 * kite (zero without one). Shared by the drawn pose (with the smoothed kite) and the attitude's
+	 * slaved pose in the fixed step (with the kite where it is).
+	 */
+	FVector ComputeLevelBodyUp(const FVector& Facing, const FVector& TowardsKite, bool bHasKite, bool bAirborne, float Load) const;
+
+	/** The attitude's pose on the water, from the simulation's own state: Up along the riding lean, Front the stance facing. */
+	FQuat ComputeSlavedBodyQuat() const;
+
+	/** Steps the rider attitude for one fixed step and hands the board its air orientation. Called between the line force and the board. */
+	void StepRiderAttitude(float StepSeconds);
+
+	/** Puts the attitude back on the riding pose with nothing in hand and the drawn rider and board on the root (crash, reset). */
+	void ResetRiderAttitude();
+
+	/** Turns and places the drawn board for the attitude in the air, and eases it back onto the root after a landing. Before the rig. */
+	void UpdateBoardVisualFromAttitude(float DeltaTime);
+
+	FVector2D PreWindStick = FVector2D::ZeroVector;
+	/** The last pre-wind stick direction held past the threshold while it was building: what the take-off uses. */
+	FVector2D PreWindDirection = FVector2D::ZeroVector;
+	float PreWindAmount = 0.0f;
+	FVector2D AirRotationStick = FVector2D::ZeroVector;
+	float TuckInput = 0.0f;
+	/** The load and edge on the water at the last step before the rider left it: the board's Jump() zeroes the load. */
+	float LastGroundLoad = 0.0f;
+	float LastGroundEdgeHold = 0.0f;
+	/** Sigma, the travel side, latched at take-off (RiderAxes::TravelSide). */
+	float TravelSideSigma = 1.0f;
+	/** The board's vertical speed at the last step, and the filtered vertical acceleration from it. */
+	float LastStepVerticalSpeedCmS = 0.0f;
+	float FilteredVerticalAccelCmS2 = 0.0f;
+	bool bHasLastStepVerticalSpeed = false;
+	/** The render alpha of the last Tick: how far between the last two steps the frame is drawn. */
+	float LastRenderAlpha = 1.0f;
+	/** 0: the drawn rider is the riding pose; 1: the attitude's body. Moves over RiderHandoverSeconds. */
+	float RiderAirBlend = 0.0f;
+	/** The attitude's body and board as last drawn in the air, held for the hand-over after the landing. */
+	FQuat LastAirBodyQuat = FQuat::Identity;
+	FQuat LastAirBoardQuat = FQuat::Identity;
+	FVector LastAirBoardOffsetCm = FVector::ZeroVector;
+	/** The load the rider is drawn with (0..1): the board's, let go no faster than the board lets it go. */
+	float DrawnLoad = 0.0f;
+	/** True while the drawn board's override is the attitude's (not someone else's SetBoardVisualWorldRotation). */
+	bool bAttitudeOwnsBoardVisual = false;
+	/** The board's reset count the drawn board last saw: a reset ends the rotation at once. */
+	int32 SeenAttitudeResetCount = 0;
 
 	/** True once the kite simulation has placed the kite at line length from the rider. */
 	bool HasKitePosition() const;

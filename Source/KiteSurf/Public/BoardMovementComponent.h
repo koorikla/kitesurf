@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "KiteGear.h"
+#include "Tricks/LandingEvaluator.h"
 #include "BoardMovementComponent.generated.h"
 
 class AWaterBody;
@@ -80,6 +81,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardTakeoff, bool, bPopped);
 /** The jump in progress has stopped rising at a new highest point: its height above the water (cm). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardApex, float, ApexHeightCm);
+/** Every landing from a jump, clean or crashed, graded by LandingEvaluator::Evaluate (UBoardMovementComponent::GetLastLandingVerdict). A crash broadcasts this before OnBoardCrash. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLandingVerdict, const FLandingVerdict&, Verdict);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class KITESURF_API UBoardMovementComponent : public UPawnMovementComponent
@@ -105,6 +108,8 @@ public:
 	/** Broadcast when the board stops rising at a new highest point of the jump (again after a kite yank lifts it higher). Polled as GetApexCount. */
 	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
 	FOnBoardApex OnBoardApex;
+	UPROPERTY(BlueprintAssignable, Category = "Board|Events")
+	FOnBoardLandingVerdict OnBoardLandingVerdict;
 
 	UFUNCTION(BlueprintCallable, Category = "Board|State")
 	void TriggerCrash(float CrashIntensity = 1.0f);
@@ -219,19 +224,53 @@ public:
 	/**
 	 * True if the last landing was hot: the rider sank faster than HotLandingSinkMS or the kite was
 	 * under HotLandingKiteElevationDeg as they touched down (docs/research.md C7). Not a crash by
-	 * itself; a crash is CrashLandingG or MaxLandingAngle.
+	 * itself: at best a Sketchy grade (GetLastLandingVerdict).
 	 */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	bool WasLastLandingHot() const { return bLastLandingHot; }
+
+	/**
+	 * The last landing's grade, cause and speed retention (LandingEvaluator::Evaluate, docs/tricks.md
+	 * 6.7): set on every landing from a jump, clean or crashed. A Crash grade is what crashes the
+	 * rider; the others keep their SpeedRetention of the horizontal speed.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	FLandingVerdict GetLastLandingVerdict() const { return LastLandingVerdict; }
+
+	/** What the last landing was graded on: the board's tilt and yaw, the rider's up, the sink, g and kite elevation. */
+	const FLandingInputs& GetLastLandingInputs() const { return LastLandingInputs; }
+
+	/**
+	 * The rider's attitude in the air (URiderAttitudeComponent, T1.2), for the board's air
+	 * orientation and its landing. The pawn sets it every fixed step, before StepBoard; it holds
+	 * until set again and is let go at a landing. While bActive and the board is in the air:
+	 * - the board's full orientation is BoardQuat (the strapped board, rider times strap offset),
+	 *   which the landing grades and the drawn board shows (GetBoardWorldQuat);
+	 * - the physics root keeps only BoardQuat's heading (yaw), for the hydrodynamics and the
+	 *   landing's course, and AirSpinRate, the auto-align and AirWeightShiftPitchDeg do nothing;
+	 * - the landing reads BodyQuat for the rider's up and AngularVelocityRadS (world) for over- or
+	 *   under-rotation.
+	 * Not active (never set, or no attitude component on the pawn), the board keeps the kinematic
+	 * air orientation it always had.
+	 */
+	void SetAirAttitude(const FQuat& BoardQuat, bool bActive, const FQuat& BodyQuat = FQuat::Identity, const FVector& AngularVelocityRadS = FVector::ZeroVector);
+
+	/** True while the board's air orientation comes from the rider attitude (SetAirAttitude). */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	bool IsAirAttitudeActive() const { return bAirAttitudeActive; }
+
+	/** The board's full world orientation: the rider attitude's board in the air (SetAirAttitude), otherwise the physics root's. */
+	FQuat GetBoardWorldQuat() const;
 
 	/** The load of a landing at this sink into the water (m/s) taken out over this distance (cm), in g: 1 + v^2 / (2 g s). */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	static float LandingGForSink(float SinkMS, float AbsorbDistanceCm);
 
 	/**
-	 * Angle between the board's axis and its horizontal velocity at the last landing from a jump
-	 * (deg, 0 to 90: a twin-tip lands either way round). Over MaxLandingAngle it was a crash. Set
-	 * with the other landing facts; 0 before the first.
+	 * Angle between the board's axis and its velocity along the water at the last landing from a jump
+	 * (deg, 0 to 90: a twin-tip lands either way round): the landing evaluator's yaw, from the rider
+	 * attitude's board in the air when it is live. Past LandingThresholds.Sketchy.MaxYawDeg it was a
+	 * crash. Set with the other landing facts; 0 before the first.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	float GetLastLandingAngleDeg() const { return LastLandingAngleDeg; }
@@ -521,7 +560,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float WeightShiftPitchDeg;
 
-	/** Board pitch at full weight shift in the air (deg). */
+	/** Board pitch at full weight shift in the air (deg). Only without the rider attitude (SetAirAttitude): with it the rider's rotation turns the board. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirWeightShiftPitchDeg;
 
@@ -534,7 +573,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
 	float LoadHoldBonus;
 
-	/** Board spin rate in the air at full carve input (deg/s). */
+	/** Board spin rate in the air at full carve input (deg/s), and the auto-align's turn rate. Only without the rider attitude (SetAirAttitude). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirSpinRate;
 
@@ -640,9 +679,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float MaxJumpHeight;
 
-	/** Most angle between the board's axis and its course over the water at touchdown for a clean landing (deg); past it the rider crashes. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float MaxLandingAngle;
+	/**
+	 * The landing grades (LandingEvaluator::Evaluate, docs/tricks.md 6.7): the tilt and yaw each
+	 * grade allows, the kite and g a stomp needs, and the speed kept per grade. Past the Sketchy
+	 * limits the landing is a crash (they replace the old single MaxLandingAngle of 30 deg). Its
+	 * CrashLandingG, HotLandingSinkMS and HotLandingKiteElevationDeg are not read: the board's own
+	 * properties of those names are used, so there is one number for each.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
+	FLandingThresholds LandingThresholds;
 
 	/**
 	 * Distance over which a touchdown's sink into the water is taken out (cm): the legs bending and the
@@ -668,9 +713,6 @@ public:
 	/** A landing with the kite under this elevation above the rider (deg) is hot: the kite is not holding them up. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float HotLandingKiteElevationDeg;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float CleanLandingSpeedRetention;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float CrashDecelDuration;
@@ -781,6 +823,16 @@ private:
 	float LastLandingSinkMS = 0.0f;
 	float LastLandingAbsorbCm = 0.0f;
 	bool bLastLandingHot = false;
+	FLandingVerdict LastLandingVerdict;
+	FLandingInputs LastLandingInputs;
+
+	/** The rider attitude handed over by SetAirAttitude, and the board orientation the last air step took from it. */
+	bool bAirAttitudeActive = false;
+	FQuat AirAttitudeBoardQuat = FQuat::Identity;
+	FQuat AirAttitudeBodyQuat = FQuat::Identity;
+	FVector AirAttitudeAngularVelocity = FVector::ZeroVector;
+	bool bAirBoardQuatInUse = false;
+	FQuat AirBoardQuat = FQuat::Identity;
 
 	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
 	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);

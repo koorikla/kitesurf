@@ -12,7 +12,7 @@ namespace
 		{ TEXT("Bar in / out (power)"),            TEXT("Down / Up"),                 TEXT("Right stick up / down, triggers") },
 		{ TEXT("Loop the kite"),                   TEXT("Keep steering towards the kite's own side"), TEXT("Keep the stick towards the kite's own side") },
 		{ TEXT("Bar on the mouse"),                TEXT("Hold right button: move to steer and sheet"), TEXT("") },
-		{ TEXT("Turn the board; spin in the air"), TEXT("A / D"),                     TEXT("Left stick left / right") },
+		{ TEXT("Turn the board"),                  TEXT("A / D"),                     TEXT("Left stick left / right") },
 		{ TEXT("Weight on the nose / the tail"),   TEXT("W / S"),                     TEXT("Left stick up / down") },
 		{ TEXT("Hold to load the edge, let go to pop"), TEXT("Space"),                    TEXT("Bottom face button") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },

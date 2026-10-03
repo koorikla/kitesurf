@@ -70,6 +70,14 @@ struct FRiderRigInput
 	 * equivalent quaternion from those two.
 	 */
 	TOptional<FQuat> BodyQuat;
+	/**
+	 * The line the pelvis sits on above the feet, when it is not the body's own Up (unit). Only for
+	 * handing over between the level solve and BodyQuat: the level solve puts the pelvis along the
+	 * tilted BodyUp while its torso stays square to the level Facing, which no single quaternion
+	 * reproduces, so the pawn blends this from BodyUp to BodyQuat's Up while it blends the torso.
+	 * Unset, the pelvis goes along BodyQuat's Up (or BodyUp, without BodyQuat).
+	 */
+	TOptional<FVector> PelvisUp;
 	/** 0 standing, 1 a full crouch. */
 	float Crouch = 0.0f;
 	/** Index 0 is the rider's left foot, 1 their right. */

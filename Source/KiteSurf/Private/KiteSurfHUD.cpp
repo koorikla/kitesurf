@@ -8,6 +8,7 @@
 #include "Tricks/TrickNaming.h"
 #include "Tricks/SessionScoring.h"
 #include "Tricks/TrickSessionSubsystem.h"
+#include "Tricks/FreestyleHeatSubsystem.h"
 #include "WindComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -541,6 +542,10 @@ void AKiteSurfHUD::DrawHUD()
 
 	// The best-three session: its clock and counting jumps at the top, then its results card.
 	DrawSession(ScreenW, ScreenH);
+
+	// The freestyle heat (T3.6): its row at the top, the counting list at the right, then its results card.
+	UpdateHeatNotice();
+	DrawHeat(ScreenW, ScreenH);
 
 	// A lesson's result card: stars, the result, the best, and Next / Retry / Lesson menu.
 	LessonLayer.DrawResultCard(*this, ScreenW, ScreenH);
@@ -1279,6 +1284,272 @@ void AKiteSurfHUD::DrawSession(float ScreenW, float ScreenH)
 	CardH -= Spacing;
 	const float Pad = 24.0f * UiScale;
 	const float Top = FMath::Max(ScreenH * 0.3f, Margin + Pad);
+	DrawRect(FLinearColor(0.01f, 0.03f, 0.08f, 0.85f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, CardH + 2.0f * Pad);
+	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.9f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, 3.0f * UiScale);
+	float Y = Top;
+	for (const FStyledLine& Line : Styled)
+	{
+		DrawText(Line.Text, Line.Ink, ScreenW * 0.5f - Line.W * 0.5f, Y, nullptr, Line.Scale);
+		Y += Line.H + Spacing;
+	}
+}
+
+TArray<FString> AKiteSurfHUD::FormatHeatRow(const FFreestyleHeat& Heat)
+{
+	TArray<FString> Row;
+	Row.Add(TEXT("FREESTYLE HEAT"));
+	Row.Add(FString::Printf(TEXT("Trick %d/%d"), Heat.GetCurrentTrickNumber(), Heat.GetAttemptLimit()));
+	if (Heat.IsCountdownOn())
+	{
+		Row.Add(FormatSessionClock(Heat.GetCountdownLeft()));
+	}
+	const FHeatResult& Result = Heat.GetResult();
+	FString Total = FString::Printf(TEXT("TOTAL %.1f"), Result.Total);
+	if (Result.VarietyBonus > 0.0f)
+	{
+		Total += FString::Printf(TEXT(" (+%s variety)"), *FreestyleHeat::FormatBonus(Result.VarietyBonus));
+	}
+	Row.Add(Total);
+	return Row;
+}
+
+TArray<FString> AKiteSurfHUD::FormatHeatList(const FFreestyleHeat& Heat)
+{
+	TArray<FString> Lines;
+	Lines.Add(TEXT("COUNTING"));
+	const TArray<FScoredTrick> Counting = Heat.GetCounting();
+	const int32 Slots = FMath::Max(Heat.Settings.Rules.Counting, 0);
+	for (int32 Slot = 0; Slot < Slots; ++Slot)
+	{
+		if (Counting.IsValidIndex(Slot))
+		{
+			const FScoredTrick& Trick = Counting[Slot];
+			Lines.Add(FString::Printf(TEXT("%d  %s  %.1f  [%s]"), Slot + 1, Trick.Name.IsEmpty() ? TEXT("Trick") : *Trick.Name, Trick.Score,
+				*FreestyleHeat::FamilyLabel(Trick.Family)));
+		}
+		else
+		{
+			Lines.Add(FString::Printf(TEXT("%d  --"), Slot + 1));
+		}
+	}
+	return Lines;
+}
+
+TArray<FString> AKiteSurfHUD::FormatHeatResults(const FFreestyleHeat& Heat, float PreviousBest, bool bHadPreviousBest, bool bNewBest)
+{
+	TArray<FString> Lines;
+	const FHeatResult& Result = Heat.GetResult();
+	const int32 Attempts = Heat.GetAttemptLimit();
+	Lines.Add(FString::Printf(TEXT("FREESTYLE HEAT OVER  (%d %s)"), Attempts, Attempts == 1 ? TEXT("trick") : TEXT("tricks")));
+	Lines.Add(FString::Printf(TEXT("TOTAL  %.1f"), Result.Total));
+	if (bNewBest)
+	{
+		Lines.Add(TEXT("NEW BEST"));
+	}
+	const TArray<FScoredTrick> Counting = Heat.GetCounting();
+	for (int32 Rank = 0; Rank < Counting.Num(); ++Rank)
+	{
+		const FScoredTrick& Trick = Counting[Rank];
+		Lines.Add(FString::Printf(TEXT("%d  %s  %.1f pts  %s"), Rank + 1, Trick.Name.IsEmpty() ? TEXT("Trick") : *Trick.Name, Trick.Score,
+			*FreestyleHeat::FamilyLabel(Trick.Family)));
+	}
+	if (Counting.Num() == 0)
+	{
+		Lines.Add(TEXT("No tricks counted"));
+	}
+	const TArray<EGkaFamily> Families = Heat.GetFamiliesUsed();
+	TArray<FString> Labels;
+	for (const EGkaFamily Family : Families)
+	{
+		Labels.Add(FreestyleHeat::FamilyLabel(Family));
+	}
+	Lines.Add(Families.Num() > 0 ? FString::Printf(TEXT("Families  %d: %s"), Families.Num(), *FString::Join(Labels, TEXT(", ")))
+		: FString(TEXT("Families  0")));
+	Lines.Add(FString::Printf(TEXT("Variety bonus  +%s"), *FreestyleHeat::FormatBonus(Result.VarietyBonus)));
+	if (!bHadPreviousBest)
+	{
+		Lines.Add(FString::Printf(TEXT("First %d-trick heat"), Attempts));
+	}
+	else
+	{
+		Lines.Add(FString::Printf(TEXT("%s  %.1f"), bNewBest ? TEXT("Previous best") : TEXT("Local best"), PreviousBest));
+	}
+	return Lines;
+}
+
+TArray<FString> AKiteSurfHUD::GetHeatLines() const
+{
+	const UWorld* World = GetWorld();
+	const UFreestyleHeatSubsystem* Heats = World ? World->GetSubsystem<UFreestyleHeatSubsystem>() : nullptr;
+	if (!Heats)
+	{
+		return TArray<FString>();
+	}
+	if (Heats->IsHeatActive())
+	{
+		TArray<FString> Lines = FormatHeatRow(Heats->GetHeat());
+		Lines.Append(FormatHeatList(Heats->GetHeat()));
+		return Lines;
+	}
+	if (Heats->IsShowingResults())
+	{
+		return FormatHeatResults(Heats->GetHeat(), Heats->GetPreviousBest(), Heats->HadPreviousBest(), Heats->IsNewBest());
+	}
+	return TArray<FString>();
+}
+
+void AKiteSurfHUD::UpdateHeatNotice()
+{
+	const UWorld* World = GetWorld();
+	const UFreestyleHeatSubsystem* Heats = World ? World->GetSubsystem<UFreestyleHeatSubsystem>() : nullptr;
+	if (!Heats || Heats->GetNoticeSerial() == SeenHeatNoticeSerial)
+	{
+		return;
+	}
+	SeenHeatNoticeSerial = Heats->GetNoticeSerial();
+	ShowNotice(Heats->GetNotice());
+}
+
+void AKiteSurfHUD::DrawHeat(float ScreenW, float ScreenH)
+{
+	const UWorld* World = GetWorld();
+	const UFreestyleHeatSubsystem* Heats = World ? World->GetSubsystem<UFreestyleHeatSubsystem>() : nullptr;
+	if (!Heats || (!Heats->IsHeatActive() && !Heats->IsShowingResults()))
+	{
+		return;
+	}
+	// Sized and placed from the screen height inside a safe-area margin, as the session panel.
+	const float UiScale = FMath::Clamp(ScreenH / 1080.0f, 0.85f, 1.6f);
+	const float Margin = FMath::Max(16.0f, ScreenH * 0.02f);
+	const FLinearColor Panel(0.02f, 0.05f, 0.1f, 0.75f);
+	const FLinearColor Gold(1.0f, 0.85f, 0.2f);
+	const FLinearColor Grey(0.6f, 0.65f, 0.7f);
+	const FFreestyleHeat& Heat = Heats->GetHeat();
+
+	if (Heats->IsHeatActive())
+	{
+		// The row at the top centre: the title, "Trick 3/7", the countdown and the total.
+		const TArray<FString> Row = FormatHeatRow(Heat);
+		const float Scale = 1.25f * UiScale;
+		const float Gap = 28.0f * UiScale;
+		TArray<float> Widths;
+		float RowW = 0.0f;
+		float RowH = 0.0f;
+		for (const FString& Item : Row)
+		{
+			float W = 0.0f;
+			float H = 0.0f;
+			GetTextSize(Item, W, H, nullptr, Scale);
+			Widths.Add(W);
+			RowW += W;
+			RowH = FMath::Max(RowH, H);
+		}
+		RowW += Gap * (Row.Num() - 1);
+		float X = ScreenW * 0.5f - RowW * 0.5f;
+		const float Y = Margin;
+		const float Pad = 10.0f * UiScale;
+		DrawRect(Panel, X - Pad * 1.6f, Y - Pad * 0.6f, RowW + Pad * 3.2f, RowH + Pad * 1.2f);
+		for (int32 Index = 0; Index < Row.Num(); ++Index)
+		{
+			FLinearColor Ink = FLinearColor(0.6f, 1.0f, 0.7f);
+			if (Index == 0)
+			{
+				Ink = Gold;
+			}
+			else if (Index == 1)
+			{
+				Ink = FLinearColor::White;
+			}
+			else if (Heat.IsCountdownOn() && Index == 2)
+			{
+				Ink = Heat.GetCountdownLeft() <= 10.0f ? FLinearColor(1.0f, 0.55f, 0.2f) : FLinearColor(0.55f, 0.9f, 1.0f);
+			}
+			DrawText(Row[Index], Ink, X, Y, nullptr, Scale);
+			X += Widths[Index] + Gap;
+		}
+
+		// The counting list at the right edge, under the wind flag and above the power gauge.
+		const TArray<FString> List = FormatHeatList(Heat);
+		const float ListScale = 1.05f * UiScale;
+		float ListW = 0.0f;
+		float ListH = 0.0f;
+		TArray<float> Heights;
+		for (const FString& Line : List)
+		{
+			float W = 0.0f;
+			float H = 0.0f;
+			GetTextSize(Line, W, H, nullptr, ListScale);
+			ListW = FMath::Max(ListW, W);
+			Heights.Add(H);
+			ListH += H + 4.0f * UiScale;
+		}
+		const float ListPad = 10.0f * UiScale;
+		const float Left = ScreenW - Margin - ListW - 2.0f * ListPad;
+		const float Top = FMath::Max(250.0f, ScreenH * 0.24f);
+		DrawRect(Panel, Left, Top, ListW + 2.0f * ListPad, ListH + 2.0f * ListPad);
+		float LineY = Top + ListPad;
+		for (int32 Index = 0; Index < List.Num(); ++Index)
+		{
+			const FLinearColor Ink = Index == 0 ? Gold : (List[Index].EndsWith(TEXT("--")) ? Grey : FLinearColor(0.85f, 0.9f, 0.95f));
+			DrawText(List[Index], Ink, Left + ListPad, LineY, nullptr, ListScale);
+			LineY += Heights[Index] + 4.0f * UiScale;
+		}
+		return;
+	}
+
+	// The results card, centred: title, total, NEW BEST, the counting tricks, families, bonus, the local best.
+	const TArray<FString> Lines = FormatHeatResults(Heat, Heats->GetPreviousBest(), Heats->HadPreviousBest(), Heats->IsNewBest());
+	struct FStyledLine { FString Text; FLinearColor Ink; float Scale = 1.0f; float W = 0.0f; float H = 0.0f; };
+	TArray<FStyledLine> Styled;
+	for (int32 Index = 0; Index < Lines.Num(); ++Index)
+	{
+		const FString& Line = Lines[Index];
+		FStyledLine& Out = Styled.AddDefaulted_GetRef();
+		Out.Text = Line;
+		if (Index == 0)
+		{
+			Out.Ink = Gold;
+			Out.Scale = 1.4f;
+		}
+		else if (Index == 1)
+		{
+			Out.Ink = FLinearColor::White;
+			Out.Scale = 2.2f;
+		}
+		else if (Line == TEXT("NEW BEST"))
+		{
+			Out.Ink = Gold;
+			Out.Scale = 1.7f;
+		}
+		else if (Line.StartsWith(TEXT("Families")) || Line.StartsWith(TEXT("Variety bonus")))
+		{
+			Out.Ink = FLinearColor(0.6f, 1.0f, 0.7f);
+			Out.Scale = 1.15f;
+		}
+		else if (Index == Lines.Num() - 1)
+		{
+			Out.Ink = FLinearColor(0.55f, 0.9f, 1.0f);
+			Out.Scale = 1.15f;
+		}
+		else
+		{
+			Out.Ink = FLinearColor(0.85f, 0.9f, 0.95f);
+			Out.Scale = 1.2f;
+		}
+		Out.Scale *= UiScale;
+		GetTextSize(Out.Text, Out.W, Out.H, nullptr, Out.Scale);
+	}
+	const float Spacing = 8.0f * UiScale;
+	float CardW = 0.0f;
+	float CardH = 0.0f;
+	for (const FStyledLine& Line : Styled)
+	{
+		CardW = FMath::Max(CardW, Line.W);
+		CardH += Line.H + Spacing;
+	}
+	CardH -= Spacing;
+	const float Pad = 24.0f * UiScale;
+	const float Top = FMath::Max(ScreenH * 0.25f, Margin + Pad);
 	DrawRect(FLinearColor(0.01f, 0.03f, 0.08f, 0.85f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, CardH + 2.0f * Pad);
 	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.9f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, 3.0f * UiScale);
 	float Y = Top;

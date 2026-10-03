@@ -600,7 +600,7 @@ bool FKiteSurfSchoolMenuPauseEntries::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestEqual(TEXT("Free ride: RESUME, RESTART, GEAR, SESSION, SCHOOL, SETTINGS, MAIN MENU, QUIT"), Pause->GetNavigator().Num(), 8);
+	TestEqual(TEXT("Free ride: RESUME, RESTART, GEAR, SESSION, SCHOOL, FREESTYLE HEAT, SETTINGS, MAIN MENU, QUIT"), Pause->GetNavigator().Num(), 9);
 	TestFalse(TEXT("No lesson items"), Pause->ShowsLessonItems());
 	Pause->GetNavigator().Select(4);
 	Pause->GetNavigator().HandleKey(EKeys::Enter);
@@ -680,7 +680,7 @@ bool FKiteSurfSchoolMenuPauseEntries::RunTest(const FString& Parameters)
 	TestTrue(TEXT("FREE RIDE ends the lesson"), !IsValid(Director) || !Director->IsRunning());
 	TestFalse(TEXT("and resumes the ride"), UGameplayStatics::IsGamePaused(World));
 	HUD->ShowPauseMenu();
-	TestEqual(TEXT("Back in free ride the pause menu has SCHOOL again"), HUD->GetActivePauseMenuWidget() ? HUD->GetActivePauseMenuWidget()->GetNavigator().Num() : 0, 8);
+	TestEqual(TEXT("Back in free ride the pause menu has SCHOOL again"), HUD->GetActivePauseMenuWidget() ? HUD->GetActivePauseMenuWidget()->GetNavigator().Num() : 0, 9);
 	HUD->HidePauseMenu();
 	return true;
 }

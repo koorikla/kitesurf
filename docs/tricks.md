@@ -237,6 +237,10 @@ that.
 
   WOO grades landings as crash, sketchy, good or stomped, from landing g and recovery.
 
+The game's freestyle heat (T3.6, section 6.8) copies the GKA rules above: seven attempts, the best
+trick per family, four counting with at most two heelside and three variety, the variety bonus, a
+crash scoring nothing, and GKA's per-trick countdown (90 s).
+
 ## 4. What other games do, and what carries over
 
 Full survey in the session notes; the patterns that matter here:
@@ -639,6 +643,37 @@ rider's trick tracker by polling the record count.
 
 The tests are `KiteSurf.Trick.Session*` in `TrickSessionTests.cpp`.
 
+**Freestyle heat (T3.6).** A GKA-style heat of seven attempts by default, started with
+`kitesurf.Heat freestyle [attempts] [countdown s]` or the pause menu's "FREESTYLE HEAT (7 tricks)"
+(free ride only, after SCHOOL, so the items before it keep their places). The pure rules are
+`FFreestyleHeat` (`Tricks/FreestyleHeat.h`) around `ScoreFreestyleHeat`; `UFreestyleHeatSubsystem`
+feeds it from the rider's trick tracker by polling the record count, as the session does.
+
+- **An attempt** is an unhooked jump with more than 0.4 s of airtime, or any crash (bar lost, board
+  lost, a crash landing; hooked or not), which scores 0. A landed hooked jump is not an attempt and
+  the notice line says "Unhook for freestyle"; neither is a landed unhooked hop of 0.4 s or less, nor
+  a jump that took off before the start. An unhooked jump with no freestyle family (a plain unhooked
+  pop) uses its attempt and never counts, as a wasted trick does in a real heat.
+- **Scoring** each attempt from its record: the signature rebuilt with `SignatureFromJump`, the grade
+  the record's (the board's verdict), then `FreestyleTrickScore` with the record's apex in metres
+  (family and difficulty from `TrickNaming::FreestyleFamily`), and the heat with `ScoreFreestyleHeat`.
+- **The trick countdown** (GKA format): 90 s per attempt, restarted by each attempt; when it runs out
+  on the water the attempt is lost and scores 0 ("Trick 3 lost: time ran out"). A jump in the air
+  that took off in the heat holds it until its record decides. `kitesurf.Heat freestyle 7 0` turns
+  it off.
+- **Clock:** the board's simulation time, so the pause menu pauses the countdown.
+- **One mode at a time:** a heat does not start while a best-three session or a lesson runs (a notice
+  says why), and a running heat is cancelled when either starts.
+- **HUD:** a row at the top centre ("FREESTYLE HEAT", "Trick 3/7", the countdown, "TOTAL 27.5 (+4
+  variety)") and the counting list at the right (up to four, with their families, "--" while empty);
+  at the end a results card with the total, the counting tricks, the families used, the bonus,
+  "NEW BEST" and the local best.
+- **Local best:** per attempt count, in the save game (`BestFreestyleHeatTotalByAttempts`), saved
+  through the settings save path when beaten.
+
+The tests are `KiteSurf.Trick.FreestyleHeat*` in `TrickHeatTests.cpp` (the pure heat score,
+`FreestyleHeatScore`, is in `TrickFreestyleTests.cpp`).
+
 ### 6.9 HUD and feedback
 
 **Trick ticker:** a Canvas element in `AKiteSurfHUD`, modelled on `ShowNotice`.
@@ -706,7 +741,7 @@ named and scored, and crash an under-rotation.
 | T3.3 | Flips (tantrum, front flip) on the Y axis while unhooked | `KiteSurf.Trick.TantrumIsBackFlip` | S |
 | T3.4 | Handle pass: bar states, slack window, flick assist, air or surface pass | `KiteSurf.Trick.PassNeedsSlack`; `KiteSurf.Trick.NamesKgbFromRide` | M |
 | T3.5 | Landing stances: toeside and blind held after landing, then ride away or slide round | `KiteSurf.Trick.LandsBlindAfterBackToBlind` | M |
-| T3.6 | Freestyle heat: GKA families, four counting, group limits, variety bonus | `KiteSurf.Trick.FreestyleHeatScore` | S |
+| T3.6 | Freestyle heat: GKA families, four counting, group limits, variety bonus; the heat flow (attempts, trick countdown, HUD, local best) | `KiteSurf.Trick.FreestyleHeatScore`; `FreestyleHeatAttempts`, `FreestyleHeatCountdown`, `FreestyleHeatOnPawn`, `FreestyleHeatHUD`, `FreestyleHeatBestPersists` | S |
 | T3.7 | Riding toeside and blind; blind and toeside take-offs | Movement tests for each stance | L |
 
 ### Milestone T4: strapless (later, optional)

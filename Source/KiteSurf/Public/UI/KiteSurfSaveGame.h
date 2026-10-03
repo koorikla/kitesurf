@@ -102,6 +102,13 @@ public:
 	TMap<int32, float> BestSessionTotalBySeconds;
 
 	/**
+	 * Best freestyle heat total per attempt count (T3.6): 7 -> the best 7-trick heat. Saves made
+	 * before heats have no such property and load with no best.
+	 */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
+	TMap<int32, float> BestFreestyleHeatTotalByAttempts;
+
+	/**
 	 * Kite school results per lesson (S2), owned at run time by ULessonSubsystem. Saves made before
 	 * the kite school have no such property and load with it empty. Separate from the trick book:
 	 * resetting lesson progress never touches TrickBook.

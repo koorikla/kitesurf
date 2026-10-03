@@ -78,7 +78,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | On the water: unhook / hook back in. Unhooked the kite parks low at 45 deg, its power is fixed, and the bar moves your arms (in to the hips, out along the lines) | F | Top face button (Y) |
 | Unhooked, in the air: pass the bar behind your back (with the lines slack and your back to the kite) | Left Shift | Left face button (X) |
 | Reset | R | Right face button |
-| Pause menu (resume, restart, gear, session, school, settings, main menu, quit) | Esc or P | Start |
+| Pause menu (resume, restart, gear, session, school, freestyle heat, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |
 
 **The spot.** The gear screen also switches what is in the water. Sandbars lie across your
@@ -161,6 +161,17 @@ light wind ride with it right in: the 12 m only planes in 12 kn that way.
 a repeat is paid less (75%, 50%, ...). A jump in the air at the horn still counts if it took off
 before it. The clock and the counting scores show at the top; at the end a results card shows the
 total, the three jumps and your local best for that length, which is saved with the settings.
+
+**Freestyle heat.** FREESTYLE HEAT (7 tricks) in the pause menu (or `kitesurf.Heat freestyle
+[attempts] [countdown s]` in the console) starts a GKA-style heat of seven attempts. An attempt is an
+unhooked jump of more than 0.4 s in the air, or any crash, which scores 0; hooked jumps do not count
+("Unhook for freestyle"). Each trick scores 0.1 to 10 from its difficulty, landing and height; only
+the best trick in each family counts, four tricks count (at most two heelside, three variety), and
+one to four families earn a variety bonus of 1, 2, 4 or 7. Each attempt has 90 s (`kitesurf.Heat
+freestyle 7 0` turns that off), or it is lost. The top row shows "Trick 3/7", the countdown and the
+total with the bonus, a list at the right the counting tricks with their families, and at the end a
+results card the total, the tricks, the families, the bonus and your local best for that number of
+attempts, saved with the settings. A heat does not start during a session or a lesson.
 
 **Kite school.** SCHOOL in the main menu, or in the pause menu during a ride, opens the lesson
 menu: six chapters of lessons, each tile with its stars (0 to 3) and whether it is new, locked

@@ -63,6 +63,7 @@ void UKiteSurfGameInstance::ApplySaveGame(const UKiteSurfSaveGame& SaveGame)
 	BoardSize = KiteGear::BoardSizeFromIndex(SaveGame.BoardSizeIndex);
 	TrickBook.SetEntries(SaveGame.TrickBook.GetEntries());
 	BestSessionTotalBySeconds = SaveGame.BestSessionTotalBySeconds;
+	BestFreestyleHeatTotalByAttempts = SaveGame.BestFreestyleHeatTotalByAttempts;
 	if (ULessonSubsystem* Lessons = GetSubsystem<ULessonSubsystem>())
 	{
 		Lessons->LoadFromSaveGame(SaveGame);
@@ -102,6 +103,7 @@ void UKiteSurfGameInstance::WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const
 	SaveGame.BoardSizeIndex = static_cast<int32>(BoardSize);
 	SaveGame.TrickBook = TrickBook;
 	SaveGame.BestSessionTotalBySeconds = BestSessionTotalBySeconds;
+	SaveGame.BestFreestyleHeatTotalByAttempts = BestFreestyleHeatTotalByAttempts;
 	if (const ULessonSubsystem* Lessons = GetSubsystem<ULessonSubsystem>())
 	{
 		Lessons->WriteToSaveGame(SaveGame);
@@ -127,6 +129,23 @@ bool UKiteSurfGameInstance::RecordSessionTotal(int32 DurationSeconds, float Tota
 		return false;
 	}
 	BestSessionTotalBySeconds.Add(DurationSeconds, Total);
+	return true;
+}
+
+float UKiteSurfGameInstance::GetBestHeatTotal(int32 Attempts) const
+{
+	const float* Best = BestFreestyleHeatTotalByAttempts.Find(Attempts);
+	return Best ? *Best : 0.0f;
+}
+
+bool UKiteSurfGameInstance::RecordHeatTotal(int32 Attempts, float Total)
+{
+	const float* Best = BestFreestyleHeatTotalByAttempts.Find(Attempts);
+	if (Total <= 0.0f || (Best && Total <= *Best))
+	{
+		return false;
+	}
+	BestFreestyleHeatTotalByAttempts.Add(Attempts, Total);
 	return true;
 }
 

@@ -23,7 +23,7 @@
 namespace SchoolHUDTest
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
-	const float FrameSeconds = 1.0f / 60.0f;
+	const float HUDFrameSeconds = 1.0f / 60.0f;
 	constexpr float MSPerKnot = 0.5144f;
 
 	/** A3 as the director would show it on a step. */
@@ -102,15 +102,15 @@ namespace SchoolHUDTest
 		/** One frame: the rider, then the director (its own tick runs after the pawn's), then the HUD. */
 		void Frame()
 		{
-			Pawn->Tick(FrameSeconds);
-			Director->UpdateLesson(FrameSeconds);
-			HUD->UpdateLessonLayer(FrameSeconds);
+			Pawn->Tick(HUDFrameSeconds);
+			Director->UpdateLesson(HUDFrameSeconds);
+			HUD->UpdateLessonLayer(HUDFrameSeconds);
 		}
 
 		template <typename FDone>
 		bool FramesUntil(float Seconds, FDone&& Done)
 		{
-			for (float T = 0.0f; T < Seconds; T += FrameSeconds)
+			for (float T = 0.0f; T < Seconds; T += HUDFrameSeconds)
 			{
 				Frame();
 				if (Done())
@@ -248,11 +248,13 @@ bool FKiteSurfHUDLessonPhases::RunTest(const FString& Parameters)
 
 	FLessonHUDInput Offer = StepInput(1);
 	Offer.bDropBackOffered = true;
-	TestEqual(TEXT("Drop back a step, with its key"), LessonHUD::BuildView(Offer, NoTimers).DropBack, FString(TEXT("Too hard? Drop back to step 1  [R | B]")));
+	TestEqual(TEXT("Drop back a step: hold its key, with the fill empty"), LessonHUD::BuildView(Offer, NoTimers).DropBack, FString(TEXT("Too hard? Hold [R | B] to drop back to step 1  [----------]")));
 	Offer = StepInput(0);
 	Offer.bDropBackOffered = true;
 	Offer.DropBackLessonId = TEXT("A2");
-	TestEqual(TEXT("On the first step: back to the prerequisite"), LessonHUD::FormatDropBack(Offer), FString(TEXT("Too hard? Drop back to lesson A2  [R | B]")));
+	TestEqual(TEXT("On the first step: back to the prerequisite"), LessonHUD::FormatDropBack(Offer), FString(TEXT("Too hard? Hold [R | B] to drop back to A2  [----------]")));
+	TestEqual(TEXT("The hold fills the line: 40%"), LessonHUD::FormatDropBack(Offer, 0.4f), FString(TEXT("Too hard? Hold [R | B] to drop back to A2  [####------]")));
+	TestEqual(TEXT("Full"), LessonHUD::FormatDropBack(Offer, 1.0f), FString(TEXT("Too hard? Hold [R | B] to drop back to A2  [##########]")));
 	Offer.DropBackLessonId = NAME_None;
 	TestEqual(TEXT("Nowhere to go: no offer"), LessonHUD::FormatDropBack(Offer), FString());
 
@@ -442,15 +444,15 @@ bool FKiteSurfHUDLessonHintTiming::RunTest(const FString& Parameters)
 	bool bShown = false;
 	for (int32 I = 0; I < 114; ++I) // 1.9 s
 	{
-		bShown |= Timer.Update(true, false, FrameSeconds);
+		bShown |= Timer.Update(true, false, HUDFrameSeconds);
 	}
 	TestFalse(TEXT("Not before 2 s out of band"), bShown);
 	for (int32 I = 0; I < 12; ++I) // 2.1 s
 	{
-		bShown = Timer.Update(true, false, FrameSeconds);
+		bShown = Timer.Update(true, false, HUDFrameSeconds);
 	}
 	TestTrue(TEXT("After 2 s out of band"), bShown);
-	TestFalse(TEXT("Back in band: gone at once"), Timer.Update(true, true, FrameSeconds));
+	TestFalse(TEXT("Back in band: gone at once"), Timer.Update(true, true, HUDFrameSeconds));
 	TestFalse(TEXT("...and the count starts again"), Timer.Update(true, false, 1.5f));
 	TestTrue(TEXT("...reaching 2 s again"), Timer.Update(true, false, 0.6f));
 	TestFalse(TEXT("Not a held objective: never"), Timer.Update(false, false, 5.0f));
@@ -486,16 +488,16 @@ bool FKiteSurfHUDLessonHintTiming::RunTest(const FString& Parameters)
 	In.HeldHint = TEXT("Kite too high: fly it at 45°");
 	for (int32 I = 0; I < 60; ++I)
 	{
-		Layer.UpdateFromInput(In, FrameSeconds);
+		Layer.UpdateFromInput(In, HUDFrameSeconds);
 	}
 	TestEqual(TEXT("Layer: no hint after 1 s"), Layer.GetView().Hint, FString());
 	for (int32 I = 0; I < 70; ++I)
 	{
-		Layer.UpdateFromInput(In, FrameSeconds);
+		Layer.UpdateFromInput(In, HUDFrameSeconds);
 	}
 	TestEqual(TEXT("Layer: the hint after 2 s"), Layer.GetView().Hint, In.HeldHint);
 	In.bInBand = true;
-	Layer.UpdateFromInput(In, FrameSeconds);
+	Layer.UpdateFromInput(In, HUDFrameSeconds);
 	TestEqual(TEXT("Layer: back in band, no hint"), Layer.GetView().Hint, FString());
 	return true;
 }
@@ -558,28 +560,29 @@ bool FKiteSurfHUDLessonTimingGrades::RunTest(const FString& Parameters)
 	FLessonHUDInput In = StepInput(0);
 	In.TimingSerial = 3; // a run already graded three times when the HUD first looks
 	In.TimingGrade = G::Good;
-	Layer.UpdateFromInput(In, FrameSeconds);
+	Layer.UpdateFromInput(In, HUDFrameSeconds);
 	TestEqual(TEXT("A grade from before the HUD looked is not flashed"), Layer.GetView().Timing, FString());
 	In.TimingSerial = 4;
 	In.TimingGrade = G::Perfect;
-	Layer.UpdateFromInput(In, FrameSeconds);
+	Layer.UpdateFromInput(In, HUDFrameSeconds);
 	TestEqual(TEXT("A new grade flashes"), Layer.GetView().Timing, FString(TEXT("PERFECT")));
 	TestEqual(TEXT("...with its grade for the colour"), Layer.GetView().TimingGrade, G::Perfect);
 	for (int32 I = 0; I < 60; ++I)
 	{
-		Layer.UpdateFromInput(In, FrameSeconds);
+		Layer.UpdateFromInput(In, HUDFrameSeconds);
 	}
 	TestEqual(TEXT("Still up after 1 s"), Layer.GetView().Timing, FString(TEXT("PERFECT")));
 	for (int32 I = 0; I < 20; ++I)
 	{
-		Layer.UpdateFromInput(In, FrameSeconds);
+		Layer.UpdateFromInput(In, HUDFrameSeconds);
 	}
 	TestEqual(TEXT("Gone after 1.2 s"), Layer.GetView().Timing, FString());
 	return true;
 }
 
 // AKiteSurfHUD on a real director (A2 on a spawned rider): the intro, the step with its prompt, glyph
-// and counter, a missed attempt's fault line for 2.5 s, the drop-back offer, and its key taking it.
+// and counter, a missed attempt's fault line for 2.5 s, the drop-back offer, and its key held for 1 s
+// taking it (a tap only resets the rider).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDLessonDirectorRun, "KiteSurf.HUD.LessonDirectorRun", SchoolHUDTest::Flags)
 
 bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
@@ -590,7 +593,7 @@ bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	Fx.HUD->UpdateLessonLayer(FrameSeconds);
+	Fx.HUD->UpdateLessonLayer(HUDFrameSeconds);
 	TestFalse(TEXT("No lesson: the layer is hidden"), Fx.HUD->IsLessonLayerVisible());
 	TestFalse(TEXT("No lesson: the result-card keys do nothing"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
 
@@ -636,16 +639,40 @@ bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	Fx.HUD->UpdateLessonLayer(FrameSeconds);
-	TestEqual(TEXT("The offer with its key"), Fx.View().DropBack, FString(TEXT("Too hard? Drop back to lesson A1  [R | B]")));
-	TestTrue(TEXT("The reset key takes it"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
+	Fx.HUD->UpdateLessonLayer(HUDFrameSeconds);
+	TestEqual(TEXT("The offer: hold its key"), Fx.View().DropBack, FString(TEXT("Too hard? Hold [R | B] to drop back to A1  [----------]")));
+	// A tap: the reset key's press is not the HUD's (the rider's own handler resets the rider) and a
+	// short hold takes nothing.
+	TestFalse(TEXT("A press of the reset key does not take the offer"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
+	Fx.HUD->SetLessonResetHeld(true);
+	for (int32 I = 0; I < 12; ++I)
+	{
+		Fx.Frame();
+	}
+	Fx.HUD->SetLessonResetHeld(false);
+	Fx.Frame();
+	TestEqual(TEXT("After a 0.2 s tap: still A2"), Fx.Director->GetLessonId(), FName(TEXT("A2")));
+	TestTrue(TEXT("...with the offer still up"), Fx.Director->IsDropBackOffered());
+	TestEqual(TEXT("...and the fill empty again"), Fx.View().DropBack, FString(TEXT("Too hard? Hold [R | B] to drop back to A1  [----------]")));
+	// A hold: the fill grows with it, and at 1 s the offer is taken.
+	Fx.HUD->SetLessonResetHeld(true);
+	for (int32 I = 0; I < 30; ++I)
+	{
+		Fx.Frame();
+	}
+	TestEqual(TEXT("Half a second into the hold: half full"), Fx.View().DropBack, FString(TEXT("Too hard? Hold [R | B] to drop back to A1  [#####-----]")));
+	TestTrue(TEXT("...and the bar behind it too"), FMath::IsNearlyEqual(Fx.View().DropBackFill, 0.5f, 0.02f));
+	TestEqual(TEXT("Not taken yet"), Fx.Director->GetLessonId(), FName(TEXT("A2")));
+	const bool bDropped = Fx.FramesUntil(0.6f, [&] { return Fx.Director->GetLessonId() == FName(TEXT("A1")); });
+	TestTrue(TEXT("Held for 1 s: dropped back to A1"), bDropped);
+	Fx.HUD->SetLessonResetHeld(false);
 	TestEqual(TEXT("A1 runs"), Fx.Director->GetLessonId(), FName(TEXT("A1")));
-	Fx.HUD->UpdateLessonLayer(FrameSeconds);
+	Fx.HUD->UpdateLessonLayer(HUDFrameSeconds);
 	TestEqual(TEXT("The HUD shows A1's intro"), Fx.View().Header, FString(TEXT("LESSON A1  Kite power dive")));
 	TestEqual(TEXT("No drop-back line any more"), Fx.View().DropBack, FString());
 
 	Fx.Director->ExitToFreeRide();
-	Fx.HUD->UpdateLessonLayer(FrameSeconds);
+	Fx.HUD->UpdateLessonLayer(HUDFrameSeconds);
 	TestFalse(TEXT("After exit the layer is hidden"), Fx.HUD->IsLessonLayerVisible());
 	return true;
 }

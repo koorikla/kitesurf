@@ -3,6 +3,8 @@
 #include "BoardMovementComponent.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
+#include "GameFramework/WorldSettings.h"
+#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "KiteComponent.h"
 #include "KiteRiderPawn.h"
@@ -77,7 +79,15 @@ void ALessonDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		RestoreSnapshot();
 		Phase = ELessonPhase::Idle;
 	}
+	// Never leave the world slowed down behind us.
+	StopSlowMotion();
 	Super::EndPlay(EndPlayReason);
+}
+
+void ALessonDirector::Destroyed()
+{
+	StopSlowMotion();
+	Super::Destroyed();
 }
 
 ELessonStart ALessonDirector::SupportedStart(ELessonStart Requested)
@@ -161,6 +171,9 @@ bool ALessonDirector::BeginLesson(const FLessonDef& InLesson, APawn* Pawn, const
 	StepIndex = 0;
 	TimingGrade = ELessonTimingGrade::None;
 	LastSheetGradeTime = -UE_BIG_NUMBER;
+	// A slow motion from the last run ends here; the clean-attempt counts are kept (a Retry does not
+	// bring a step's slow motion back).
+	StopSlowMotion();
 
 	AddTickPrerequisiteActor(NewRider);
 	SetActorTickEnabled(true);
@@ -254,7 +267,10 @@ void ALessonDirector::ApplySetup()
 	// for the speed; the ride start then points it across the wind on the tack with the kite
 	// powered up on that side, as a free ride starts.
 	Board->ResetToTack(StartKnots);
-	AKiteSurfGameMode::InitializeRide(P, KiteUnits::KnotsToCmS(StartKnots), Tack);
+	// The player's ride start: InitializeRide, then the bar where the player's own ride starts it
+	// (AKiteSurfGameMode::GetPlayerStartSheet: the middle with BAR TO MIDDLE on), so the first touch
+	// of the sheet input does not jump it.
+	AKiteSurfGameMode::InitializePlayerRide(P, KiteUnits::KnotsToCmS(StartKnots), Tack);
 	if (bFloating)
 	{
 		// In the water with the board on the feet and the kite at 12.
@@ -295,8 +311,9 @@ void ALessonDirector::ApplyAssists(const FLessonAssists& Assists)
 	{
 		Attitude->AssistStrength = Assists.bLandingAssist ? 1.0f : 0.0f;
 	}
-	// Auto-redirect (physics phase 3), loop catch (chapter E) and slow motion (S8) do not exist
-	// yet: they count towards the stars as the lesson sets them but change nothing on the rider.
+	// Auto-redirect (physics phase 3) and loop catch (chapter E) do not exist yet: they count towards
+	// the stars as the lesson sets them but change nothing on the rider. Slow motion (S8) is the
+	// director's own (UpdateSlowMotion), at the steps that have a decision point.
 }
 
 float ALessonDirector::BoardTime() const
@@ -424,9 +441,11 @@ void ALessonDirector::UpdateLesson(float DeltaSeconds)
 	if (!Rider.IsValid())
 	{
 		UE_LOG(LogKiteSchool, Warning, TEXT("Lesson %s: the rider is gone; lesson ended"), *Lesson.Id.ToString());
+		StopSlowMotion();
 		SetPhase(ELessonPhase::Idle);
 		return;
 	}
+	const float RealSeconds = RealDeltaSeconds(FMath::Max(DeltaSeconds, 0.0f));
 	const bool bNewSample = SampleTelemetry();
 	PhaseSeconds += FMath::Max(DeltaSeconds, 0.0f);
 
@@ -476,6 +495,8 @@ void ALessonDirector::UpdateLesson(float DeltaSeconds)
 		bRecorded = true;
 		EnterResult(ELessonOutcome::Failed);
 	}
+
+	UpdateSlowMotion(RealSeconds, bNewSample);
 }
 
 const FLessonObjective* ALessonDirector::GetCurrentObjective() const
@@ -501,7 +522,8 @@ void ALessonDirector::JudgeStep()
 	const AKiteRiderPawn* P = Rider.Get();
 	const UTrickTrackerComponent* Tracker = P ? P->GetTrickTracker() : nullptr;
 	const int32 RecordCount = Tracker ? Tracker->GetJumpRecordCount() : 0;
-	if (RecordCount != LastSeenRecordCount)
+	const bool bNewJump = RecordCount != LastSeenRecordCount;
+	if (bNewJump)
 	{
 		LastSeenRecordCount = RecordCount;
 		if (Jump)
@@ -546,6 +568,9 @@ void ALessonDirector::JudgeStep()
 		UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: counted %d of %d (value %.2f)"),
 			*Lesson.Id.ToString(), StepIndex + 1, StepProgress.Count, FMath::Max(Objective->Count, 1), Result.Value);
 	}
+	// Before the step can move on: the attempt counts for this step's slow motion.
+	CountSlowMoAttempt(bNewJump && LessonDirectorPrivate::NeedsJump(Objective->PrimaryMeasure()), Jump,
+		!LessonDirectorPrivate::NeedsJump(Objective->PrimaryMeasure()) && StepProgress.Count > CountBefore);
 
 	if (Result.bPassed)
 	{
@@ -681,6 +706,7 @@ void ALessonDirector::EnterStep(int32 Index)
 	StepFailures = 0;
 	bOfferDropBack = false;
 	Outcome = ELessonOutcome::None;
+	SlowMoArm = LessonTiming::FSlowMoArm();
 	SetPhase(ELessonPhase::Step);
 }
 
@@ -787,6 +813,7 @@ void ALessonDirector::ExitToFreeRide()
 		RestoreSnapshot();
 		SetPhase(ELessonPhase::Idle);
 	}
+	StopSlowMotion();
 	Snapshot.bValid = false;
 	Destroy();
 }
@@ -894,4 +921,152 @@ const TCHAR* ALessonDirector::OutcomeName(ELessonOutcome InOutcome)
 	case ELessonOutcome::Passed:        return TEXT("Passed");
 	default:                            return TEXT("?");
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Slow motion at the step's decision point (S8)
+// ---------------------------------------------------------------------------------------------
+
+float ALessonDirector::RealDeltaSeconds(float DeltaSeconds) const
+{
+	// The world scaled this frame's time by its effective dilation (what this director wrote, times
+	// any demo or cinematic dilation); undo it, so the schedule runs in real seconds.
+	float Dilation = WrittenTimeDilation;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AWorldSettings* Settings = World->GetWorldSettings())
+		{
+			Dilation = Settings->GetEffectiveTimeDilation();
+		}
+	}
+	return Dilation > KINDA_SMALL_NUMBER ? DeltaSeconds / Dilation : DeltaSeconds;
+}
+
+FName ALessonDirector::SlowMoStepKey(int32 Index) const
+{
+	return FName(*FString::Printf(TEXT("%s.%d"), *Lesson.Id.ToString(), Index + 1));
+}
+
+int32 ALessonDirector::GetSlowMotionCleanAttempts() const
+{
+	if (Phase == ELessonPhase::Idle)
+	{
+		return 0;
+	}
+	const int32* Count = SlowMoCleanAttempts.Find(SlowMoStepKey(StepIndex));
+	return Count ? *Count : 0;
+}
+
+bool ALessonDirector::IsSlowMotionOnForStep() const
+{
+	if (Phase == ELessonPhase::Idle || !UsedAssists.bSlowMotion || !Lesson.Steps.IsValidIndex(StepIndex) || !Lesson.Steps[StepIndex].SlowMo.IsSet())
+	{
+		return false;
+	}
+	return GetSlowMotionCleanAttempts() < LessonTiming::SlowMoOffAfterCleanAttempts;
+}
+
+void ALessonDirector::CountSlowMoAttempt(bool bNewJump, const FJumpRecord* Jump, bool bCounted)
+{
+	if (!Lesson.Steps.IsValidIndex(StepIndex) || !Lesson.Steps[StepIndex].SlowMo.IsSet())
+	{
+		return;
+	}
+	const bool bCleanJump = bNewJump && Jump && Jump->Outcome != EJumpOutcome::Crashed
+		&& static_cast<uint8>(Jump->Grade) <= static_cast<uint8>(ELandingGrade::Clean);
+	if (!bCleanJump && !bCounted)
+	{
+		return;
+	}
+	int32& Count = SlowMoCleanAttempts.FindOrAdd(SlowMoStepKey(StepIndex));
+	++Count;
+	UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: clean attempt %d of %d for the slow motion%s"), *Lesson.Id.ToString(), StepIndex + 1,
+		Count, LessonTiming::SlowMoOffAfterCleanAttempts, Count == LessonTiming::SlowMoOffAfterCleanAttempts ? TEXT(": off for this step from now") : TEXT(""));
+}
+
+void ALessonDirector::UpdateSlowMotion(float RealSeconds, bool bNewSample)
+{
+	if (bSlowMoActive)
+	{
+		SlowMoRealSeconds += RealSeconds;
+		// The step was judged and moved on, or the attempt's result came up: ease out from here.
+		if (Phase != ELessonPhase::Step || StepIndex != SlowMoStepIndex)
+		{
+			ReleaseSlowMotion();
+		}
+		if (SlowMoRealSeconds >= LessonTiming::SlowMoTotalSeconds())
+		{
+			UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: slow motion over after %.2f real s"), *Lesson.Id.ToString(), SlowMoStepIndex + 1, SlowMoRealSeconds);
+			StopSlowMotion();
+			return;
+		}
+		SlowMoTimeDilation = LessonTiming::SlowMoDilationAt(SlowMoRealSeconds);
+		WriteTimeDilation(SlowMoTimeDilation);
+		return;
+	}
+	if (Phase != ELessonPhase::Step || !bNewSample || Telemetry.IsEmpty() || !IsSlowMotionOnForStep())
+	{
+		return;
+	}
+	if (LessonTiming::DetectSlowMoCue(Lesson.Steps[StepIndex].SlowMo, Telemetry.Latest(), SlowMoArm))
+	{
+		StartSlowMotion();
+	}
+}
+
+void ALessonDirector::StartSlowMotion()
+{
+	bSlowMoActive = true;
+	SlowMoRealSeconds = 0.0f;
+	SlowMoStepIndex = StepIndex;
+	SlowMoPrompt = Lesson.Steps.IsValidIndex(StepIndex) ? Lesson.Steps[StepIndex].SlowMo.Prompt : FText::GetEmpty();
+	++SlowMoSerial;
+	// The first frame of the ramp: from real time, so nothing jumps.
+	SlowMoTimeDilation = LessonTiming::SlowMoDilationAt(0.0f);
+	WriteTimeDilation(SlowMoTimeDilation);
+	UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: slow motion at the decision point (board time %.2f s): \"%s\""),
+		*Lesson.Id.ToString(), StepIndex + 1, BoardTime(), *SlowMoPrompt.ToString());
+}
+
+void ALessonDirector::ReleaseSlowMotion()
+{
+	if (bSlowMoActive && SlowMoRealSeconds < LessonTiming::SlowMoReleaseSeconds())
+	{
+		// Start the ramp out from the depth reached so far: the dilation the ramp out has at that depth.
+		const float Depth = (1.0f - LessonTiming::SlowMoDilationAt(SlowMoRealSeconds)) / FMath::Max(1.0f - LessonTiming::SlowMoDilation, KINDA_SMALL_NUMBER);
+		// Find where on the ramp out the dilation is the current one (the ramp out is monotonic).
+		float Lo = LessonTiming::SlowMoReleaseSeconds();
+		float Hi = LessonTiming::SlowMoTotalSeconds();
+		for (int32 I = 0; I < 20; ++I)
+		{
+			const float Mid = 0.5f * (Lo + Hi);
+			const float MidDepth = (1.0f - LessonTiming::SlowMoDilationAt(Mid)) / FMath::Max(1.0f - LessonTiming::SlowMoDilation, KINDA_SMALL_NUMBER);
+			(MidDepth > Depth ? Lo : Hi) = Mid;
+		}
+		SlowMoRealSeconds = 0.5f * (Lo + Hi);
+	}
+}
+
+void ALessonDirector::StopSlowMotion()
+{
+	bSlowMoActive = false;
+	SlowMoRealSeconds = 0.0f;
+	SlowMoTimeDilation = 1.0f;
+	SlowMoStepIndex = INDEX_NONE;
+	WriteTimeDilation(1.0f);
+}
+
+void ALessonDirector::WriteTimeDilation(float Dilation)
+{
+	// Written only when it changes, so the director never touches the world's dilation outside a
+	// slow motion of its own.
+	if (!bApplyTimeDilation || Dilation == WrittenTimeDilation)
+	{
+		return;
+	}
+	if (GetWorld() && GetWorld()->GetWorldSettings())
+	{
+		UGameplayStatics::SetGlobalTimeDilation(this, Dilation);
+	}
+	WrittenTimeDilation = Dilation;
 }

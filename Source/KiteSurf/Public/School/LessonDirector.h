@@ -91,6 +91,8 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	/** Also before play has begun (a test world): never leaves the world slowed down. */
+	virtual void Destroyed() override;
 
 	/** Seconds the intro shows before the first step is judged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
@@ -290,6 +292,57 @@ public:
 	/** The start the game can actually give for a requested one. */
 	static ELessonStart SupportedStart(ELessonStart Requested);
 
+	// --- Slow motion at the step's decision point (docs/tutorials.md 3.4, S8). ---
+	//
+	// A step with a slow-motion cue (FLessonStep::SlowMo), ridden with the slow-motion assist, slows
+	// game time when its decision point comes (LessonTiming::DetectSlowMoCue on each new telemetry
+	// sample): down to LessonTiming::SlowMoDilation and back on a schedule in real seconds, through
+	// UGameplayStatics::SetGlobalTimeDilation, with one prompt. The ride is not touched: the pawn steps
+	// its fixed 240 Hz from the dilated frame time, so the same inputs at the same sim times give the
+	// same ride, only spread over more frames. Off outside a lesson and outside a step; the world's
+	// dilation is written only while a slow motion runs, and put back to 1 when it ends, when the step
+	// or phase changes (eased out), and at once on a new lesson, an exit or the director's end.
+
+	/** Write the slow motion to the world's time dilation (on by default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
+	bool bApplyTimeDilation = true;
+
+	/** The time dilation the director asks for now: 1 unless a slow motion runs. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	float GetTimeDilation() const { return SlowMoTimeDilation; }
+
+	/** A slow motion is running, from its decision point until time is back to normal. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	bool IsSlowMotionActive() const { return bSlowMoActive; }
+
+	/** The one prompt shown while a slow motion runs; empty otherwise. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	FText GetSlowMotionPrompt() const { return bSlowMoActive ? SlowMoPrompt : FText::GetEmpty(); }
+
+	/** Goes up by one every time a slow motion starts. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	int32 GetSlowMotionSerial() const { return SlowMoSerial; }
+
+	/** Real seconds since the running slow motion started; 0 when none runs. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	float GetSlowMotionSeconds() const { return bSlowMoActive ? SlowMoRealSeconds : 0.0f; }
+
+	/**
+	 * The current step slows time at its decision point: it has a slow-motion cue, the run rides with
+	 * the slow-motion assist, and the step has had fewer than LessonTiming::SlowMoOffAfterCleanAttempts
+	 * Clean (or better) attempts.
+	 */
+	UFUNCTION(BlueprintPure, Category = "School")
+	bool IsSlowMotionOnForStep() const;
+
+	/**
+	 * Clean (or better) attempts on the current step that count towards switching its slow motion off:
+	 * jumps landed Clean or Stomped on a jump step, otherwise attempts that counted. Kept per lesson
+	 * step for this director's life, so a Retry does not bring the slow motion back.
+	 */
+	UFUNCTION(BlueprintPure, Category = "School")
+	int32 GetSlowMotionCleanAttempts() const;
+
 private:
 	/** What the set-up changes on the rider, to put back on exit. */
 	struct FFreeRideSnapshot
@@ -383,4 +436,31 @@ private:
 	void GradeSheetIn();
 	/** The run's result is in the progress book. */
 	bool bRecorded = false;
+
+	// Slow motion (S8).
+	bool bSlowMoActive = false;
+	/** Real seconds into the running slow motion. */
+	float SlowMoRealSeconds = 0.0f;
+	float SlowMoTimeDilation = 1.0f;
+	/** The step the running slow motion started on. */
+	int32 SlowMoStepIndex = INDEX_NONE;
+	int32 SlowMoSerial = 0;
+	FText SlowMoPrompt;
+	LessonTiming::FSlowMoArm SlowMoArm;
+	/** Clean attempts per lesson step ("B2.2"), for switching a step's slow motion off. */
+	TMap<FName, int32> SlowMoCleanAttempts;
+	/** The dilation last written to the world (1 when the director has not written any). */
+	float WrittenTimeDilation = 1.0f;
+	/** Real seconds of a frame of DeltaSeconds game seconds: the world's dilation scaled it. */
+	float RealDeltaSeconds(float DeltaSeconds) const;
+	void UpdateSlowMotion(float RealSeconds, bool bNewSample);
+	void StartSlowMotion();
+	/** Eases a running slow motion out from now (the step or the phase changed). */
+	void ReleaseSlowMotion();
+	/** Back to real time at once. */
+	void StopSlowMotion();
+	void WriteTimeDilation(float Dilation);
+	FName SlowMoStepKey(int32 Index) const;
+	/** After a judged jump or attempt on the current step: counts it towards the step's slow motion if Clean or better. */
+	void CountSlowMoAttempt(bool bNewJump, const FJumpRecord* Jump, bool bCounted);
 };

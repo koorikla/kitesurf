@@ -10,7 +10,7 @@
 # kitesurf.CaptureFrames writes each frame to Saved/MenuVideo/loop/ and intro/. Needs the GPU, ffmpeg (with
 # libvpx-vp9) and ImageMagick 7.
 #
-#   scripts/render-menu-video.sh                 # 1920x1080, encode both videos
+#   scripts/render-menu-video.sh                 # 3840x2160 (4K), encode both videos
 #   RES=960x540 scripts/render-menu-video.sh     # a quick look; writes into Saved/MenuVideo only
 #   SKIP_CAPTURE=1 scripts/render-menu-video.sh  # re-encode the last take
 set -euo pipefail
@@ -18,80 +18,115 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-RES="${RES:-1920x1080}"
+FULL_RES=3840x2160
+RES="${RES:-$FULL_RES}"
 RES_X="${RES%x*}"
 RES_Y="${RES#*x}"
 FPS=30
 OUT_DIR="$PROJECT_ROOT/Saved/MenuVideo"
 MOVIES_DIR="$PROJECT_ROOT/Content/Movies"
 # Only a full-size take replaces the videos in Content.
-if [[ "$RES" != "1920x1080" ]]; then
+if [[ "$RES" != "$FULL_RES" ]]; then
     MOVIES_DIR="$OUT_DIR"
 fi
 
-# Frames are counted from the start of the run. Filming starts once the rider is up and planing and
-# the shaders are compiled. The ride is the same every run, so the intro is a second run of it with
-# the camera circling the rider through the big jump.
-LOOP_START=150
-LOOP_FRAMES=750
-INTRO_START=385
-INTRO_FRAMES=180
-CROSSFADE_FRAMES=30
+# The loop is cut from short clips, each filmed in its own run of the same ride from the same start,
+# so every trick is flown from the same steady ride rather than from wherever the last one left the
+# rider. Frames are counted from the start of a run; filming starts once the rider is up and
+# planing and the shaders are compiled. The intro is one more clip.
+FADE_FRAMES=30
+LOOP_CLIPS=(cruise send looptransition airloop heliloop)
 
-# frame-from-start  command
+# Every run: no UI, a windy day on a small kite (as the big jump tests ride it), and the kite held
+# low on its side of the window: left alone it climbs to the zenith and the rider stops.
 RIDE=(
-    "100 kitesurf.HideUI"
-    # Ride with the kite held low on its side of the window; left alone it climbs to the zenith
-    # and the rider stops.
-    "20 kitesurf.HoldKite 50"
-    # A windy day on a small kite, as the big jump tests ride it.
     "10 kitesurf.Wind 30"
     "11 kitesurf.Kite 0"
-    # The send and pop as the physics tests fly it (RunJump in RideLoopTests.cpp): bar towards
-    # the kite, weight on the tail and the jump button held to load the crouch...
+    "20 kitesurf.HoldKite 50"
+    "100 kitesurf.HideUI"
+)
+
+# The send and pop as the physics tests fly it (RunJump in RideLoopTests.cpp), from frame 400: bar
+# towards the kite, weight on the tail and the jump button held to load the crouch; after 0.8 s
+# pull the bar in and let go of the button (later goes higher but lands hot). In the air with the
+# bar centred the assist holds the kite overhead. 5.3 m, 3.9 s, landing at about frame 542.
+SEND=(
     "400 kitesurf.HoldKite off"
     "400 kitesurf.Input -1 0 0 -1 0"
     "400 kitesurf.Load 1"
-    # ...then after about 0.8 s pull (later goes higher but lands hot) the bar in and let go of the button: the pop.
     "424 kitesurf.Input 0 1 0 -1 0"
     "425 kitesurf.Load 0"
     "430 kitesurf.Input 0 1 0 0 0"
-    # Bar centred in the air: the assist holds the kite overhead. Then ride on with the kite low.
     "445 kitesurf.Input 0 0 0 0 0"
-    "560 kitesurf.HoldKite 50"
-    # Loop the kite.
-    "680 kitesurf.HoldKite off"
-    "680 kitesurf.Input 1 0 0 0 0"
-    "770 kitesurf.Input 0 0 0 0 0"
-    "770 kitesurf.HoldKite 50"
-)
-LOOP_SHOTS=(
-    "$LOOP_START kitesurf.CaptureFrames $LOOP_FRAMES loop"
-    # Riding into a long lens planted ahead.
-    "$LOOP_START kitesurf.Shot Wide"
-    # Low over the water as the rider rushes past.
-    "270 kitesurf.Shot Low"
-    # Side on for the send and the pop...
-    "390 kitesurf.Shot Side"
-    # ...and round the rider while they hang in the air.
-    "450 kitesurf.Shot Orbit"
-    # Down the lines from behind the kite.
-    "570 kitesurf.Shot KiteView"
-    # Behind the rider for the kite loop.
-    "660 kitesurf.Shot Chase"
-    "780 kitesurf.Shot Side"
-)
-INTRO_SHOTS=(
-    "$INTRO_START kitesurf.CaptureFrames $INTRO_FRAMES intro"
-    "$INTRO_START kitesurf.Shot Orbit"
 )
 
-# Plays the ride with the given shots in the game, offscreen, on a fixed timestep, holding the GPU
+# Each clip sets CLIP_START and CLIP_FRAMES (the frames filmed) and CLIP (its inputs and shots).
+clip_cruise() {
+    CLIP_START=150 CLIP_FRAMES=240
+    CLIP=(
+        # Riding into a long lens planted ahead, then low over the water as the rider rushes past.
+        "150 kitesurf.Shot Wide"
+        "270 kitesurf.Shot Low"
+    )
+}
+clip_send() {
+    CLIP_START=390 CLIP_FRAMES=180
+    CLIP=("${SEND[@]}"
+        # Side on for the send and pop, then round the rider while they hang in the air.
+        "390 kitesurf.Shot Side"
+        "450 kitesurf.Shot Orbit"
+    )
+}
+clip_looptransition() {
+    CLIP_START=415 CLIP_FRAMES=150
+    CLIP=(
+        # A kite loop on the water that turns the rider onto the other tack: the kite lifted high
+        # first (a loop from low puts it in the water), then the bar held towards its own side
+        # loops it down through the power zone while the rider carves round.
+        "415 kitesurf.Shot Orbit"
+        "380 kitesurf.HoldKite 15"
+        "430 kitesurf.HoldKite off"
+        "430 kitesurf.Input 1 0 0 0 1"
+        "475 kitesurf.Input 1 0 -1 0 1"
+        "500 kitesurf.Input 0 0 -1 0 0"
+        "520 kitesurf.HoldKite -45"
+        "520 kitesurf.Input 0 0 0 0 0"
+    )
+}
+clip_airloop() {
+    CLIP_START=390 CLIP_FRAMES=180
+    CLIP=("${SEND[@]}"
+        # The big jump with a kite loop from the apex: the bar held over at the top, and the kite goes
+        # round as the rider comes down (276 deg by touchdown, then the rest). A loop started earlier,
+        # to finish high, stops holding the rider up and they crash: the model's airborne loop
+        # (KiteSurf.Physics.AirborneLoopYanks) does not yet lift.
+        "390 kitesurf.Shot Side"
+        "455 kitesurf.Input -1 0 0 0 1"
+        "530 kitesurf.Input 0 0 0 0 0"
+    )
+}
+clip_heliloop() {
+    CLIP_START=440 CLIP_FRAMES=150
+    CLIP=("${SEND[@]}"
+        # A heli loop: a downloop from the top of the jump on the way down, going round (345 deg)
+        # through the landing. Started later than this it stalls once the rider is down.
+        "440 kitesurf.Shot Low"
+        "470 kitesurf.Input -1 0 0 0 1"
+        "560 kitesurf.Input 0 0 0 0 0"
+    )
+}
+clip_intro() {
+    # Circling the rider through the big jump, under the title.
+    CLIP_START=385 CLIP_FRAMES=180
+    CLIP=("${SEND[@]}" "385 kitesurf.Shot Orbit")
+}
+
+# Plays the ride with a clip's inputs and shots in the game, offscreen, on a fixed timestep, holding the GPU
 # lock (common.sh) for the take.
 film() {
     local cmds="" entry frame
     # The ride's state in the log once a second, to see what the script did.
-    for ((frame = 30; frame < 1200; frame += 30)); do
+    for ((frame = 30; frame < 1200; frame += ${STATE_EVERY:-30})); do
         cmds+="kitesurf.After $frame kitesurf.State,"
     done
     for entry in "${RIDE[@]}" "$@"; do
@@ -130,16 +165,28 @@ film_take() {
     done
 }
 
-if [[ -z "${SKIP_CAPTURE:-}" ]]; then
-    echo "=== Filming the loop: $LOOP_FRAMES frames at $RES ==="
-    film_take loop $LOOP_FRAMES "${LOOP_SHOTS[@]}"
-    echo "=== Filming the intro: $INTRO_FRAMES frames at $RES ==="
-    film_take intro $INTRO_FRAMES "${INTRO_SHOTS[@]}"
-fi
-check_take loop $LOOP_FRAMES
-check_take intro $INTRO_FRAMES
+# CLIPS films only some, e.g. CLIPS="airloop" while working one out; the videos are encoded only
+# when every clip has been filmed.
+CLIPS=(${CLIPS:-${LOOP_CLIPS[*]} intro})
+LOOP_FRAMES=0
+for name in "${LOOP_CLIPS[@]}" intro; do
+    "clip_$name"
+    if [[ " ${CLIPS[*]} " == *" $name "* && -z "${SKIP_CAPTURE:-}" ]]; then
+        echo "=== Filming $name: $CLIP_FRAMES frames at $RES ==="
+        film_take "$name" "$CLIP_FRAMES" "${CLIP[@]}" "$CLIP_START kitesurf.CaptureFrames $CLIP_FRAMES $name"
+    fi
+    [[ "$name" == intro ]] && INTRO_FRAMES=$CLIP_FRAMES || LOOP_FRAMES=$((LOOP_FRAMES + CLIP_FRAMES))
+done
+for name in "${LOOP_CLIPS[@]}" intro; do
+    if (( $(find "$OUT_DIR/$name" -name 'frame_*.png' 2>/dev/null | wc -l) == 0 )); then
+        echo "Filmed ${CLIPS[*]}; the videos need every clip, so not encoding."
+        exit 0
+    fi
+done
+for name in "${LOOP_CLIPS[@]}"; do "clip_$name"; check_take "$name" "$CLIP_FRAMES"; done
+clip_intro; check_take intro "$CLIP_FRAMES"
 # Without -ForceRes an offscreen window is quietly made smaller than asked for.
-SIZE=$(magick identify -format '%wx%h' "$OUT_DIR/loop/frame_00000.png")
+SIZE=$(magick identify -format "%wx%h" "$OUT_DIR/${LOOP_CLIPS[0]}/frame_00000.png")
 if [[ "$SIZE" != "$RES" ]]; then
     echo "ERROR: frames are $SIZE, expected $RES" >&2
     exit 1
@@ -147,18 +194,25 @@ fi
 mkdir -p "$MOVIES_DIR"
 
 # VP9 in WebM: the engine's Electra player decodes it on every desktop platform, Linux included.
-VP9=(-c:v libvpx-vp9 -pix_fmt yuv420p -b:v 0 -crf 34 -row-mt 1 -deadline good -cpu-used 2 -an)
+# Tiles let the player decode a 4K frame on several cores at once.
+VP9=(-c:v libvpx-vp9 -pix_fmt yuv420p -b:v 0 -crf 34 -row-mt 1 -tile-columns 3 -frame-parallel 0 -deadline good -cpu-used 2 -an)
 
 echo "=== Encoding the menu loop ==="
-# Seamless: the last CROSSFADE_FRAMES dissolve into the first ones, and the loop starts after them.
+# The clips one after another with hard cuts; the last FADE_FRAMES dissolve into the first ones,
+# and the loop starts after them, so it is seamless.
 seconds() { awk -v f="$1" -v fps=$FPS 'BEGIN { printf "%.4f", f / fps }'; }
-FADE_SECONDS=$(seconds $CROSSFADE_FRAMES)
-FADE_START=$(seconds $((LOOP_FRAMES - 2 * CROSSFADE_FRAMES)))
-ffmpeg -y -hide_banner -loglevel warning -framerate $FPS -i "$OUT_DIR/loop/frame_%05d.png" -filter_complex "
-    [0:v]trim=start_frame=0:end_frame=$LOOP_FRAMES,setpts=PTS-STARTPTS,split[a][b];
-    [a]trim=start_frame=$CROSSFADE_FRAMES,setpts=PTS-STARTPTS[body];
-    [b]trim=start_frame=0:end_frame=$CROSSFADE_FRAMES,setpts=PTS-STARTPTS[head];
-    [body][head]xfade=transition=fade:duration=$FADE_SECONDS:offset=$FADE_START,format=yuv420p[out]" \
+INPUTS=() CONCAT=""
+for i in "${!LOOP_CLIPS[@]}"; do
+    INPUTS+=(-framerate $FPS -i "$OUT_DIR/${LOOP_CLIPS[$i]}/frame_%05d.png")
+    "clip_${LOOP_CLIPS[$i]}"
+    CONCAT+="[$i:v]trim=end_frame=$CLIP_FRAMES,setpts=PTS-STARTPTS[c$i];"
+done
+for i in "${!LOOP_CLIPS[@]}"; do CONCAT+="[c$i]"; done
+ffmpeg -y -hide_banner -loglevel warning "${INPUTS[@]}" -filter_complex "
+    ${CONCAT}concat=n=${#LOOP_CLIPS[@]}:v=1:a=0,split[a][b];
+    [a]trim=start_frame=$FADE_FRAMES,setpts=PTS-STARTPTS[body];
+    [b]trim=start_frame=0:end_frame=$FADE_FRAMES,setpts=PTS-STARTPTS[head];
+    [body][head]xfade=transition=fade:duration=$(seconds $FADE_FRAMES):offset=$(seconds $((LOOP_FRAMES - 2 * FADE_FRAMES))),format=yuv420p[out]" \
     -map '[out]' "${VP9[@]}" "$MOVIES_DIR/MenuLoop.webm"
 
 echo "=== Drawing the title and encoding the intro ==="
@@ -178,4 +232,4 @@ ffmpeg -y -hide_banner -loglevel warning -framerate $FPS -i "$OUT_DIR/intro/fram
 cp "$OUT_DIR/intro/frame_$(printf %05d 100).png" "$OUT_DIR/keyframe.png"
 
 ls -la "$MOVIES_DIR"/MenuLoop.webm "$MOVIES_DIR"/Intro.webm
-echo "Loop $(seconds $((LOOP_FRAMES - CROSSFADE_FRAMES)))s, intro ${INTRO_SECONDS}s"
+echo "Loop $(seconds $((LOOP_FRAMES - FADE_FRAMES)))s, intro ${INTRO_SECONDS}s"

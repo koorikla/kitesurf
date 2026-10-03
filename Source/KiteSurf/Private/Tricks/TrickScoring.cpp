@@ -1,23 +1,31 @@
 #include "Tricks/TrickScoring.h"
 #include "KiteSurfUnits.h"
+#include "Tricks/LandingEvaluator.h"
 
 ELandingGrade TrickScoring::GradeLanding(float YawDeg, float LandingG, float KiteElevationDeg, bool bCrashed,
 	const FLandingGradeSettings& Settings)
 {
+	// The record-only shortcut over LandingEvaluator::Evaluate: no tilt or rider state, and the
+	// board's crash decision stands. A landing the board rode away from is at worst sketchy here,
+	// even when the evaluator's table would call it a crash (today the board only crashes on yaw
+	// over 30 deg, and its landing g is not yet real).
 	if (bCrashed)
 	{
 		return ELandingGrade::Crash;
 	}
-	const float Yaw = FMath::Abs(YawDeg);
-	if (Yaw <= Settings.StompedMaxYawDeg && LandingG <= Settings.StompedMaxG && KiteElevationDeg >= Settings.HotKiteElevationDeg)
-	{
-		return ELandingGrade::Stomped;
-	}
-	if (KiteElevationDeg < Settings.HotKiteElevationDeg || LandingG > Settings.SketchyMinG)
-	{
-		return ELandingGrade::Sketchy;
-	}
-	return ELandingGrade::Clean;
+	FLandingThresholds Thresholds;
+	Thresholds.Stomped.MaxYawDeg = Settings.StompedMaxYawDeg;
+	Thresholds.StompedMaxLandingG = Settings.StompedMaxG;
+	Thresholds.StompedMinKiteElevationDeg = Settings.HotKiteElevationDeg;
+	Thresholds.HotLandingKiteElevationDeg = Settings.HotKiteElevationDeg;
+	Thresholds.SketchyMinLandingG = Settings.SketchyMinG;
+
+	FLandingInputs Inputs;
+	Inputs.YawOffVelocityDeg = YawDeg;
+	Inputs.LandingG = LandingG;
+	Inputs.KiteElevationDeg = KiteElevationDeg;
+	const ELandingGrade Grade = LandingEvaluator::Evaluate(Inputs, Thresholds).Grade;
+	return Grade == ELandingGrade::Crash ? ELandingGrade::Sketchy : Grade;
 }
 
 float TrickScoring::ExecutionFactor(ELandingGrade Grade, const FTrickScoringSettings& Settings)

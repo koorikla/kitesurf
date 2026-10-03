@@ -57,6 +57,18 @@ Upon re-entering the water surface ($v_z \le 0$ and $z \le z_{\text{water}} + 10
   - Rider stays at crash location for `CrashRespawnDelay` (1.0 s), 1.5 s from the crash in all.
   - Rider respawns upright (pitch=0, roll=0, at water level) at 8 kn on the tack they were on (`ResetToTack`), with the kite parked at 45 degrees on that side.
 
+### Landing grades (planned)
+`LandingEvaluator::Evaluate` (`Tricks/LandingEvaluator.h`, docs/tricks.md 6.7) is written and tested but **not yet called by the board**: the clean-or-crash test above is still what decides a landing. When it is wired in, the board's angle test becomes a grade (thresholds are **estimates**, every limit inclusive):
+
+| Grade | Tilt from the water normal | Yaw off velocity (either end) | Other | Speed kept |
+| :--- | :--- | :--- | :--- | :--- |
+| Stomped | ≤ 15° | ≤ 20° | Kite at 45° or higher, landing g ≤ 4 | 85% |
+| Clean | ≤ 30° | ≤ 45° | | 80% |
+| Sketchy | ≤ 50° | ≤ 75° | Or a hot landing (kite under 45°, sink over 6 m/s) or over 8 g | 60% |
+| Crash | Beyond | Beyond | Or board off, bar lost, pass unfinished, rider inverted, over 10 g | 0 |
+
+The yaw is folded to 0..90°, so a switch landing (tail first) grades the same as a forward one. Each verdict carries a cause for the failure message: under- or over-rotated (tilt past 50°, by the direction of the spin), sideways, inverted, kite too low, too hard, board not caught, bar lost, pass not finished. Today any yaw over 30° crashes; with the table, 30 to 75° will be clean or sketchy, and the 90° of `KiteSurf.Jump.CrashRecovery` still crashes.
+
 ## Rider rotation (not yet wired)
 
 `URiderAttitudeComponent` (`Source/KiteSurf/Public/Tricks/`) is the rider's rotation in the air for tricks (T1.2 in `docs/tricks.md`). **The pawn does not step it yet**: the air orientation in the game is still `AirSpinRate` and the auto-align above. Wiring it into `StepSimulation`, after the line force and before `StepBoard`, comes in a later change. Until then it runs only in the `KiteSurf.Trick.*` tests.

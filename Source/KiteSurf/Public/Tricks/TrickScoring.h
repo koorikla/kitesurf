@@ -84,7 +84,11 @@ struct FTrickScoringSettings
 	TArray<float> RepeatFactors = { 1.0f, 0.75f, 0.5f, 0.25f, 0.1f };
 };
 
-/** Thresholds for TrickScoring::GradeLanding. Estimates; T1.5's landing evaluator adds tilt and replaces this. */
+/**
+ * Thresholds for TrickScoring::GradeLanding. Estimates. GradeLanding maps them onto
+ * FLandingThresholds (Tricks/LandingEvaluator.h) and leaves the evaluator's other limits at their
+ * defaults.
+ */
 USTRUCT(BlueprintType)
 struct FLandingGradeSettings
 {
@@ -115,9 +119,13 @@ struct FLandingGradeSettings
 namespace TrickScoring
 {
 	/**
-	 * Crash when the board crashed. Stomped when the yaw, g and kite elevation are all inside
-	 * the stomped limits (inclusive). Sketchy when the kite is under HotKiteElevationDeg or the
-	 * landing is harder than SketchyMinG. Clean otherwise.
+	 * The record-only shortcut over LandingEvaluator::Evaluate, for a jump record that has the
+	 * yaw, g and kite elevation but no tilt or rider state; Evaluate is the full verdict.
+	 * Crash when the board crashed. Otherwise Evaluate's grade with tilt 0 and Settings mapped
+	 * onto FLandingThresholds, with a crash there reported as Sketchy (the board decides crashes):
+	 * Stomped when the yaw (folded, so switch counts), g and kite elevation are all inside the
+	 * stomped limits (inclusive); Sketchy when the kite is under HotKiteElevationDeg, the landing
+	 * is harder than SketchyMinG or the yaw is over the clean limit (45 deg); Clean otherwise.
 	 */
 	KITESURF_API ELandingGrade GradeLanding(float YawDeg, float LandingG, float KiteElevationDeg, bool bCrashed,
 		const FLandingGradeSettings& Settings = FLandingGradeSettings());

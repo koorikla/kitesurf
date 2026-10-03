@@ -45,8 +45,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	NoseWeightDragSaving = 0.15f;
 	WeightShiftPitchDeg = 8.0f;
 	AirWeightShiftPitchDeg = 30.0f;
-	LiftoffWeightFactor = 1.5f; // a low, powered kite must not bounce the rider off the water
-	EdgedLiftoffWeightBonus = 3.0f;
+	LoadHoldBonus = 1.5f; // a crouched, loaded rider hangs on to 2.5 body weights of upward pull
 	LoadRatePerSec = 2.5f;        // a full crouch in 0.4 s
 	LoadReleaseRatePerSec = 6.0f;
 	LoadPopBonus = 0.6f;
@@ -419,17 +418,15 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			LastStepDebug.AirDragN = AirDragForce / KiteUnits::UnrealForcePerN;
 		}
 
-		// The kite lifts the rider off when it pulls up harder than they weigh: sending the kite
-		// overhead or looping it does this without a pop.
-		// A rider who is edging (carving, or with their weight back) leans against the lines with
-		// the board dug in, and can hold a much harder pull down until they let the edge go.
 		// The load: held, the rider sinks into a crouch with their weight over the back of the
 		// board and drives the edge in. It builds over a moment and lets go quickly.
 		const bool bCanLoad = bLoadHeld && !bIsAirborne && !bIsCrashing && !IsFloating();
 		LoadAmount = FMath::Clamp(LoadAmount + (bCanLoad ? LoadRatePerSec : -LoadReleaseRatePerSec) * DeltaTime, 0.0f, 1.0f);
 
-		const float EdgeHold = FMath::Clamp(FMath::Max3(FMath::Abs(CurrentEdgeInput), -CurrentWeightShift, LoadAmount), 0.0f, 1.0f);
-		const float LiftoffFactor = LiftoffWeightFactor + EdgedLiftoffWeightBonus * EdgeHold;
+		// The kite lifts the rider off when it pulls up harder than they weigh: sending the kite
+		// overhead or looping it does this without a pop. Crouched and loaded, the rider hangs on to
+		// LoadHoldBonus body weights more until they let go (docs/physics/plan-2.md item 3).
+		const float LiftoffFactor = 1.0f + LoadHoldBonus * LoadAmount;
 		if (!bIsAirborne && CurrentBoardState != EBoardState::Landing && TotalForce.Z > -GravityForceZ * (LiftoffFactor - 1.0f))
 		{
 			BeginAirborne();

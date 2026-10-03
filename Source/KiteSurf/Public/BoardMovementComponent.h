@@ -334,13 +334,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirWeightShiftPitchDeg;
 
-	/** The kite lifts the rider off the water when its upward pull exceeds this multiple of their weight. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float LiftoffWeightFactor;
-
-	/** Added to LiftoffWeightFactor at full edge (turn input or weight on the tail): holding the edge holds the rider down. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
-	float EdgedLiftoffWeightBonus;
+	/**
+	 * How much more upward pull than their weight a loaded rider hangs on to, in body weights at full
+	 * load: the board leaves the water when the lines pull up harder than m g (1 + LoadHoldBonus *
+	 * load). Unloaded, any pull above the rider's weight lifts them. Research: take-off at 2.5 to 4
+	 * body weights of tension (docs/physics/research.md 3.3), so 1.5 to 3.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
+	float LoadHoldBonus;
 
 	/** Board spin rate in the air at full carve input (deg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")

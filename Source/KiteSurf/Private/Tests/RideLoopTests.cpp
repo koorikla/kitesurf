@@ -1298,12 +1298,13 @@ namespace
 
 	/**
 	 * When the timed jump lets go of the jump button and pops, after the send reaches the kite (s).
-	 * Since plan-2 item 3 the board holds the send with its fins and rail alone once the lines lift
-	 * more than the rider weighs (the water's normal force is the weight the board carries), and the
-	 * longer the hold the further the board slides towards the kite. The best release is 0.68 s
-	 * (10.7 m); 0.70 s gives 9.8 m, 0.78 s 10.6 m, and from 0.80 s the rider is pulled off, 1.05 s
-	 * after the send starts (0.24 s of it the bar's dead time) at 4.5 body weights. It was 0.7 s at
-	 * phase 1, 0.8 s with plan-2 item 1 and 0.82 s with item 2.
+	 * Since plan-2 item 3 the loaded rider hangs on until the lines pull up 2.5 body weights
+	 * (LoadHoldBonus 1.5): 0.95 s after the send starts (0.24 s of it the bar's dead time), so from a
+	 * 0.70 s release they are pulled off first. This pops at the last frame before that: 0.65 s gives
+	 * 9.9 m, 0.67 s 10.3 m, 0.68 s 10.7 m. With a hold of 2.5 more body weights the window stays open
+	 * to 0.75 s but no release goes higher: once the lines lift more than the rider weighs only the
+	 * fins and rail hold the edge, and the board slides towards the kite. It was 0.7 s at phase 1, 0.8 s
+	 * with plan-2 item 1 and 0.82 s with item 2.
 	 */
 	constexpr float TimedReleaseSeconds = 0.68f;
 
@@ -1687,12 +1688,17 @@ bool FKiteSurfPhysicsAirborneLoopYanks::RunTest(const FString& Parameters)
 	return true;
 }
 
-// An edging rider leans against the lines with the board dug in and is much harder to lift.
+// A loaded rider (the jump button held: crouched, the edge driven in) hangs on against the lines and
+// is much harder to lift: the board leaves the water when the upward pull passes m g (1 +
+// LoadHoldBonus * load) (docs/physics/plan-2.md item 3). Anything else lifts them as soon as the
+// lines pull up harder than they weigh. Until item 3 an edge (the carve input or the weight on the
+// tail) held them down too, up to 4.5 body weights with LiftoffWeightFactor and EdgedLiftoffWeightBonus.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfJumpEdgeHoldsRiderDown, "KiteSurf.Jump.EdgeHoldsRiderDown", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfJumpEdgeHoldsRiderDown::RunTest(const FString& Parameters)
 {
-	for (const bool bEdging : { false, true })
+	enum class EStance { Flat, WeightBack, Loaded };
+	for (const EStance Stance : { EStance::Flat, EStance::WeightBack, EStance::Loaded })
 	{
 		FRideFixture Ride;
 		if (!Ride.IsValid())
@@ -1700,24 +1706,27 @@ bool FKiteSurfJumpEdgeHoldsRiderDown::RunTest(const FString& Parameters)
 			return false;
 		}
 		UBoardMovementComponent* Board = Ride.Board;
-		const float WeightForce = Board->MassKg * 980.0f;
-		Board->SetWeightShift(bEdging ? -1.0f : 0.0f);
+		const float WeightForce = Board->MassKg * KiteUnits::GravityCmS2;
+		Board->SetWeightShift(Stance == EStance::WeightBack ? -1.0f : 0.0f);
+		Board->SetLoadHeld(Stance == EStance::Loaded);
+		Ride.Simulate(0.6f); // the crouch is full after 0.4 s
 
-		// Twice the rider's weight straight up: enough to lift a flat board, not an edged one.
+		// Twice the rider's weight straight up: enough to lift an unloaded rider, not a loaded one.
 		Board->AddExternalForce(FVector(0.0f, 0.0f, 2.0f * WeightForce));
 		Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
-		if (bEdging)
+		if (Stance == EStance::Loaded)
 		{
-			TestTrue(TEXT("Edging, the rider holds twice their weight down"), Board->GetBoardState() != EBoardState::Airborne);
+			TestTrue(TEXT("Loaded, the rider holds twice their weight down"), Board->GetBoardState() != EBoardState::Airborne);
 
-			// Past the edge's limit they go.
-			Board->AddExternalForce(FVector(0.0f, 0.0f, (Board->LiftoffWeightFactor + Board->EdgedLiftoffWeightBonus + 0.2f) * WeightForce));
+			// Past the hold's limit they go.
+			Board->AddExternalForce(FVector(0.0f, 0.0f, (1.0f + Board->LoadHoldBonus + 0.2f) * WeightForce));
 			Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
-			TestTrue(TEXT("but not more than the edge can take"), Board->GetBoardState() == EBoardState::Airborne);
+			TestTrue(TEXT("but not more than the load can take"), Board->GetBoardState() == EBoardState::Airborne);
 		}
 		else
 		{
-			TestTrue(TEXT("Riding flat, twice the rider's weight lifts them off"), Board->GetBoardState() == EBoardState::Airborne);
+			TestTrue(FString::Printf(TEXT("%s, twice the rider's weight lifts them off"), Stance == EStance::Flat ? TEXT("Riding flat") : TEXT("With the weight on the tail but no load")),
+				Board->GetBoardState() == EBoardState::Airborne);
 		}
 	}
 	return true;
@@ -1817,14 +1826,16 @@ bool FKiteSurfGearChangesBehaviour::RunTest(const FString& Parameters)
 	TestTrue(FString::Printf(TEXT("The boost kite pulls at least as hard parked (%.0f N against %.0f N)"), ParkedTensionN[1], ParkedTensionN[0]), ParkedTensionN[1] >= ParkedTensionN[0]);
 
 	// Where the boost kite earns its name: each kite released a little before its send would pull
-	// the rider off the edge (loaded, a release at 0.80 s is too late for the loop kite; the boost
-	// kite turns slower, so its send loads up later and 0.85 s is too late for it), it goes higher and
-	// stays up longer.
-	const FJumpResult LoopJump = RunJump(true, true, 0.75f, EKiteModel::Loop);
-	const FJumpResult BoostJump = RunJump(true, true, 0.83f, EKiteModel::Boost);
+	// the rider off the edge (loaded, a release at 0.70 s is too late for the loop kite; the boost
+	// kite turns slower, so its send loads up later and 0.75 s is too late for it), it goes higher and
+	// stays up longer. Since plan-2 item 3 the hold ends at the same 2.5 body weights of upward pull
+	// for both (LoadHoldBonus) and the boost kite's stronger pull reaches it sooner, so its lead is
+	// small: 11.0 m against 10.7 m. It was 11.5 m against 9.5 m with the old hold of 4.5 body weights.
+	const FJumpResult LoopJump = RunJump(true, true, 0.68f, EKiteModel::Loop);
+	const FJumpResult BoostJump = RunJump(true, true, 0.72f, EKiteModel::Boost);
 	UE_LOG(LogKiteSurf, Log, TEXT("GearChangesBehaviour: best timed jump, loop kite %.1f m / %.1f s, boost kite %.1f m / %.1f s (pulled off %d %d)"), LoopJump.PeakCm / 100.0f, LoopJump.AirSeconds, BoostJump.PeakCm / 100.0f, BoostJump.AirSeconds, LoopJump.bPulledOffEdge, BoostJump.bPulledOffEdge);
 	TestFalse(TEXT("Neither rider was pulled off their edge"), LoopJump.bPulledOffEdge || BoostJump.bPulledOffEdge);
-	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > 1.1f * LoopJump.PeakCm);
+	TestTrue(FString::Printf(TEXT("The boost kite jumps higher (%.1f m against %.1f m)"), BoostJump.PeakCm / 100.0f, LoopJump.PeakCm / 100.0f), BoostJump.PeakCm > LoopJump.PeakCm);
 	TestTrue(FString::Printf(TEXT("and hangs longer (%.1f s against %.1f s)"), BoostJump.AirSeconds, LoopJump.AirSeconds), BoostJump.AirSeconds > LoopJump.AirSeconds);
 	TestTrue(FString::Printf(TEXT("The loop kite turns further in the same time (%.0f deg against %.0f deg)"), LoopTurnDeg[0], LoopTurnDeg[1]), LoopTurnDeg[0] > 1.15f * LoopTurnDeg[1]);
 
@@ -2243,7 +2254,7 @@ bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
 	Plain.Pawn->SetLoadHeld(true);
 	TestFalse(TEXT("Letting go in the air is not a second pop"), Plain.Pawn->ReleaseLoadAndPop());
 
-	// The loaded edge holds the rider down like a full edge does.
+	// The loaded edge holds the rider down (up to 1 + LoadHoldBonus body weights).
 	FRideFixture Held;
 	if (!Held.IsValid())
 	{
@@ -2251,9 +2262,9 @@ bool FKiteSurfJumpLoadAndRelease::RunTest(const FString& Parameters)
 	}
 	Held.Board->SetLoadHeld(true);
 	Held.Simulate(0.6f);
-	Held.Board->AddExternalForce(FVector(0.0f, 0.0f, 2.5f * Held.Board->MassKg * KiteUnits::GravityCmS2));
+	Held.Board->AddExternalForce(FVector(0.0f, 0.0f, 2.0f * Held.Board->MassKg * KiteUnits::GravityCmS2));
 	Held.Board->TickComponent(RideDeltaTime, LEVELTICK_All, nullptr);
-	TestTrue(TEXT("Loaded, two and a half times the rider's weight upwards does not lift them"), Held.Board->GetBoardState() != EBoardState::Airborne);
+	TestTrue(TEXT("Loaded, twice the rider's weight upwards does not lift them"), Held.Board->GetBoardState() != EBoardState::Airborne);
 	return true;
 }
 

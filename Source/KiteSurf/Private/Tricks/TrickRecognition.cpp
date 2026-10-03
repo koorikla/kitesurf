@@ -142,6 +142,38 @@ FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, c
 {
 	FTrickSignature Signature;
 	Signature.Loops = ClassifyLoops(Record.Loops, Settings);
+
+	// The rider's rotation, as the recogniser credited it (T1.6).
+	Signature.Inversions = Record.Inversions;
+	Signature.SpinHalfTurns = FMath::Max(Record.SpinHalfTurns, 0);
+	Signature.SpinSense = Signature.SpinHalfTurns > 0 ? Record.SpinSense : ETrickSense::None;
+	Signature.LandingStance = Record.LandingStance;
+
+	// Early or late roll: the first inversion's start against the yank of the first completed kite or
+	// megaloop, given to every kite and megaloop entry so a chain still names as one.
+	if (Record.Inversions.Num() > 0 && Record.RollStartSinceTakeoffSeconds >= 0.0f)
+	{
+		const FJumpLoop* Yanking = nullptr;
+		for (const FJumpLoop& JumpLoop : Record.Loops)
+		{
+			if (JumpLoop.Loop.bCompleted && ClassifyLoop(JumpLoop, Settings) != ETrickLoopKind::HeliLoop)
+			{
+				Yanking = &JumpLoop;
+				break;
+			}
+		}
+		if (Yanking)
+		{
+			const ELoopRollTiming Timing = LoopRollTiming(Record.RollStartSinceTakeoffSeconds, PeakTensionSinceTakeoffSeconds(*Yanking), Settings);
+			for (FTrickLoop& Loop : Signature.Loops)
+			{
+				if (Loop.Kind == ETrickLoopKind::Kiteloop || Loop.Kind == ETrickLoopKind::Megaloop)
+				{
+					Loop.RollTiming = Timing;
+				}
+			}
+		}
+	}
 	Signature.Grade = TrickScoring::GradeLanding(Record.LandingYawDeg, Record.LandingG, Record.KiteElevationAtLandingDeg,
 		Record.Outcome == EJumpOutcome::Crashed, GradeSettings);
 	return Signature;

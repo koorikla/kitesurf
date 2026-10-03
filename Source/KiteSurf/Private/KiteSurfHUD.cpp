@@ -208,7 +208,42 @@ FString AKiteSurfHUD::FormatJumpCard(const FJumpRecord& Record)
 		Card += FString::Printf(TEXT("  (repeat %d%%)"), FMath::RoundToInt(100.0f * Record.RepeatFactor));
 	}
 	Card += FString::Printf(TEXT("\n%.1f g landing"), Record.LandingG);
+	if (Record.Grade == ELandingGrade::Sketchy || Record.Grade == ELandingGrade::Crash)
+	{
+		// T2.6: one line, the cause the board's verdict picked.
+		const FString Cause = LandingCauseLine(Record.LandingCause);
+		if (!Cause.IsEmpty())
+		{
+			Card += TEXT("\n") + Cause;
+		}
+	}
 	return Card;
+}
+
+FString AKiteSurfHUD::LandingCauseLine(ELandingCause Cause)
+{
+	switch (Cause)
+	{
+	case ELandingCause::UnderRotated:    return TEXT("Under-rotated: commit the roll earlier");
+	case ELandingCause::OverRotated:     return TEXT("Over-rotated: stop the turn sooner");
+	case ELandingCause::Sideways:        return TEXT("Board sideways at touchdown");
+	case ELandingCause::Inverted:        return TEXT("Upside down at touchdown");
+	case ELandingCause::KiteTooLow:      return TEXT("Kite too low at touchdown");
+	case ELandingCause::TooHard:         return TEXT("Landed too hard: redirect the kite");
+	case ELandingCause::BoardOff:        return TEXT("Board not caught");
+	case ELandingCause::BarLost:         return TEXT("Bar lost");
+	case ELandingCause::PassUnfinished:  return TEXT("Pass not finished");
+	case ELandingCause::BoardNotAligned: return TEXT("Board not lined up with the feet");
+	case ELandingCause::None:
+	default:                             return FString();
+	}
+}
+
+FString AKiteSurfHUD::GetJumpCardCauseText() const
+{
+	TArray<FString> Lines;
+	JumpCardText.ParseIntoArray(Lines, TEXT("\n"), false);
+	return Lines.Num() >= 3 ? Lines[2] : FString();
 }
 
 namespace
@@ -488,22 +523,43 @@ void AKiteSurfHUD::DrawHUD()
 		{
 			TitleLine = JumpCardText;
 		}
+		// The failure cause (T2.6), when there is one, is its own line under the detail.
+		FString CauseLine;
+		{
+			FString DetailOnly;
+			if (DetailLine.Split(TEXT("\n"), &DetailOnly, &CauseLine))
+			{
+				DetailLine = DetailOnly;
+			}
+		}
 		float TitleW = 0.0f;
 		float TitleH = 0.0f;
 		float DetailW = 0.0f;
 		float DetailH = 0.0f;
+		float CauseW = 0.0f;
+		float CauseH = 0.0f;
 		GetTextSize(TitleLine, TitleW, TitleH, nullptr, 1.5f);
 		if (!DetailLine.IsEmpty())
 		{
 			GetTextSize(DetailLine, DetailW, DetailH, nullptr, 1.1f);
 		}
-		const float CardW = FMath::Max(TitleW, DetailW);
-		const float CardH = TitleH + (DetailLine.IsEmpty() ? 0.0f : DetailH + 4.0f);
+		if (!CauseLine.IsEmpty())
+		{
+			GetTextSize(CauseLine, CauseW, CauseH, nullptr, 1.1f);
+		}
+		const float CardW = FMath::Max3(TitleW, DetailW, CauseW);
+		const float CardH = TitleH + (DetailLine.IsEmpty() ? 0.0f : DetailH + 4.0f) + (CauseLine.IsEmpty() ? 0.0f : CauseH + 4.0f);
 		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), ScreenW * 0.5f - CardW * 0.5f - 16.0f, BelowReadoutY - 6.0f, CardW + 32.0f, CardH + 12.0f);
 		DrawText(TitleLine, GradeColor(JumpCardGrade), ScreenW * 0.5f - TitleW * 0.5f, BelowReadoutY, nullptr, 1.5f);
+		float LineY = BelowReadoutY + TitleH + 4.0f;
 		if (!DetailLine.IsEmpty())
 		{
-			DrawText(DetailLine, FLinearColor(0.8f, 0.85f, 0.9f), ScreenW * 0.5f - DetailW * 0.5f, BelowReadoutY + TitleH + 4.0f, nullptr, 1.1f);
+			DrawText(DetailLine, FLinearColor(0.8f, 0.85f, 0.9f), ScreenW * 0.5f - DetailW * 0.5f, LineY, nullptr, 1.1f);
+			LineY += DetailH + 4.0f;
+		}
+		if (!CauseLine.IsEmpty())
+		{
+			DrawText(CauseLine, GradeColor(JumpCardGrade), ScreenW * 0.5f - CauseW * 0.5f, LineY, nullptr, 1.1f);
 		}
 		BelowReadoutY += CardH + 20.0f;
 	}

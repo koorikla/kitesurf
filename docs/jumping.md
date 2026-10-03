@@ -93,9 +93,13 @@ What changed against the single angle test (`MaxLandingAngle` 30° and `CleanLan
 - **Sink, landing g and landing yaw**: the board's own, `GetLastLandingSinkMS()` (relative to the surface), `GetLastLandingG()` (1 + v²/(2 g s) over the absorb distance, which the crouch lengthens; see Landing Evaluation above) and `GetLastLandingAngleDeg()` (the landing evaluator's yaw: the board's axis against its velocity along the water), read when the board's jump count goes up. So the trick card and the landing card show the same g, and so do `OnBoardLanding`, the haptics and the sound. The landing angle is the record's `LandingYawDeg`, which the grade reads (it was recorded as 0 before the board exposed it). The timed 30 kn jump flown as `KiteSurf.Trick.TrackerRecordsJump` lands at 5.3 g, graded **Clean**: the grade reads the g, the yaw and the kite's elevation, not the board's hot flag. The straight jumps the tests fly land at 0.0 deg (`KiteSurf.Trick.JumpRecordMatchesTrajectory`).
 - **Kite loops**: the kite's own records, `UKiteComponent::GetLoopRecords()` and `GetOpenLoop()`. The kite steps an `FKiteLoopTracker` every fixed step with its own heading turn (`GetLastStepTurnDeg()`, the steering, weathercock and gravity turn of the nose, looping or not), so the records do not depend on `IsLooping` or on the HUD's turn counter. Placing the kite (a reset or a relaunch) cancels the open run; a kite crash ends it as a crashed record.
 - **The record**: `FJumpRecorder` finalises it when the board's jump count goes up, landed or crashed; a skip or a reset drops it. The loops are those overlapping take-off to landing, plus an open run of 180° or more. `FJumpSession` applies the repeat factor (a landed family pays 1, 0.75, 0.5, ...), keeps the last 200 records and the session's points.
+- **Rider rotation** (T1.6): the rider attitude's `GetBodyQuat()` and `GetAngularVelocity()` (the tracker finds the `URiderAttitudeComponent` on its owner), counted by the recorder's `FRotationRecognizer` (`Tricks/RotationRecognizer.h`, pure) on every step the attitude is simulated. The take-off freezes a frame: U world up, T the horizontal travel, S = U x T, and sigma, the side the rider travels towards (`RiderAxes::TravelSide`). Each step integrates the angular velocity on U, T, S and on the body axes; an inversion is counted when the body's up goes below -0.3 of world up after being above +0.3 (a take-off already tilted past +0.3 does not arm one), a flip when the body-frame rotation since it armed is mostly about Right (backflip about -Right), otherwise a roll, back when that rotation runs along `RiderAxes::BackRollAxisBody(sigma, 65)`. The landing stance: the rider lands facing away when the net heading is more than 90 deg off: the swing-twist of qLand x qTakeoff^-1 about U less the flight's turn, with the projected fronts standing in within a few degrees of a half turn about a horizontal axis. At the take-off the chest is on the kite's side of the travel, so facing away is the chest on the other side. (The kite's own direction is no guide: it is often near the zenith at touchdown.) Facing away lands blind after a backside turn, toeside after a frontside one; after a roll the turn is the roll's own (a back roll is backside by definition, so a back roll landing facing away is back roll to blind, whatever sign the roll carried about U: leaning back, a back roll can turn either way about world up), otherwise the sign of the spin integral against sigma. Spins: with nothing inverted, the rotation about U less the flight's own heading turn (the travel align follows the flight, which the kite turns 60 to 75 deg on the timed jumps), snapped to half turns as floor((|spin| + 45) / 180), and moved one half turn towards the integral when that count's parity disagrees with the landing (odd lands facing away); with an inversion, that integral holds each roll's own turn about U (a default back roll adds 150 to 175 deg), so the spin is the landing's instead, one half turn when the rider lands facing away (back to blind is a back roll plus a backside 180).
+- **Landing cause** (T2.6): the board's `GetLastLandingVerdict().Cause`, the evaluator's reason, read when the jump count goes up. The record's grade is still `TrickScoring::GradeLanding` over the record (see Landing grades).
 - **The trick book**: each finished record goes to `UKiteSurfGameInstance::RecordTrickLanding` when the game has that game instance; the book is saved with the settings, not here.
 
-`GetLiveJump()` is the jump in progress (take-off facts, height and airtime so far) with the loops flown since the take-off.
+The record's rotation fields: `bRotationTracked` (the attitude was simulated in the air), `Inversions` (in order), `SpinHalfTurns` and `SpinSense`, `SpinDeg` (what the half turns came from), `LandingStance`, `NetHeadingDeg`, and `RollStartSinceTakeoffSeconds`, when the first inversion's rotation started (the start of the run of steps turning at 90 deg/s or faster that led into it; negative when nothing inverted). `TrickRecognition::SignatureFromJump` puts the rotation into the signature, and the roll start against the yank of the first completed kite or megaloop gives the loop its early or late roll (`LoopRollTiming`, 0.1 s either side), so a back roll inside a megaloop names as "Megaloop back roll", "Early megaloop back roll" or "Late megaloop back roll". `LandingCause` is the verdict's cause.
+
+`GetLiveJump()` is the jump in progress (take-off facts, height and airtime so far, the rotation credited so far) with the loops flown since the take-off.
 
 The HUD shows a **trick card** under the jump readout after every jump of a metre or more, for four seconds:
 
@@ -104,7 +108,28 @@ Straight air  CLEAN  14 pts
 7.4 g landing
 ```
 
-The first line is in the grade's colour: STOMPED green, CLEAN white, SKETCHY amber, CRASH red. The points are what the session paid (`Score.Total x RepeatFactor`); a repeat adds `(repeat 75%)`. While a jump is in the air and has something to name, today a completed kite loop, a **ticker** names it live in the same place ("Kiteloop", then "Double kiteloop"). Landing replaces it with the card.
+The first line is in the grade's colour: STOMPED green, CLEAN white, SKETCHY amber, CRASH red. The points are what the session paid (`Score.Total x RepeatFactor`); a repeat adds `(repeat 75%)`. A bad landing (graded sketchy or a crash) whose verdict named a cause gets one more line in the grade's colour, the cause the verdict picked (`AKiteSurfHUD::LandingCauseLine`, T2.6):
+
+```
+Straight air  CRASH  0 pts
+4.9 g landing
+Under-rotated: commit the roll earlier
+```
+
+| Cause | Line |
+| --- | --- |
+| `UnderRotated` | Under-rotated: commit the roll earlier |
+| `OverRotated` | Over-rotated: stop the turn sooner |
+| `Sideways` | Board sideways at touchdown |
+| `Inverted` | Upside down at touchdown |
+| `KiteTooLow` | Kite too low at touchdown |
+| `TooHard` | Landed too hard: redirect the kite |
+| `BoardOff` | Board not caught |
+| `BarLost` | Bar lost |
+| `PassUnfinished` | Pass not finished |
+| `BoardNotAligned` | Board not lined up with the feet |
+
+A card graded stomped or clean never shows one, even when the verdict named a cause: the timed 30 kn jump's verdict is sketchy, too hard (a sink over 6 m/s at 4.3 g), while the record's grade, which does not read the sink, calls it clean. While a jump is in the air and has something to name, a **ticker** names it live in the same place: a completed kite loop ("Kiteloop", then "Double kiteloop") and the rotation as it is credited ("Back roll" from the moment the rider is inverted, then "Double back roll"; a flat spin as "Backside 180", then "Backside 360"). Landing replaces it with the card. A scripted pre-wind back roll on the timed jump is "Back roll" in the ticker, the record and the card (`KiteSurf.Trick.CardNamesBackRoll`), the same jump with no rotation input stays "Straight air" (`KiteSurf.Trick.StraightJumpStaysStraightAir`), and a roll coming down 80 deg short crashes with the under-rotated line (`KiteSurf.Trick.UnderRotatedCrashShowsCause`).
 
 `kitesurf.Jumps` logs the session as CSV lines tagged `jumpcsv` in `LogKiteSurf`: index, outcome, name, height (m), airtime (s), distance (m), landing g, peak line tension (N), completed loops, points. `grep -o 'jumpcsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` gives the CSV.
 

@@ -8,6 +8,7 @@
 
 class UBoardMovementComponent;
 class UKiteComponent;
+class URiderAttitudeComponent;
 
 /**
  * Follows the rider's jumps and names, grades and scores each one (docs/tricks/T0.md sections 3
@@ -26,6 +27,10 @@ class UKiteComponent;
  *   counts the jump.
  * - Kite loops: UKiteComponent::GetLoopRecords and GetOpenLoop, which the kite builds from its own
  *   per-step heading turn (T0.3).
+ * - Rider rotation (T1.6): URiderAttitudeComponent's body orientation and angular velocity (found
+ *   on the owner), counted by the recorder's FRotationRecognizer on every step the attitude is
+ *   simulated: inversions, spin half turns and the landing stance.
+ * - Landing cause: GetLastLandingVerdict().Cause, the evaluator's reason for grading it down.
  *
  * Finished jumps go to UKiteSurfGameInstance::RecordTrickLanding when the world has that game
  * instance; nothing is written to disk here.
@@ -81,6 +86,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UKiteComponent> Kite;
+
+	/** The rider attitude, found on the owner at the first step; null for a pawn without one (no rotation is counted). */
+	UPROPERTY(Transient)
+	TObjectPtr<URiderAttitudeComponent> Attitude;
 
 	FJumpSession Session;
 	FJumpRecord LiveJump;

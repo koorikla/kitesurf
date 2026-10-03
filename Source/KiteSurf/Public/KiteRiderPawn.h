@@ -456,8 +456,54 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraMinLookPitchDeg;
 
+	/** The highest the camera tilts up for a composed shot (deg). It tilts further, up to CameraMaxFramingPitchDeg, only when the kite and the rider would not both fit otherwise. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraMaxLookPitchDeg;
+
+	/** The furthest the camera tilts up to keep a high kite and the rider in frame together (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0", ClampMax = "80"))
+	float CameraMaxFramingPitchDeg;
+
+	/** When the kite and the rider do not both fit, the view widens up to this horizontal field of view (deg) before the boom pulls back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "60", ClampMax = "150"))
+	float CameraMaxFOVDeg;
+
+	/** How far the boom pulls back when even CameraMaxFOVDeg cannot show the kite and the rider together (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraMaxArmLengthCm;
+
+	/** Room kept between the edge of the frame and the kite or the rider (deg), on top of their own size. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraFrameMarginDeg;
+
+	/**
+	 * The composed shot keeps the kite and the rider inside this fraction of the half frame to the
+	 * sides and the bottom, clear of the edges; it tilts, widens and pulls back to do so. Only a
+	 * sudden move (a loop, a pop) that the easing has not caught up with yet uses the frame out to
+	 * CameraFrameMarginDeg from its edge.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.3", ClampMax = "1"))
+	float CameraComfortFrameFraction;
+
+	/** As CameraComfortFrameFraction, towards the top of the frame, where the HUD's panels sit over the sky. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.3", ClampMax = "1"))
+	float CameraComfortTopFraction;
+
+	/** Half the kite's span kept in frame, for the reference kite size; it scales with the kite (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraKiteFrameRadiusCm;
+
+	/** How fast the view widens or the boom pulls back when the kite and the rider need more room (1/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraZoomOutSpeed;
+
+	/** How fast the view narrows and the boom comes back in once there is room again (1/s); slower, so it does not pump. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraZoomInSpeed;
+
+	/** The camera never goes lower than this above the water under it (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraMinHeightAboveWaterCm;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraTurnSpeed;
@@ -782,6 +828,12 @@ private:
 	float CameraHeadingYawDeg;
 	/** 0: the boom pivot rides on the board's pitch and roll, as on the water. 1: it sits straight above the board, as in the air. */
 	float CameraPivotAirBlend;
+	/** The field of view, boom length and boom pitch UpdateCamera last set (deg, cm, deg). */
+	float CameraCurrentFOVDeg;
+	float CameraCurrentArmCm;
+	float CameraCurrentBoomPitchDeg;
+	/** Where the boom pivot was last frame, to predict the boom's location lag (cm). */
+	FVector CameraLastPivotLocation;
 	bool bBoardVisualOverride;
 	float RiderFacingYawDeg;
 	float RiderStanceSide;

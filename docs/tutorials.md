@@ -305,7 +305,7 @@ struct FLessonDef {
   - the back-hand steer at about 4 m and the front-hand dive at 1 to 2 m;
   - the loop start against the apex.
 - **Slow motion.** Only at the step's one decision point (the kite at the top of a send, the 4 m landing
-  cue), with one prompt. It switches off after three Clean attempts. Built in S8 (#PR): the step's
+  cue), with one prompt. It switches off after three Clean attempts. Built in S8 (#101): the step's
   `SlowMoCue` and the slow-motion assist; 0.6x for about 0.6 s, eased in and out over real time
   (estimates). The kite counts as at the top at 80 deg, or within 10 deg of it once it stops climbing:
   loaded for the pop on B2's 14 kn set-up it tops out near 74 deg. The simulation keeps its fixed

@@ -22,6 +22,38 @@ namespace
 		FVector Upwind;
 	};
 
+	/**
+	 * Aims part of the way up the lines from the rider to the kite, but no further than keeps the rider
+	 * well inside the picture: with the kite overhead, aiming at it would leave the rider below the frame.
+	 */
+	FVector AimUpTheLines(const FVector& CameraLocation, const FVector& RiderLocation, const FVector& RiderToKite, float Fraction, float FieldOfViewDeg)
+	{
+		// The picture is 16:9 and the field of view is horizontal; keep the rider in the middle 85% of its height.
+		const float HalfHeightDeg = FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(FMath::DegreesToRadians(FieldOfViewDeg * 0.5f)) * 9.0f / 16.0f));
+		const float RiderPitchDeg = (RiderLocation - CameraLocation).Rotation().Pitch;
+		for (float Step = Fraction; Step > 0.0f; Step -= 0.05f)
+		{
+			const FVector LookAt = RiderLocation + RiderToKite * Step;
+			if (FMath::Abs((LookAt - CameraLocation).Rotation().Pitch - RiderPitchDeg) <= 0.85f * HalfHeightDeg)
+			{
+				return LookAt;
+			}
+		}
+		return RiderLocation;
+	}
+
+	/** Whether a point is inside a 16:9 picture from Location looking at LookAt, with a margin (1 = the edge). */
+	bool IsInPicture(const FVector& Location, const FVector& LookAt, float FieldOfViewDeg, const FVector& Point, float Margin)
+	{
+		const FVector Local = (LookAt - Location).Rotation().UnrotateVector(Point - Location);
+		if (Local.X <= 0.0f)
+		{
+			return false;
+		}
+		const float TanHalfWidth = FMath::Tan(FMath::DegreesToRadians(FieldOfViewDeg * 0.5f)) * Margin;
+		return FMath::Abs(Local.Y / Local.X) < TanHalfWidth && FMath::Abs(Local.Z / Local.X) < TanHalfWidth * 9.0f / 16.0f;
+	}
+
 	FShotAxes ShotAxes(const FVector& RiderLocation, const FVector& RiderVelocity, const FVector& KiteLocation)
 	{
 		FShotAxes Axes;
@@ -127,6 +159,40 @@ FKiteSurfShotFrame AKiteSurfCinematicCamera::ComputeShotFrame(EKiteSurfShot InSh
 		Frame.FieldOfViewDeg = 90.0f;
 		break;
 	}
+	if (InShot != EKiteSurfShot::KiteView)
+	{
+		// The rider first; then the kite too, by opening the lens as far as needed (to a point) and,
+		// if that is not enough, by standing further back. A planted shot stays where it is.
+		const float Fraction = FVector::DotProduct(Frame.LookAt - RiderLocation, RiderToKite) / FMath::Max(RiderToKite.SizeSquared(), 1.0f);
+		const FVector Offset = Frame.Location - RiderLocation;
+		const float StartFieldOfViewDeg = Frame.FieldOfViewDeg;
+		constexpr float WidestFieldOfViewDeg = 105.0f;
+		bool bKiteInPicture = false;
+		for (const float Back : { 1.0f, 1.3f, 1.7f, 2.2f, 3.0f })
+		{
+			if (Back > 1.0f && InShot == EKiteSurfShot::Wide)
+			{
+				break;
+			}
+			// Further back, but never lower over the water than the shot was set.
+			const FVector Location = RiderLocation + FVector(Offset.X * Back, Offset.Y * Back, FMath::Max(Offset.Z, Offset.Z * Back));
+			for (float FieldOfViewDeg = StartFieldOfViewDeg; ; FieldOfViewDeg = FMath::Min(FieldOfViewDeg + 5.0f, WidestFieldOfViewDeg))
+			{
+				Frame.Location = Location;
+				Frame.FieldOfViewDeg = FieldOfViewDeg;
+				Frame.LookAt = AimUpTheLines(Location, RiderLocation, RiderToKite, Fraction, FieldOfViewDeg);
+				bKiteInPicture = IsInPicture(Location, Frame.LookAt, FieldOfViewDeg, KiteLocation, 0.9f);
+				if (bKiteInPicture || FieldOfViewDeg >= WidestFieldOfViewDeg)
+				{
+					break;
+				}
+			}
+			if (bKiteInPicture)
+			{
+				break;
+			}
+		}
+	}
 	return Frame;
 }
 
@@ -181,19 +247,24 @@ void AKiteSurfCinematicCamera::UpdateFrame(float DeltaTime, bool bSnap)
 	const FVector KiteLocation = Kite ? Kite->GetKiteWorldPosition() : RiderLocation + FVector(0.0f, 0.0f, 2000.0f);
 	const FKiteSurfShotFrame Frame = ComputeShotFrame(Shot, RiderLocation, Rider->GetBoardVelocity(), KiteLocation, ShotSeconds, ShotAnchor, GetWaterZ());
 
-	// The camera rides a little behind the action, like a hand-held or boat-mounted camera; a planted
-	// shot stays put and only pans.
+	// The framing eases between frames like a hand-held or boat-mounted camera, but relative to the
+	// rider, so it keeps up with them at any speed; a planted shot stays put and only pans.
+	const FVector LocationOffset = Frame.Location - RiderLocation;
+	const FVector LookAtOffset = Frame.LookAt - RiderLocation;
 	if (bSnap)
 	{
-		SmoothedLocation = Frame.Location;
-		SmoothedLookAt = Frame.LookAt;
+		SmoothedLocationOffset = LocationOffset;
+		SmoothedLookAtOffset = LookAtOffset;
 	}
 	else
 	{
-		SmoothedLocation = Shot == EKiteSurfShot::Wide ? Frame.Location : FMath::VInterpTo(SmoothedLocation, Frame.Location, DeltaTime, 3.0f);
-		SmoothedLookAt = FMath::VInterpTo(SmoothedLookAt, Frame.LookAt, DeltaTime, 4.0f);
+		SmoothedLocationOffset = FMath::VInterpTo(SmoothedLocationOffset, LocationOffset, DeltaTime, 3.0f);
+		SmoothedLookAtOffset = FMath::VInterpTo(SmoothedLookAtOffset, LookAtOffset, DeltaTime, 4.0f);
 	}
+	SmoothedLocation = Shot == EKiteSurfShot::Wide ? Frame.Location : RiderLocation + SmoothedLocationOffset;
+	SmoothedLookAt = RiderLocation + SmoothedLookAtOffset;
 
 	SetActorLocationAndRotation(SmoothedLocation, (SmoothedLookAt - SmoothedLocation).Rotation());
-	Camera->SetFieldOfView(Frame.FieldOfViewDeg);
+	SmoothedFieldOfViewDeg = bSnap ? Frame.FieldOfViewDeg : FMath::FInterpTo(SmoothedFieldOfViewDeg, Frame.FieldOfViewDeg, DeltaTime, 3.0f);
+	Camera->SetFieldOfView(SmoothedFieldOfViewDeg);
 }

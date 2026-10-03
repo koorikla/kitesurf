@@ -269,7 +269,7 @@ FString LessonHUD::GlyphText(FName InputAction)
 		{ TEXT("IA_Edge"), TEXT("[A/D | L stick]") },
 		{ TEXT("IA_WeightShift"), TEXT("[W/S | L stick]") },
 		{ TEXT("IA_Jump"), TEXT("[Space | A]") },
-		{ TEXT("IA_Reset"), TEXT("[R]") },
+		{ TEXT("IA_Reset"), TEXT("[R | B]") },
 		{ TEXT("IA_Pause"), TEXT("[Esc | Start]") },
 	};
 	const FString* Found = Glyphs.Find(InputAction);

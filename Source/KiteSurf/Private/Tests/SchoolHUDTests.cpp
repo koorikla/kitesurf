@@ -150,7 +150,7 @@ bool FKiteSurfHUDLessonFormatters::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Sheet glyph"), LessonHUD::GlyphText(TEXT("IA_Sheet")), FString(TEXT("[Up/Down | R stick]")));
 	TestEqual(TEXT("Steer glyph"), LessonHUD::GlyphText(TEXT("IA_Steer")), FString(TEXT("[Left/Right | R stick]")));
 	TestEqual(TEXT("Jump glyph"), LessonHUD::GlyphText(TEXT("IA_Jump")), FString(TEXT("[Space | A]")));
-	TestEqual(TEXT("Reset glyph"), LessonHUD::GlyphText(TEXT("IA_Reset")), FString(TEXT("[R]")));
+	TestEqual(TEXT("Reset glyph"), LessonHUD::GlyphText(TEXT("IA_Reset")), FString(TEXT("[R | B]")));
 	TestEqual(TEXT("No glyph for None"), LessonHUD::GlyphText(NAME_None), FString());
 	for (const FLessonDef& L : LessonCatalog::GetAll())
 	{
@@ -248,11 +248,11 @@ bool FKiteSurfHUDLessonPhases::RunTest(const FString& Parameters)
 
 	FLessonHUDInput Offer = StepInput(1);
 	Offer.bDropBackOffered = true;
-	TestEqual(TEXT("Drop back a step, with its key"), LessonHUD::BuildView(Offer, NoTimers).DropBack, FString(TEXT("Too hard? Drop back to step 1  [R]")));
+	TestEqual(TEXT("Drop back a step, with its key"), LessonHUD::BuildView(Offer, NoTimers).DropBack, FString(TEXT("Too hard? Drop back to step 1  [R | B]")));
 	Offer = StepInput(0);
 	Offer.bDropBackOffered = true;
 	Offer.DropBackLessonId = TEXT("A2");
-	TestEqual(TEXT("On the first step: back to the prerequisite"), LessonHUD::FormatDropBack(Offer), FString(TEXT("Too hard? Drop back to lesson A2  [R]")));
+	TestEqual(TEXT("On the first step: back to the prerequisite"), LessonHUD::FormatDropBack(Offer), FString(TEXT("Too hard? Drop back to lesson A2  [R | B]")));
 	Offer.DropBackLessonId = NAME_None;
 	TestEqual(TEXT("Nowhere to go: no offer"), LessonHUD::FormatDropBack(Offer), FString());
 
@@ -279,7 +279,7 @@ bool FKiteSurfHUDLessonPhases::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Failed title"), V.CardTitle, FString(TEXT("TIME UP")));
 		TestEqual(TEXT("Failed: no stars"), V.CardStars, 0);
 		TestEqual(TEXT("Failed: no result value"), V.CardResult, FString());
-		TestEqual(TEXT("Failed: Retry and the lesson menu, no Next"), V.CardActions, FString(TEXT("[R] Retry    [Esc | Start] Lesson menu")));
+		TestEqual(TEXT("Failed: Retry and the lesson menu, no Next"), V.CardActions, FString(TEXT("[R | B] Retry    [Esc | Start] Lesson menu")));
 	}
 	return true;
 }
@@ -301,8 +301,8 @@ bool FKiteSurfHUDLessonResultCard::RunTest(const FString& Parameters)
 	TestEqual(TEXT("3 stars: nothing to ask"), LessonHUD::FormatNextStar(3, true, Stomped, 0), FString());
 	TestEqual(TEXT("No pass: nothing to ask"), LessonHUD::FormatNextStar(0, false, Stomped, 1), FString());
 
-	TestEqual(TEXT("After a pass with a next lesson"), LessonHUD::FormatCardActions(true, TEXT("B3")), FString(TEXT("[Space | A] Next: B3    [R] Retry    [Esc | Start] Lesson menu")));
-	TestEqual(TEXT("After a pass with none"), LessonHUD::FormatCardActions(true, NAME_None), FString(TEXT("[R] Retry    [Esc | Start] Lesson menu")));
+	TestEqual(TEXT("After a pass with a next lesson"), LessonHUD::FormatCardActions(true, TEXT("B3")), FString(TEXT("[Space | A] Next: B3    [R | B] Retry    [Esc | Start] Lesson menu")));
+	TestEqual(TEXT("After a pass with none"), LessonHUD::FormatCardActions(true, NAME_None), FString(TEXT("[R | B] Retry    [Esc | Start] Lesson menu")));
 
 	const FLessonDef* B2 = LessonCatalog::Find(TEXT("B2"));
 	if (!TestNotNull(TEXT("B2"), B2))
@@ -343,7 +343,7 @@ bool FKiteSurfHUDLessonResultCard::RunTest(const FString& Parameters)
 		TEXT("Result  1.6 m"),
 		TEXT("Best  2/3 stars   1.8 m   3 passes"),
 		TEXT("Next star: Stomped landings, or fewer assists"),
-		TEXT("[Space | A] Next: B3    [R] Retry    [Esc | Start] Lesson menu"),
+		TEXT("[Space | A] Next: B3    [R | B] Retry    [Esc | Start] Lesson menu"),
 	};
 	TestEqual(TEXT("The card's lines"), FString::Join(V.ResultCardLines(), TEXT("|")), FString::Join(Expected, TEXT("|")));
 	In.bPassedHigherBar = true;
@@ -637,7 +637,7 @@ bool FKiteSurfHUDLessonDirectorRun::RunTest(const FString& Parameters)
 		return false;
 	}
 	Fx.HUD->UpdateLessonLayer(FrameSeconds);
-	TestEqual(TEXT("The offer with its key"), Fx.View().DropBack, FString(TEXT("Too hard? Drop back to lesson A1  [R]")));
+	TestEqual(TEXT("The offer with its key"), Fx.View().DropBack, FString(TEXT("Too hard? Drop back to lesson A1  [R | B]")));
 	TestTrue(TEXT("The reset key takes it"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
 	TestEqual(TEXT("A1 runs"), Fx.Director->GetLessonId(), FName(TEXT("A1")));
 	Fx.HUD->UpdateLessonLayer(FrameSeconds);
@@ -678,7 +678,7 @@ bool FKiteSurfHUDLessonDirectorResult::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Stars text"), V.CardStarsText, FString::Printf(TEXT("STARS %d/3"), Fx.Director->GetStars()));
 	TestTrue(TEXT("The pass value"), V.CardResult.StartsWith(TEXT("Result  ")) && V.CardResult.Contains(TEXT("kn")));
 	TestTrue(TEXT("The best from the progress book: one pass"), V.CardBest.StartsWith(FString::Printf(TEXT("Best  %d/3 stars"), Fx.Director->GetStars())) && V.CardBest.EndsWith(TEXT("1 pass")));
-	TestEqual(TEXT("Next, Retry and Lesson menu"), V.CardActions, FString(TEXT("[Space | A] Next: A4    [R] Retry    [Esc | Start] Lesson menu")));
+	TestEqual(TEXT("Next, Retry and Lesson menu"), V.CardActions, FString(TEXT("[Space | A] Next: A4    [R | B] Retry    [Esc | Start] Lesson menu")));
 
 	// The pause key: nothing bound, so the HUD falls back to the pause menu.
 	TestFalse(TEXT("No lesson menu bound: not handled"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Menu));
@@ -704,7 +704,7 @@ bool FKiteSurfHUDLessonDirectorResult::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The card after a time-out"), Fx.View().bResultCard && !Fx.View().bPassed);
 	TestEqual(TEXT("TIME UP"), Fx.View().CardTitle, FString(TEXT("TIME UP")));
 	TestEqual(TEXT("No stars"), Fx.View().CardStars, 0);
-	TestEqual(TEXT("Retry and Lesson menu only"), Fx.View().CardActions, FString(TEXT("[R] Retry    [Esc | Start] Lesson menu")));
+	TestEqual(TEXT("Retry and Lesson menu only"), Fx.View().CardActions, FString(TEXT("[R | B] Retry    [Esc | Start] Lesson menu")));
 	TestFalse(TEXT("The jump key does nothing after a time-out"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Confirm));
 	TestTrue(TEXT("The reset key retries"), Fx.HUD->HandleLessonAction(ELessonHUDAction::Retry));
 	TestEqual(TEXT("A4 again"), Fx.Director->GetLessonId(), FName(TEXT("A4")));

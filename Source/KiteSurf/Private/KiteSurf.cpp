@@ -114,7 +114,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Stick"),
-			TEXT("Holds the player's left stick (A/D, W/S) through the same handlers the keys and the stick use, so it is read by state: the board on the water, the pre-wind while the jump button is held, the rotation in the air (X towards the side of the screen the rider's back is on is a back roll). Usage: kitesurf.Stick <X -1..1: D +1> <Y -1..1: W +1>"),
+			TEXT("Holds the player's left stick (A/D, W/S) through the same handlers the keys and the stick use, so it is read by state: the board on the water, the pre-wind while the jump button and IA_Rotate (kitesurf.RotateButton) are both held, the rotation in the air with IA_Rotate held (X towards the side of the screen the rider's back is on is a back roll). Usage: kitesurf.Stick <X -1..1: D +1> <Y -1..1: W +1>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 			{
 				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
@@ -174,7 +174,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Pass"),
-			TEXT("Presses the handle pass button (X / LeftShift) on the player's rider (T3.1): unhooked, a pass starts when the lines are slack and the back is to the kite within the press's buffer; the flick assist dips the kite in the air. On the water (T3.5) riding blind it is the surface pass and the half turn to heelside, riding toeside the half turn back."),
+			TEXT("Presses the handle pass button (X on both keyboard and pad since batch A) on the player's rider (T3.1): unhooked, a pass starts when the lines are slack and the back is to the kite within the press's buffer; the flick assist dips the kite in the air. On the water (T3.5) riding blind it is the surface pass and the half turn to heelside, riding toeside the half turn back."),
 			FConsoleCommandDelegate::CreateLambda([]()
 			{
 				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
@@ -224,6 +224,29 @@ public:
 						else
 						{
 							It->OnJumpReleased(FInputActionValue(false));
+						}
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.RotateButton"),
+			TEXT("Presses (1) or lets go of (0) the player's rotation modifier through the same handlers IA_Rotate uses (batch A: LeftShift / LT): held, the left stick reaches the pre-wind while loading and the rotation stick in the air; without it the stick is always the board. Usage: kitesurf.RotateButton <0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const bool bPress = !Args.IsValidIndex(0) || FCString::Atoi(*Args[0]) != 0;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						if (bPress)
+						{
+							It->OnRotatePressed(FInputActionValue(true));
+						}
+						else
+						{
+							It->OnRotateReleased(FInputActionValue(false));
 						}
 					}
 				}
@@ -602,6 +625,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Stick"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Trick"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.JumpButton"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.RotateButton"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Bar"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Hook"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Pass"));

@@ -40,10 +40,14 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	PreWindRollRateDegS = 250.0f;
 	PreWindFlipRateDegS = 260.0f;
 	PreWindSpinRateDegS = 360.0f;
-	SpinAxisTiltMaxDeg = 20.0f;
+	// Batch A (docs/tricks/review.md section 4): with IA_Rotate gating the stick, X alone is a back
+	// or front roll in the air as well as on the water (AirStickTiltWithoutPreWindDeg unified with
+	// DefaultRollAxisTiltDeg); RollAxisTiltRangeDeg and SpinAxisTiltMaxDeg widen so the up-diagonal
+	// still reaches a spin and the down-diagonal a more inverted roll.
+	SpinAxisTiltMaxDeg = 25.0f;
 	DefaultRollAxisTiltDeg = 65.0f;
-	RollAxisTiltRangeDeg = 45.0f;
-	AirStickTiltWithoutPreWindDeg = 0.0f;
+	RollAxisTiltRangeDeg = 65.0f;
+	AirStickTiltWithoutPreWindDeg = 65.0f;
 	FlipSectorDeg = 20.0f;
 	FlipSectorHysteresisDeg = 5.0f;
 	PreWindLoadFloor = 0.5f;

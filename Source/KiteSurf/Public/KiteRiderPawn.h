@@ -160,6 +160,7 @@ public:
 	UInputAction* GetOneFootAction() const { return OneFootAction.Get(); }
 	UInputAction* GetHookAction() const { return HookAction.Get(); }
 	UInputAction* GetPassAction() const { return PassAction.Get(); }
+	UInputAction* GetRotateAction() const { return RotateAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
@@ -214,13 +215,16 @@ public:
 	void SetTuck(float Amount);
 
 	/**
-	 * Player rider input (T1.4, docs/tricks/README.md decision 7). The left stick and WASD are
-	 * IA_Edge (X) and IA_WeightShift (Y), and are read by state, with no action of their own:
+	 * Player rider input (T1.4; batch A, docs/tricks/review.md section 4, amending
+	 * docs/tricks/README.md decision 7). The left stick and WASD are IA_Edge (X) and
+	 * IA_WeightShift (Y), and are read by state, with no action of their own:
 	 * - on the water: the board's carve and weight shift, as always;
-	 * - holding jump on the water (loading): the pre-wind, while the board keeps the carve and weight
-	 *   shift it had when the load started (bPreWindLatchesBoardInput);
-	 * - in the air: the rotation stick (SetAirRotationInput), and a jump press held in the air is the
-	 *   tuck.
+	 * - holding jump on the water (loading) with IA_Rotate also held (Shift / LT): the pre-wind,
+	 *   while the board keeps the carve and weight shift it had when the load started
+	 *   (bPreWindLatchesBoardInput); IA_Rotate up, the stick just keeps carving and shifting weight
+	 *   through the load, so a plain jump stays straight;
+	 * - in the air with IA_Rotate held: the rotation stick (SetAirRotationInput); without it the
+	 *   stick does nothing to the attitude. A jump press held in the air is the tuck either way.
 	 * Stick X is turned into the rotation's X by the screen side of the rider's back
 	 * (GetScreenBackSign), so X towards the side of the screen the rider's back is on is a back roll.
 	 * These are the functions Enhanced Input calls; they are public so tests drive the player path
@@ -230,6 +234,18 @@ public:
 	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void OnJumpPressed(const FInputActionValue& Value);
 	void OnJumpReleased(const FInputActionValue& Value);
+
+	/**
+	 * The rotation modifier (batch A): LeftShift on the keyboard, LT on the gamepad (digital past
+	 * half travel). Held, the player's stick reaches the pre-wind while loading and the rotation
+	 * stick in the air (see OnEdgeTriggered above); without it the stick is always the board's carve
+	 * and weight shift, so a plain jump stays straight. Public so tests drive the player path.
+	 */
+	void OnRotatePressed(const FInputActionValue& Value);
+	void OnRotateReleased(const FInputActionValue& Value);
+
+	/** True while IA_Rotate is held. */
+	bool IsRotateHeld() const { return bRotateHeld; }
 
 	/**
 	 * Grabs and the one-footer (T2.1, T2.2): IA_GrabFront (LB, Q), IA_GrabBack (RB, E) and IA_OneFoot
@@ -259,7 +275,8 @@ public:
 
 	/**
 	 * Unhooked riding (T3.1, docs/tricks/T3.md sections 1 and 2): IA_Hook (Y, F) hooks in or out on
-	 * the water, IA_Pass (X, LeftShift) is the handle pass, used in the air while unhooked. A press is
+	 * the water, IA_Pass (X on both keyboard and pad since batch A) is the handle pass, used in the
+	 * air while unhooked. A press is
 	 * kept until the next fixed step, which hands it to BarStateMachine::Step (StepBar). Public so
 	 * tests press them; PressHook and PressPass are the scripted path (kitesurf.Hook, kitesurf.Pass).
 	 */
@@ -485,6 +502,15 @@ public:
 	/** The air rotation stick acts only past this (0..1). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AirRotationDeadzone;
+
+	/**
+	 * IA_Rotate (batch A) can be let go for up to this long while still loading on the water without
+	 * losing the pre-wind (s): releasing the modifier and the jump button in the same frame still
+	 * gives the trick. Past it, on the player path, the pre-wind clears, so a modifier let go well
+	 * before the pop leaves a plain jump. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.0"))
+	float RotateReleaseGraceSeconds;
 
 	/** Time constant of the filter on the measured vertical acceleration the attitude's time to contact uses (s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation", meta = (ClampMin = "0.001"))
@@ -1050,9 +1076,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> HookAction;
 
-	/** The handle pass, in the air while unhooked (X, LeftShift). */
+	/** The handle pass, in the air while unhooked: X on the keyboard matches the pad's X (left face). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> PassAction;
+
+	/** The rotation modifier (batch A): held, the stick reaches the pre-wind and the air rotation stick (LeftShift, LT). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> RotateAction;
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Gameplay")
@@ -1255,6 +1285,10 @@ private:
 
 	FVector2D PlayerRiderStick = FVector2D::ZeroVector;
 	bool bPlayerRiderInput = false;
+	/** IA_Rotate (batch A): held, the player's stick reaches the pre-wind and the air rotation; let go, the stick is always the board. */
+	bool bRotateHeld = false;
+	/** How long IA_Rotate has been up while still loading on the water, on the player path: past RotateReleaseGraceSeconds the pre-wind clears (StepRiderAttitude). */
+	float RotateReleaseElapsedSeconds = 0.0f;
 
 	FGrabState GrabState;
 	bool bGrabFrontHeld = false;

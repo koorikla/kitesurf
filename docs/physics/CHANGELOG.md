@@ -159,6 +159,16 @@ against the commit before it, and the section after the list what moved against 
     10.7 m at 0.66 s). 122 tests.
 32. **docs(physics)**: this section, `docs/movement.md`, `docs/jumping.md`, `docs/ARCHITECTURE.md`,
     `README.md` and the status of each item in `plan-2.md`.
+33. **merge: origin/main into physics/phase2.** Main's #46 to #70 on top of phase 2. The trick
+    tracker (#69) takes the board's landing sink and g instead of its own `-Vz` over 30 cm, so the
+    trick card and the landing card show one number; the board's `LandingGForSink` is
+    `LandingMath::ComputeLandingG` (#64) and `GetLandingCount` is `GetJumpCount` (#46). The wind to
+    90 kn and the ceiling at the clouds (#46) need nothing more: the highest storm jump is 24 m with
+    the kite about 20 m above the rider, where the power-law profile gives 1.1 to 1.2 of the 10 m
+    wind, so it is not clamped. The visual board (#68) hangs off the root, so the fixed
+    step's drawing between steps moves it. Main's jumps are flown the phase 2 way (the jump button held
+    and let go at 0.66 s in 30 kn, 0.2 s in a storm, a crouched landing). Storm jumps: 21.2 m and
+    156 m in 60 kn, 22.4 m and 225 m in 90 kn, both a crash on landing (`storm-jumps.md`). 180 tests.
 
 ### Where the numbers stand
 

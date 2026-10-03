@@ -8,6 +8,7 @@
 #include "BoardWakeComponent.h"
 #include "WindStreakComponent.h"
 #include "KiteComponent.h"
+#include "Tricks/TrickTrackerComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -84,35 +85,28 @@ AKiteRiderPawn::AKiteRiderPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// BoardMesh root
+	// BoardMesh root: the physics body. UBoardMovementComponent sweeps it, so it keeps the board's
+	// mesh for its collision, but it is not drawn: BoardVisual is.
 	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
 	RootComponent = BoardMesh;
+	BoardMesh->SetVisibility(false);
+	BoardMesh->SetHiddenInGame(true);
+
+	// BoardVisual: the board that is drawn. It sits on the root (relative identity) unless
+	// SetBoardVisualWorldRotation turns it, so the board can roll and flip in a trick while the
+	// physics body keeps its own orientation.
+	BoardVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardVisual"));
+	BoardVisual->SetupAttachment(RootComponent);
+	BoardVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoardVisual->SetGenerateOverlapEvents(false);
+	BoardVisual->SetCanEverAffectNavigation(false);
 
 	// Setup default meshes and materials if available
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> BoardMeshFinder(TEXT("/Game/Meshes/SM_KiteBoard"));
 	if (BoardMeshFinder.Succeeded())
 	{
 		BoardMesh->SetStaticMesh(BoardMeshFinder.Object);
-	}
-
-	// RiderMesh attached to BoardMesh (standing on board)
-	RiderMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("RiderMesh"));
-	RiderMesh->SetupAttachment(RootComponent);
-	RiderMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-	RiderMesh->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f)); // Face across the board in kitesurf stance
-
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> RiderMeshFinder(RiderCharacter::MannequinMeshPath);
-	if (RiderMeshFinder.Succeeded())
-	{
-		RiderMesh->SetSkeletalMesh(RiderMeshFinder.Object);
-	}
-
-	static ConstructorHelpers::FObjectFinder<UAnimationAsset> RiderAnimFinder(RiderCharacter::MannequinIdlePath);
-	if (RiderAnimFinder.Succeeded())
-	{
-		RiderMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-		RiderMesh->SetAnimation(RiderAnimFinder.Object);
-		RiderMesh->Play(true);
+		BoardVisual->SetStaticMesh(BoardMeshFinder.Object);
 	}
 
 	// The jointed riders: a torso and eight limb parts placed in world space every frame by
@@ -166,15 +160,18 @@ AKiteRiderPawn::AKiteRiderPawn()
 
 	// The rider stands across the board and turns with it, but stays upright and leans against the kite
 	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
-	RiderMesh->SetUsingAbsoluteRotation(true);
 	ControlBarMesh->SetUsingAbsoluteLocation(true);
 	ControlBarMesh->SetUsingAbsoluteRotation(true);
 
 	// CameraBoom: pivots at chest height and is aimed in world space by UpdateCamera, so the
-	// horizon stays level while the board pitches with the swell and rolls with the edge.
+	// horizon stays level while the board pitches with the swell and rolls with the edge. In the
+	// air UpdateCamera also keeps the pivot straight above the board and looks along the flight.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	CameraPivotHeightCm = 120.0f;
+	CameraAirMinSpeedCmS = 200.0f;
+	CameraPivotLevelSeconds = 0.25f;
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, CameraPivotHeightCm));
 	CameraBoom->TargetArmLength = CameraArmLengthCm;
 	CameraBoom->SetRelativeRotation(FRotator(CameraBoomPitchDeg, 0.0f, 0.0f));
 	CameraBoom->bEnableCameraLag = true;
@@ -203,6 +200,11 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Tick), so neither ticks on its own. Their step functions stay callable for tests.
 	Kite->PrimaryComponentTick.bCanEverTick = false;
 	BoardMovement->PrimaryComponentTick.bCanEverTick = false;
+
+	// Jump records and tricks: polls the board and the kite after each board step.
+	TrickTracker = CreateDefaultSubobject<UTrickTrackerComponent>(TEXT("TrickTracker"));
+	TrickTracker->SetSources(BoardMovement, Kite);
+
 	SimStepSeconds = 1.0f / 240.0f;
 	MaxFrameSeconds = 0.1f;
 	MaxSimStepsPerFrame = 32;
@@ -272,6 +274,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	SmoothedKiteOffset = FVector::ZeroVector;
 	CameraYawDeg = 0.0f;
 	CameraLookPitchDeg = 0.0f;
+	CameraHeadingYawDeg = 0.0f;
+	CameraPivotAirBlend = 0.0f;
+	bBoardVisualOverride = false;
 	RiderFacingYawDeg = 0.0f;
 	RiderStanceSide = 1.0f;
 	RiderTurnOffsetDeg = 0.0f;
@@ -613,7 +618,15 @@ void AKiteRiderPawn::UpdateMouseBar()
 		float DeltaY = 0.0f;
 		PC->GetInputMouseDelta(DeltaX, DeltaY);
 		MouseSteerInput = FMath::Clamp(MouseSteerInput + DeltaX * MouseSteerSensitivity, -1.0f, 1.0f);
-		SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+		if (bMotionBarActive)
+		{
+			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral - DeltaY * MouseSheetSensitivity, 0.0f, 1.0f);
+			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+		}
+		else
+		{
+			SheetKite(CurrentSheetInput - DeltaY * MouseSheetSensitivity);
+		}
 		SteerKite(KeySteerInput + MouseSteerInput);
 	}
 	else if (MouseSteerInput != 0.0f)
@@ -774,6 +787,7 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->StepBoard(StepSeconds);
 	}
+	if (TrickTracker) TrickTracker->StepTracker(StepSeconds);
 
 	if (RootComponent)
 	{
@@ -919,10 +933,18 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 
 	UpdateMotionBar(DeltaTime);
 
-	// With the motion bar in the rider's hands, the stick, triggers and keys leave the bar alone.
-	if (!bMotionBarActive && !FMath::IsNearlyZero(SheetRateInput))
+	// The stick, triggers and keys still adjust the bar when the motion controller is in use.
+	if (!FMath::IsNearlyZero(SheetRateInput))
 	{
-		SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
+		if (bMotionBarActive)
+		{
+			MotionBarMapping.SheetAtNeutral = FMath::Clamp(MotionBarMapping.SheetAtNeutral + SheetRateInput * SheetRatePerSec * DeltaTime, 0.0f, 1.0f);
+			SheetKite(MotionBarMapping.GetSheet(MotionFilter.GetPitchDeg()));
+		}
+		else
+		{
+			SheetKite(CurrentSheetInput + SheetRateInput * SheetRatePerSec * DeltaTime);
+		}
 	}
 
 	if (GetController())
@@ -1015,29 +1037,20 @@ void AKiteRiderPawn::SetRiderCharacter(ERiderCharacter InCharacter)
 {
 	RiderCharacter = RiderCharacter::FromIndex(static_cast<int32>(InCharacter));
 
-	// Riders without a posed static mesh are the animated mannequin.
-	const bool bRobot = RiderCharacter::GetStaticMeshPath(RiderCharacter) == nullptr;
-	if (RiderMesh)
-	{
-		RiderMesh->SetVisibility(bRobot);
-	}
 	// The jointed riders share a rig; each has its own torso and limb parts.
-	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : TEXT("Santa");
-	auto SetPart = [RiderName, bRobot](UStaticMeshComponent* Component, const TCHAR* PartName)
+	const TCHAR* RiderName = RiderCharacter == ERiderCharacter::Wetsuit ? TEXT("Wetsuit") : (RiderCharacter == ERiderCharacter::Robot ? TEXT("Robot") : TEXT("Santa"));
+	auto SetPart = [RiderName](UStaticMeshComponent* Component, const TCHAR* PartName)
 	{
 		if (!Component)
 		{
 			return;
 		}
-		if (!bRobot)
+		const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
+		if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
 		{
-			const FString MeshPath = FString::Printf(TEXT("/Game/Meshes/SM_Rider%s_%s"), RiderName, PartName);
-			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath))
-			{
-				Component->SetStaticMesh(Mesh);
-			}
+			Component->SetStaticMesh(Mesh);
 		}
-		Component->SetVisibility(!bRobot);
+		Component->SetVisibility(true);
 	};
 	SetPart(RiderTorso, TEXT("Torso"));
 	static const TCHAR* LimbPartNames[] = { TEXT("Thigh"), TEXT("Shin"), TEXT("UpperArm"), TEXT("Forearm") };
@@ -1150,17 +1163,16 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	// The jointed rider: feet in the straps wherever the board goes, pelvis over them along the
 	// body's lean and lower in a crouch, knees bending to fit.
 	FRiderRigInput RigInput;
-	RigInput.Board = GetActorTransform();
+	// The feet are in the straps of the board that is drawn, which may be turned away from the root.
+	RigInput.Board = BoardVisual ? BoardVisual->GetComponentTransform() : GetActorTransform();
 	RigInput.Facing = Facing;
 	RigInput.BodyUp = BodyUp.GetSafeNormal();
 	RigInput.Crouch = Load;
+	// RigInput.BodyQuat stays unset: on the water the rig solves from the level Facing and BodyUp.
+	// The rider attitude (URiderAttitudeComponent, T1.2) will set it in the air.
 	RiderPose = RiderRig::SolveBody(RigInput);
 
-	if (RiderMesh)
-	{
-		// The mannequin's front is +Y in mesh space.
-		RiderMesh->SetWorldRotation(BodyQuat * FQuat(FRotator(0.0f, -90.0f, 0.0f)));
-	}
+
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them
 	// just beyond the hook, further out the more it is sheeted out, and always in front of the
@@ -1245,6 +1257,29 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	}
 }
 
+void AKiteRiderPawn::SetBoardVisualWorldRotation(const FQuat& WorldRotation)
+{
+	if (!BoardVisual)
+	{
+		return;
+	}
+	// The rotation is held in world space, so it stays put however the root turns; the location
+	// stays relative, so the board goes where the body goes.
+	bBoardVisualOverride = true;
+	BoardVisual->SetUsingAbsoluteRotation(true);
+	BoardVisual->SetWorldRotation(WorldRotation.GetNormalized());
+}
+
+void AKiteRiderPawn::ClearBoardVisualOverride()
+{
+	bBoardVisualOverride = false;
+	if (BoardVisual)
+	{
+		BoardVisual->SetUsingAbsoluteRotation(false);
+		BoardVisual->SetRelativeRotation(FQuat::Identity);
+	}
+}
+
 void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 {
 	if (!CameraBoom || !FollowCamera)
@@ -1252,7 +1287,44 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 		return;
 	}
 
-	const float HeadingYawDeg = GetActorRotation().Yaw;
+	const bool bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+
+	// The boom pivot. On the water it rides on the board, tilting with the swell and the edge as it
+	// always has. In the air it sits straight above the board, so a board pitched or rolled by a
+	// trick does not swing the camera about. Between the two it blends over CameraPivotLevelSeconds.
+	const float PivotBlendTarget = bAirborne ? 1.0f : 0.0f;
+	CameraPivotAirBlend = (bViewInitialized && CameraPivotLevelSeconds > 0.0f)
+		? FMath::FInterpConstantTo(CameraPivotAirBlend, PivotBlendTarget, DeltaTime, 1.0f / CameraPivotLevelSeconds)
+		: PivotBlendTarget;
+	const FVector PivotOffset(0.0f, 0.0f, CameraPivotHeightCm);
+	if (CameraPivotAirBlend <= 0.0f)
+	{
+		CameraBoom->SetRelativeLocation(PivotOffset);
+	}
+	else
+	{
+		const FTransform& RootTransform = GetActorTransform();
+		const FVector WorldOffset = FMath::Lerp(RootTransform.TransformVectorNoScale(PivotOffset), PivotOffset, CameraPivotAirBlend);
+		CameraBoom->SetRelativeLocation(RootTransform.InverseTransformVectorNoScale(WorldOffset));
+	}
+
+	// The heading the camera looks along. On the water it is the board's: switch stance keeps the
+	// nose forward, so that is the way the rider is going. In the air the board spins, so it is the
+	// flight's horizontal direction, held while that is too slow to mean anything.
+	float HeadingYawDeg = GetActorRotation().Yaw;
+	if (bAirborne)
+	{
+		const FVector Velocity = GetBoardVelocity();
+		if (Velocity.SizeSquared2D() > FMath::Square(CameraAirMinSpeedCmS))
+		{
+			HeadingYawDeg = FMath::RadiansToDegrees(FMath::Atan2(Velocity.Y, Velocity.X));
+		}
+		else if (bViewInitialized)
+		{
+			HeadingYawDeg = CameraHeadingYawDeg;
+		}
+	}
+	CameraHeadingYawDeg = HeadingYawDeg;
 	float TargetYawDeg = HeadingYawDeg;
 	float TargetLookPitchDeg = CameraMinLookPitchDeg;
 

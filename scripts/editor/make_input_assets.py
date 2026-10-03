@@ -88,7 +88,9 @@ def build_assets():
             # Down pulls the bar in towards the rider (power), up lets it out, as the HUD bar moves.
             (ia_sheet, 'Down', False),
             (ia_sheet, 'Up', True),
-            (ia_sheet, 'Gamepad_RightY', False),
+            # The stick is the bar in the rider's hands: pulled back towards them is power,
+            # pushed forward lets the bar out. Stick forward is the positive axis, so negate.
+            (ia_sheet, 'Gamepad_RightY', True),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
             (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
             # Turn the board (IA_Edge keeps its name; it has always driven the carve)

@@ -1,4 +1,5 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
@@ -255,9 +256,17 @@ void UKiteSurfPauseMenuWidget::OnRestartClicked()
 		FString LevelName = World->GetName();
 		if (LevelName.IsEmpty() || LevelName.StartsWith(TEXT("UEDPIE")))
 		{
-			LevelName = TEXT("L_OpenWater");
+			FName MapToLoad = FName(TEXT("L_OpenWater"));
+			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+			{
+				MapToLoad = FName(*GI->PendingMapName);
+			}
+			UGameplayStatics::OpenLevel(World, MapToLoad);
 		}
-		UGameplayStatics::OpenLevel(World, FName(*LevelName));
+		else
+		{
+			UGameplayStatics::OpenLevel(World, FName(*LevelName));
+		}
 	}
 }
 

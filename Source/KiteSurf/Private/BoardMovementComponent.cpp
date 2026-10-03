@@ -9,6 +9,7 @@
 #include "WaterBodyActor.h"
 #include "WaterBodyComponent.h"
 #include "KiteSurfUnits.h"
+#include "Tricks/LandingMath.h"
 
 namespace
 {
@@ -112,9 +113,9 @@ UBoardMovementComponent::UBoardMovementComponent()
 	EdgeReleaseSeconds = 0.0f;      // s: 0 = physics only; the lines' pull lifts the rider as a force once the edge lets go
 	JumpMinSpeedKnots = 8.0f;   // 8 kn
 	JumpMinEdgeInput = 0.4f;    // 0.4
-	MaxJumpHeight = 4000.0f;    // 4000 cm = 40 m
+	MaxJumpHeight = 500000.0f;  // 5 km: the base of the level's clouds
 	MaxLandingAngle = 30.0f;    // 30 deg
-	LandingAbsorbDistanceCm = 30.0f;    // research 0.2 to 0.4 m of legs and immersion
+	LandingAbsorbDistanceCm = LandingMath::DefaultLandingAbsorbDistanceCm; // 30 cm; research 0.2 to 0.4 m of legs and immersion
 	CrouchAbsorbBonus = 1.0f;           // a full crouch doubles it
 	CrashLandingG = 8.0f;
 	HotLandingSinkMS = 6.0f;
@@ -310,6 +311,8 @@ void UBoardMovementComponent::BeginAirborne()
 	CurrentJumpAirtime = 0.0f;
 	CurrentJumpHeight = 0.0f;
 	CurrentJumpApexHeight = 0.0f;
+	CurrentJumpDistance = 0.0f;
+	JumpStartLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
 	LandingStateTimer = 0.0f;
 }
 
@@ -498,8 +501,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			{
 				CurrentJumpApexHeight = CurrentJumpHeight;
 			}
+			CurrentJumpDistance = FVector::Dist2D(Location, JumpStartLocation);
 
-			// Clamp apex at MaxJumpHeight (default 40 m = 4000 cm)
+			// Clamp apex at MaxJumpHeight (the cloud base)
 			if (Location.Z >= WaterHeight + MaxJumpHeight)
 			{
 				FVector ClampedLocation = Location;
@@ -681,9 +685,11 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 			ApplyWaterDragAndSideForce(DeltaTime, DragDecelCmS2, DragRatePerS, DragRatePerCm, LevelForward);
 		}
 
-		// Velocity clamping at MaxBoardSpeed
+		// A board on the water goes no faster than MaxBoardSpeed. In the air only the air drags on
+		// the rider: the kite carries them downwind until the wind they feel has dropped, which is
+		// what brings a rider lofted in a storm back down.
 		const float MaxSpeedCmS = GetMaxBoardSpeedCmS();
-		if (Velocity.Size2D() > MaxSpeedCmS)
+		if (!bIsAirborne && Velocity.Size2D() > MaxSpeedCmS)
 		{
 			const FVector Clamped2D = Velocity.GetSafeNormal2D() * MaxSpeedCmS;
 			Velocity.X = Clamped2D.X;
@@ -828,10 +834,13 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 				LastJumpApexHeight = CurrentJumpApexHeight;
 				LastJumpAirtime = CurrentJumpAirtime;
+				LastJumpDistance = CurrentJumpDistance;
+				++JumpCount;
 				if (CurrentJumpApexHeight > BestJumpHeight)
 				{
 					BestJumpHeight = CurrentJumpApexHeight;
 				}
+				BestJumpDistance = FMath::Max(BestJumpDistance, LastJumpDistance);
 
 				// The landing's load (research 3.4): the sink v is taken out over the absorb distance s,
 				// the legs and the board's immersion, longer for a crouch, at 1 + v^2 / (2 g s) g. It is
@@ -849,7 +858,6 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 					}
 				}
 				bLastLandingHot = LastLandingSinkMS > HotLandingSinkMS || KiteElevationDeg < HotLandingKiteElevationDeg;
-				++LandingCount;
 
 				if (LandingAngleDeg <= MaxLandingAngle && LastLandingG <= CrashLandingG)
 				{
@@ -885,9 +893,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 float UBoardMovementComponent::LandingGForSink(float SinkMS, float AbsorbDistanceCm)
 {
-	// A constant deceleration v^2 / (2 s) takes the sink out over s, on top of the rider's weight.
-	const float AbsorbM = FMath::Max(KiteUnits::CmToM(AbsorbDistanceCm), KINDA_SMALL_NUMBER);
-	return 1.0f + FMath::Square(FMath::Max(SinkMS, 0.0f)) / (2.0f * KiteUnits::GravityMS2 * AbsorbM);
+	// A constant deceleration v^2 / (2 s) takes the sink out over s, on top of the rider's weight. The
+	// trick recorder's helper is the same formula; one copy keeps the two cards on one number.
+	return LandingMath::ComputeLandingG(KiteUnits::MToCm(SinkMS), AbsorbDistanceCm);
 }
 
 float UBoardMovementComponent::BeginTouchdownAbsorb(float SinkCmS)

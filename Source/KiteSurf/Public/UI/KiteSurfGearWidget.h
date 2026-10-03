@@ -68,6 +68,12 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Gear")
 	bool bSharks = true;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Gear")
+	FString CurrentMapName = TEXT("L_OpenWater");
+
+	UFUNCTION(BlueprintCallable, Category = "Gear")
+	void CycleMap();
+
 	UFUNCTION(BlueprintCallable, Category = "Gear")
 	void ToggleIslands();
 
@@ -177,6 +183,9 @@ private:
 	TSharedPtr<SButton> BoardButton;
 	TSharedPtr<STextBlock> BoardText;
 	TSharedPtr<STextBlock> BoardDescription;
+	TSharedPtr<SButton> MapButton;
+	TSharedPtr<STextBlock> MapText;
+	TSharedPtr<STextBlock> MapDescription;
 	TSharedPtr<SButton> IslandsButton;
 	TSharedPtr<STextBlock> IslandsText;
 	TSharedPtr<STextBlock> IslandsDescription;

@@ -3,6 +3,9 @@
 #include "KiteRiderPawn.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
+#include "Tricks/TrickTrackerComponent.h"
+#include "Tricks/TrickRecognition.h"
+#include "Tricks/TrickNaming.h"
 #include "WindComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -99,6 +102,178 @@ float AKiteSurfHUD::CmPerSecToKnots(float SpeedCmPerSec)
 float AKiteSurfHUD::KnotsToCmPerSec(float Knots)
 {
 	return KiteUnits::KnotsToCmS(Knots);
+}
+
+FString AKiteSurfHUD::FormatJumpLive(float HeightCm, float DistanceCm, float AirSeconds)
+{
+	return FString::Printf(TEXT("%.1f m high   %.0f m far   %.1f s"), KiteUnits::CmToM(HeightCm), KiteUnits::CmToM(DistanceCm), AirSeconds);
+}
+
+FString AKiteSurfHUD::FormatJumpResult(float ApexCm, float DistanceCm, float AirSeconds)
+{
+	return FString::Printf(TEXT("JUMP  %.1f m high   %.0f m far   %.1f s"), KiteUnits::CmToM(ApexCm), KiteUnits::CmToM(DistanceCm), AirSeconds);
+}
+
+void AKiteSurfHUD::UpdateJumpReadout(const UBoardMovementComponent* Board, float DeltaTime)
+{
+	// A hop off a wave is not a jump worth announcing.
+	const float MinHeightCm = 100.0f;
+	if (!Board)
+	{
+		JumpReadoutText.Reset();
+		return;
+	}
+
+	if (Board->GetJumpCount() != SeenJumpCount)
+	{
+		// A jump has just finished: show what it came to.
+		SeenJumpCount = Board->GetJumpCount();
+		if (Board->GetLastJumpApexHeight() >= MinHeightCm)
+		{
+			JumpReadoutText = FormatJumpResult(Board->GetLastJumpApexHeight(), Board->GetLastJumpDistance(), Board->GetLastJumpAirtime());
+			JumpResultRemainingTime = 4.0f;
+			bJumpReadoutNewBest = Board->GetLastJumpApexHeight() > BestHeightBeforeJumpCm && BestHeightBeforeJumpCm > 0.0f;
+			bJumpReadoutLive = false;
+		}
+		BestHeightBeforeJumpCm = Board->GetBestJumpHeight();
+		return;
+	}
+
+	if (Board->GetBoardState() == EBoardState::Airborne && Board->GetCurrentJumpHeight() >= MinHeightCm)
+	{
+		JumpReadoutText = FormatJumpLive(Board->GetCurrentJumpHeight(), Board->GetCurrentJumpDistance(), Board->GetCurrentJumpAirtime());
+		JumpResultRemainingTime = 0.0f;
+		bJumpReadoutNewBest = BestHeightBeforeJumpCm > 0.0f && Board->GetCurrentJumpHeight() > BestHeightBeforeJumpCm;
+		bJumpReadoutLive = true;
+		return;
+	}
+
+	if (bJumpReadoutLive)
+	{
+		// Came down below a metre without the jump being counted yet: clear the live figures.
+		bJumpReadoutLive = false;
+		JumpReadoutText.Reset();
+	}
+	if (JumpResultRemainingTime > 0.0f)
+	{
+		JumpResultRemainingTime = FMath::Max(0.0f, JumpResultRemainingTime - DeltaTime);
+		if (JumpResultRemainingTime <= 0.0f)
+		{
+			JumpReadoutText.Reset();
+			bJumpReadoutNewBest = false;
+		}
+	}
+}
+
+FString AKiteSurfHUD::GradeText(ELandingGrade Grade)
+{
+	switch (Grade)
+	{
+	case ELandingGrade::Stomped:
+		return TEXT("STOMPED");
+	case ELandingGrade::Clean:
+		return TEXT("CLEAN");
+	case ELandingGrade::Sketchy:
+		return TEXT("SKETCHY");
+	case ELandingGrade::Crash:
+	default:
+		return TEXT("CRASH");
+	}
+}
+
+FLinearColor AKiteSurfHUD::GradeColor(ELandingGrade Grade)
+{
+	switch (Grade)
+	{
+	case ELandingGrade::Stomped:
+		return FLinearColor(0.35f, 1.0f, 0.45f);
+	case ELandingGrade::Clean:
+		return FLinearColor::White;
+	case ELandingGrade::Sketchy:
+		return FLinearColor(1.0f, 0.7f, 0.2f);
+	case ELandingGrade::Crash:
+	default:
+		return FLinearColor(1.0f, 0.35f, 0.35f);
+	}
+}
+
+FString AKiteSurfHUD::FormatJumpCard(const FJumpRecord& Record)
+{
+	const float Paid = Record.Score.Total * Record.RepeatFactor;
+	FString Card = FString::Printf(TEXT("%s  %s  %d pts"), *Record.TrickName, *GradeText(Record.Grade), FMath::RoundToInt(Paid));
+	if (Record.RepeatFactor < 0.999f && Record.Grade != ELandingGrade::Crash)
+	{
+		Card += FString::Printf(TEXT("  (repeat %d%%)"), FMath::RoundToInt(100.0f * Record.RepeatFactor));
+	}
+	Card += FString::Printf(TEXT("\n%.1f g landing"), Record.LandingG);
+	return Card;
+}
+
+namespace
+{
+	/** The signature has something to name: a loop, an inversion, a spin, a grab, a pass... */
+	bool HasTrickElement(const FTrickSignature& Signature)
+	{
+		return Signature.Loops.Num() > 0 || Signature.Inversions.Num() > 0 || Signature.SpinHalfTurns != 0 || Signature.bRaley
+			|| Signature.bSBend || Signature.Grabs.Num() > 0 || Signature.bOneFooter || Signature.BoardOff != ETrickBoardOff::None
+			|| Signature.Passes.Num() > 0;
+	}
+}
+
+FString AKiteSurfHUD::FormatTrickTicker(const FJumpRecord& LiveJump)
+{
+	const FTrickSignature Signature = TrickRecognition::SignatureFromJump(LiveJump);
+	return HasTrickElement(Signature) ? TrickNaming::Name(Signature) : FString();
+}
+
+void AKiteSurfHUD::ShowJumpCard(const FJumpRecord& Record)
+{
+	JumpCardText = FormatJumpCard(Record);
+	JumpCardGrade = Record.Grade;
+	JumpCardRemainingTime = 4.0f;
+	TickerText.Reset();
+}
+
+void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float DeltaTime)
+{
+	// The same threshold as the jump readout: a hop is not a trick.
+	const float MinHeightCm = 100.0f;
+	if (!Tracker)
+	{
+		JumpCardText.Reset();
+		TickerText.Reset();
+		JumpCardRemainingTime = 0.0f;
+		return;
+	}
+
+	if (Tracker->GetJumpRecordCount() != SeenRecordCount)
+	{
+		SeenRecordCount = Tracker->GetJumpRecordCount();
+		FJumpRecord Record;
+		if (Tracker->GetLastJumpRecord(Record) && Record.ApexHeightCm >= MinHeightCm)
+		{
+			ShowJumpCard(Record);
+			return;
+		}
+	}
+
+	if (Tracker->IsJumpInProgress())
+	{
+		TickerText = FormatTrickTicker(Tracker->GetLiveJump());
+	}
+	else
+	{
+		TickerText.Reset();
+	}
+
+	if (JumpCardRemainingTime > 0.0f)
+	{
+		JumpCardRemainingTime = FMath::Max(0.0f, JumpCardRemainingTime - DeltaTime);
+		if (JumpCardRemainingTime <= 0.0f)
+		{
+			JumpCardText.Reset();
+		}
+	}
 }
 
 FString AKiteSurfHUD::FormatKnots(float SpeedCmPerSec, bool bIncludeUnit)
@@ -270,6 +445,76 @@ void AKiteSurfHUD::DrawHUD()
 		DrawOnboardingPrompt(ScreenW, ScreenH);
 	}
 
+	// Top centre: how high and how far the jump is going, then what it came to.
+	UpdateJumpReadout(RiderPawn ? RiderPawn->GetBoardMovement() : nullptr, DeltaTime);
+	UpdateJumpCard(RiderPawn ? RiderPawn->GetTrickTracker() : nullptr, DeltaTime);
+	float BelowReadoutY = 70.0f;
+	if (!JumpReadoutText.IsEmpty())
+	{
+		const float Scale = bJumpReadoutLive ? 1.9f : 1.6f;
+		float TextW = 0.0f;
+		float TextH = 0.0f;
+		GetTextSize(JumpReadoutText, TextW, TextH, nullptr, Scale);
+		const float TextX = ScreenW * 0.5f - TextW * 0.5f;
+		const float TextY = 70.0f;
+		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), TextX - 16.0f, TextY - 6.0f, TextW + 32.0f, TextH + 12.0f);
+		DrawText(JumpReadoutText, bJumpReadoutNewBest ? FLinearColor(1.0f, 0.85f, 0.2f) : FLinearColor::White, TextX, TextY, nullptr, Scale);
+		BelowReadoutY = TextY + TextH + 16.0f;
+	}
+
+	// Under the readout: the trick being flown while in the air, then the finished jump's card.
+	// Kept below the onboarding prompt while it is up (its box ends at 165), so the two do not overlap.
+	if (bOnboardingActive)
+	{
+		BelowReadoutY = FMath::Max(BelowReadoutY, 181.0f);
+	}
+	if (!TickerText.IsEmpty())
+	{
+		float TextW = 0.0f;
+		float TextH = 0.0f;
+		GetTextSize(TickerText, TextW, TextH, nullptr, 1.5f);
+		const float TextX = ScreenW * 0.5f - TextW * 0.5f;
+		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), TextX - 14.0f, BelowReadoutY - 5.0f, TextW + 28.0f, TextH + 10.0f);
+		DrawText(TickerText, FLinearColor(0.55f, 0.9f, 1.0f), TextX, BelowReadoutY, nullptr, 1.5f);
+		BelowReadoutY += TextH + 18.0f;
+	}
+	else if (!JumpCardText.IsEmpty())
+	{
+		FString TitleLine;
+		FString DetailLine;
+		if (!JumpCardText.Split(TEXT("\n"), &TitleLine, &DetailLine))
+		{
+			TitleLine = JumpCardText;
+		}
+		float TitleW = 0.0f;
+		float TitleH = 0.0f;
+		float DetailW = 0.0f;
+		float DetailH = 0.0f;
+		GetTextSize(TitleLine, TitleW, TitleH, nullptr, 1.5f);
+		if (!DetailLine.IsEmpty())
+		{
+			GetTextSize(DetailLine, DetailW, DetailH, nullptr, 1.1f);
+		}
+		const float CardW = FMath::Max(TitleW, DetailW);
+		const float CardH = TitleH + (DetailLine.IsEmpty() ? 0.0f : DetailH + 4.0f);
+		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), ScreenW * 0.5f - CardW * 0.5f - 16.0f, BelowReadoutY - 6.0f, CardW + 32.0f, CardH + 12.0f);
+		DrawText(TitleLine, GradeColor(JumpCardGrade), ScreenW * 0.5f - TitleW * 0.5f, BelowReadoutY, nullptr, 1.5f);
+		if (!DetailLine.IsEmpty())
+		{
+			DrawText(DetailLine, FLinearColor(0.8f, 0.85f, 0.9f), ScreenW * 0.5f - DetailW * 0.5f, BelowReadoutY + TitleH + 4.0f, nullptr, 1.1f);
+		}
+		BelowReadoutY += CardH + 20.0f;
+	}
+
+	if (!JumpReadoutText.IsEmpty() && bJumpReadoutNewBest && !bJumpReadoutLive)
+	{
+		const FString BestText = TEXT("NEW BEST");
+		float BestW = 0.0f;
+		float BestH = 0.0f;
+		GetTextSize(BestText, BestW, BestH, nullptr, 1.2f);
+		DrawText(BestText, FLinearColor(1.0f, 0.85f, 0.2f), ScreenW * 0.5f - BestW * 0.5f, BelowReadoutY - 6.0f, nullptr, 1.2f);
+	}
+
 	if (JumpRejectionRemainingTime > 0.0f)
 	{
 		JumpRejectionRemainingTime = FMath::Max(0.0f, JumpRejectionRemainingTime - DeltaTime);
@@ -346,9 +591,11 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		}
 		DrawText(StateStr, FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 120.0f, nullptr, 1.1f);
 
-		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1fm | Apex %.1fm"),
-			BoardMove->GetBestJumpHeight() / 100.0f,
-			BoardMove->GetLastJumpApexHeight() / 100.0f);
+		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1f m high, %.0f m far | Last %.1f m, %.0f m"),
+			KiteUnits::CmToM(BoardMove->GetBestJumpHeight()),
+			KiteUnits::CmToM(BoardMove->GetBestJumpDistance()),
+			KiteUnits::CmToM(BoardMove->GetLastJumpApexHeight()),
+			KiteUnits::CmToM(BoardMove->GetLastJumpDistance()));
 		DrawText(JumpStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 144.0f, nullptr, 1.1f);
 	}
 

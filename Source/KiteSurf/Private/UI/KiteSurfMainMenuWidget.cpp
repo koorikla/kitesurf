@@ -337,7 +337,12 @@ void UKiteSurfMainMenuWidget::StartRide()
 	}
 	if (UWorld* World = GetWorld())
 	{
-		UGameplayStatics::OpenLevel(World, FName(TEXT("L_OpenWater")));
+		FName MapToLoad = FName(TEXT("L_OpenWater"));
+		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			MapToLoad = FName(*GI->PendingMapName);
+		}
+		UGameplayStatics::OpenLevel(World, MapToLoad);
 	}
 }
 

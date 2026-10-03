@@ -62,7 +62,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power (the bar holds its position) | Down / Up | Right stick up / down, triggers |
+| Bar in / out: power (the bar holds its position) | Down / Up | Right stick pulled back / pushed forward, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
 | Turn the board left / right; spin it in the air | A / D | Left stick left / right |
@@ -93,17 +93,19 @@ held down against the kite as it rises. Steer the kite up hard, pull the bar in,
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
 4.5 m in 15 kn, 11 m in 30 kn and 13 to 16 m in 40 kn, and with the bar centred the kite flown
-overhead carries you down: 5 s in the air at 30 kn. On the way down, hold the jump button again to
-crouch for the landing. Steering the kite up without an edge just plucks you off the water. (Weight
-back on S adds to the pop.) A kite looped through the middle of the window pulls several times
-harder than a parked one.
+overhead carries you down: 5 s in the air at 30 kn. In a 90 kn hurricane on a 2 m kite it is about
+22 m up and 225 m downwind, but a jump that big comes down too fast to land. The HUD shows the
+height and distance of a jump as it happens and when it ends. On the way down, hold the jump button
+again to crouch for the landing. Steering the kite up without an edge just plucks you off the water.
+(Weight back on S adds to the pop.) A kite looped through the middle of the window pulls several
+times harder than a parked one.
 
 **Landing.** A landing's load is shown in g as you touch down (LANDED 4.2 g), from how fast you
 were sinking and how far your legs and the board took it out over; crouched, that distance is
 twice as long. It says HOT if you came down fast (over 6 m/s) or with the kite low (under 45 degrees
 up), and past 8 g it is a crash, as is landing with the board across your course. The big 30 kn
-jump lands hot at about 7 g crouched and is a crash standing; the biggest 40 kn jumps crash either
-way.
+jump lands hot at about 7 g crouched and is a crash standing; the biggest 40 kn jumps and the storm
+jumps crash either way. The card that names and scores the jump shows the same g.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
 motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full
@@ -129,10 +131,10 @@ speed); right in it pulls five times as hard (850 N, 21 kn). The ride starts wit
 light wind ride with it right in: the 12 m only planes in 12 kn that way.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
-Pick the wind (8 to 40 kn), then rig for it:
+Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:
 
-- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 5 to 17 m, or AUTO
-  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn). Small kites turn and loop faster; big ones pull harder and are a
+- *Kite size*: 9 m to start with, which suits the default 20 kn. Choose from 2 to 17 m, or AUTO
+  for what a rider would rig for the wind (12 m in 15 kn, 6 m in 30 kn, 2 m in 90 kn). Small kites turn and loop faster; big ones pull harder and are a
   handful when it blows.
 - *Kite*: the 3-strut loop kite turns tight and fast; the 5-strut boost kite has more lift and
   glide for height and hangtime, and turns slower.

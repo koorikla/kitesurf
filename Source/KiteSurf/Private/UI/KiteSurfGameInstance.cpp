@@ -1,6 +1,8 @@
 #include "UI/KiteSurfGameInstance.h"
+#include "KiteGear.h"
 #include "KiteComponent.h"
 #include "UI/KiteSurfSaveGame.h"
+#include "Tricks/JumpRecord.h"
 #include "Misc/App.h"
 
 UKiteSurfGameInstance::UKiteSurfGameInstance()
@@ -34,22 +36,28 @@ void UKiteSurfGameInstance::LoadSettingsFromDisk()
 	UKiteSurfSaveGame* SaveGame = UKiteSurfSaveGame::LoadOrCreateSettings();
 	if (SaveGame)
 	{
-		PendingWindKnots = FMath::Clamp(SaveGame->WindStrengthKnots, 8.0f, 40.0f);
-		MasterVolume = FMath::Clamp(SaveGame->MasterVolume, 0.0f, 1.0f);
-		MusicVolume = FMath::Clamp(SaveGame->MusicVolume, 0.0f, 1.0f);
-		AmbientVolume = FMath::Clamp(SaveGame->AmbientVolume, 0.0f, 1.0f);
-		EffectsVolume = FMath::Clamp(SaveGame->EffectsVolume, 0.0f, 1.0f);
-		bSkipOnboarding = SaveGame->bSkipOnboarding;
-		bOnboardingCompleted = SaveGame->bOnboardingCompleted;
-		RiderCharacter = RiderCharacter::FromIndex(SaveGame->RiderCharacterIndex);
-		SetKiteSizeM2(SaveGame->KiteSizeM2);
-		KiteModel = KiteGear::KiteModelFromIndex(SaveGame->KiteModelIndex);
-		bMotionBar = SaveGame->bMotionBar;
-		bHaptics = SaveGame->bHaptics;
-		SetSpotFeatures(SaveGame->bSpotIslands, SaveGame->bSpotSandbars, SaveGame->bSpotSharks);
-		BoardSize = KiteGear::BoardSizeFromIndex(SaveGame->BoardSizeIndex);
-		FApp::SetVolumeMultiplier(MasterVolume);
+		ApplySaveGame(*SaveGame);
 	}
+}
+
+void UKiteSurfGameInstance::ApplySaveGame(const UKiteSurfSaveGame& SaveGame)
+{
+	PendingWindKnots = FMath::Clamp(SaveGame.WindStrengthKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
+	MasterVolume = FMath::Clamp(SaveGame.MasterVolume, 0.0f, 1.0f);
+	MusicVolume = FMath::Clamp(SaveGame.MusicVolume, 0.0f, 1.0f);
+	AmbientVolume = FMath::Clamp(SaveGame.AmbientVolume, 0.0f, 1.0f);
+	EffectsVolume = FMath::Clamp(SaveGame.EffectsVolume, 0.0f, 1.0f);
+	bSkipOnboarding = SaveGame.bSkipOnboarding;
+	bOnboardingCompleted = SaveGame.bOnboardingCompleted;
+	RiderCharacter = RiderCharacter::FromIndex(SaveGame.RiderCharacterIndex);
+	SetKiteSizeM2(SaveGame.KiteSizeM2);
+	KiteModel = KiteGear::KiteModelFromIndex(SaveGame.KiteModelIndex);
+	bMotionBar = SaveGame.bMotionBar;
+	bHaptics = SaveGame.bHaptics;
+	SetSpotFeatures(SaveGame.bSpotIslands, SaveGame.bSpotSandbars, SaveGame.bSpotSharks);
+	BoardSize = KiteGear::BoardSizeFromIndex(SaveGame.BoardSizeIndex);
+	TrickBook.SetEntries(SaveGame.TrickBook.GetEntries());
+	FApp::SetVolumeMultiplier(MasterVolume);
 }
 
 void UKiteSurfGameInstance::SaveSettingsToDisk()
@@ -57,29 +65,40 @@ void UKiteSurfGameInstance::SaveSettingsToDisk()
 	UKiteSurfSaveGame* SaveGame = UKiteSurfSaveGame::LoadOrCreateSettings();
 	if (SaveGame)
 	{
-		SaveGame->WindStrengthKnots = FMath::Clamp(PendingWindKnots, 8.0f, 40.0f);
-		SaveGame->MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
-		SaveGame->MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
-		SaveGame->AmbientVolume = FMath::Clamp(AmbientVolume, 0.0f, 1.0f);
-		SaveGame->EffectsVolume = FMath::Clamp(EffectsVolume, 0.0f, 1.0f);
-		SaveGame->bSkipOnboarding = bSkipOnboarding;
-		SaveGame->bOnboardingCompleted = bOnboardingCompleted;
-		SaveGame->RiderCharacterIndex = static_cast<int32>(RiderCharacter);
-		SaveGame->KiteSizeM2 = KiteSizeM2;
-		SaveGame->KiteModelIndex = static_cast<int32>(KiteModel);
-		SaveGame->bMotionBar = bMotionBar;
-		SaveGame->bHaptics = bHaptics;
-		SaveGame->bSpotIslands = bSpotIslands;
-		SaveGame->bSpotSandbars = bSpotSandbars;
-		SaveGame->bSpotSharks = bSpotSharks;
-		SaveGame->BoardSizeIndex = static_cast<int32>(BoardSize);
+		WriteToSaveGame(*SaveGame);
 		SaveGame->SaveSettings();
 	}
 }
 
+void UKiteSurfGameInstance::WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const
+{
+	SaveGame.WindStrengthKnots = FMath::Clamp(PendingWindKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
+	SaveGame.MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
+	SaveGame.MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
+	SaveGame.AmbientVolume = FMath::Clamp(AmbientVolume, 0.0f, 1.0f);
+	SaveGame.EffectsVolume = FMath::Clamp(EffectsVolume, 0.0f, 1.0f);
+	SaveGame.bSkipOnboarding = bSkipOnboarding;
+	SaveGame.bOnboardingCompleted = bOnboardingCompleted;
+	SaveGame.RiderCharacterIndex = static_cast<int32>(RiderCharacter);
+	SaveGame.KiteSizeM2 = KiteSizeM2;
+	SaveGame.KiteModelIndex = static_cast<int32>(KiteModel);
+	SaveGame.bMotionBar = bMotionBar;
+	SaveGame.bHaptics = bHaptics;
+	SaveGame.bSpotIslands = bSpotIslands;
+	SaveGame.bSpotSandbars = bSpotSandbars;
+	SaveGame.bSpotSharks = bSpotSharks;
+	SaveGame.BoardSizeIndex = static_cast<int32>(BoardSize);
+	SaveGame.TrickBook = TrickBook;
+}
+
+bool UKiteSurfGameInstance::RecordTrickLanding(const FJumpRecord& Record)
+{
+	return TrickBook.RecordLanding(Record);
+}
+
 void UKiteSurfGameInstance::SetPendingWindKnots(float InKnots)
 {
-	PendingWindKnots = FMath::Clamp(InKnots, 8.0f, 40.0f);
+	PendingWindKnots = FMath::Clamp(InKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 }
 
 void UKiteSurfGameInstance::SetMasterVolume(float InVolume)

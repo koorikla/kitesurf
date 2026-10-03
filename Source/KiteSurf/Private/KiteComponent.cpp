@@ -217,6 +217,46 @@ void UKiteComponent::SetupVisuals()
 		}
 	}
 
+	if (!LeftCenterLine)
+	{
+		LeftCenterLine = NewObject<UCableComponent>(Owner, TEXT("KiteLineCenterLeft"));
+		if (LeftCenterLine)
+		{
+			LeftCenterLine->RegisterComponent();
+			LeftCenterLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+			LeftCenterLine->CableWidth = 2.0f;
+			LeftCenterLine->NumSegments = 1;
+			LeftCenterLine->SolverIterations = 1;
+			LeftCenterLine->bEnableStiffness = false;
+			LeftCenterLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
+			if (LineMat)
+			{
+				LeftCenterLine->SetMaterial(0, LineMat);
+			}
+		}
+	}
+
+	if (!RightCenterLine)
+	{
+		RightCenterLine = NewObject<UCableComponent>(Owner, TEXT("KiteLineCenterRight"));
+		if (RightCenterLine)
+		{
+			RightCenterLine->RegisterComponent();
+			RightCenterLine->AttachToComponent(Owner->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+			RightCenterLine->CableWidth = 2.0f;
+			RightCenterLine->NumSegments = 1;
+			RightCenterLine->SolverIterations = 1;
+			RightCenterLine->bEnableStiffness = false;
+			RightCenterLine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			UMaterialInterface* LineMat = Cast<UMaterialInterface>(StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, TEXT("/Game/Materials/M_KiteLines")));
+			if (LineMat)
+			{
+				RightCenterLine->SetMaterial(0, LineMat);
+			}
+		}
+	}
+
 	UpdateVisuals();
 }
 
@@ -264,6 +304,24 @@ void UKiteComponent::UpdateVisuals(float Alpha)
 		RightLine->SetWorldLocation(RightBarPos);
 		RightLine->EndLocation = RightLine->GetComponentTransform().InverseTransformPosition(RightTipPos);
 		RightLine->CableLength = (RightTipPos - RightBarPos).Size() * 0.98f;
+	}
+
+	const FVector CenterBarPos = (LeftBarPos + RightBarPos) * 0.5f;
+	const FVector LeftCenterTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-12.0f, -98.0f, -22.0f) * SizeScale);
+	const FVector RightCenterTipPos = DrawPosition + KiteWorldRotation.RotateVector(FVector(-12.0f, 98.0f, -22.0f) * SizeScale);
+
+	if (LeftCenterLine)
+	{
+		LeftCenterLine->SetWorldLocation(CenterBarPos);
+		LeftCenterLine->EndLocation = LeftCenterLine->GetComponentTransform().InverseTransformPosition(LeftCenterTipPos);
+		LeftCenterLine->CableLength = (LeftCenterTipPos - CenterBarPos).Size() * 0.98f;
+	}
+
+	if (RightCenterLine)
+	{
+		RightCenterLine->SetWorldLocation(CenterBarPos);
+		RightCenterLine->EndLocation = RightCenterLine->GetComponentTransform().InverseTransformPosition(RightCenterTipPos);
+		RightCenterLine->CableLength = (RightCenterTipPos - CenterBarPos).Size() * 0.98f;
 	}
 }
 
@@ -391,7 +449,7 @@ FVector UKiteComponent::GetWindowAxis() const
 
 TConstArrayView<float> UKiteComponent::GetKiteSizesM2()
 {
-	static const float Sizes[] = { 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 12.0f, 14.0f, 17.0f };
+	static const float Sizes[] = { 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 12.0f, 14.0f, 17.0f };
 	return Sizes;
 }
 

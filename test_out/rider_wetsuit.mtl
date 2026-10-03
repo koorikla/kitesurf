@@ -1,0 +1,12 @@
+newmtl RiderSkin
+Kd 0.930 0.680 0.550
+
+newmtl RiderWetsuit
+Kd 0.050 0.070 0.100
+
+newmtl RiderAccent
+Kd 0.100 0.750 0.900
+
+newmtl RiderBlack
+Kd 0.030 0.030 0.030
+

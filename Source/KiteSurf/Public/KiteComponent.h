@@ -262,6 +262,8 @@ public:
 	UStaticMeshComponent* GetKiteMesh() const { return KiteMesh; }
 	UCableComponent* GetLeftLine() const { return LeftLine; }
 	UCableComponent* GetRightLine() const { return RightLine; }
+	UCableComponent* GetLeftCenterLine() const { return LeftCenterLine; }
+	UCableComponent* GetRightCenterLine() const { return RightCenterLine; }
 
 	/** Derived from the kite's position each update; use the setters to place the kite. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Kite|State")
@@ -532,6 +534,12 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCableComponent> RightLine;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCableComponent> LeftCenterLine;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCableComponent> RightCenterLine;
 
 	void SetupVisuals();
 

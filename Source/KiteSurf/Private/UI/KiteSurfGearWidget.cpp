@@ -1,4 +1,5 @@
 #include "UI/KiteSurfGearWidget.h"
+#include "KiteGear.h"
 #include "KiteSurfUnits.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfMenuStyle.h"
@@ -28,8 +29,8 @@
 
 namespace
 {
-	const float MinWindKnots = 8.0f;
-	const float MaxWindKnots = 40.0f;
+	const float MinWindKnots = KiteGear::MinWindKnots;
+	const float MaxWindKnots = KiteGear::MaxWindKnots;
 	const FLinearColor LabelColor(0.75f, 0.82f, 0.9f);
 	const FLinearColor HintColor(0.55f, 0.75f, 0.9f);
 	const FLinearColor TitleColor(1.0f, 0.85f, 0.2f);
@@ -60,6 +61,7 @@ void UKiteSurfGearWidget::LoadChoices()
 		bIslands = GI->bSpotIslands;
 		bSandbars = GI->bSpotSandbars;
 		bSharks = GI->bSpotSharks;
+		CurrentMapName = GI->PendingMapName;
 	}
 	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, MinWindKnots, MaxWindKnots);
 }
@@ -462,6 +464,10 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f)
 		[
+			BuildChoiceRow(TEXT("MAP"), MapButton, MapText, MapDescription, [this]() { CycleMap(); })
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f)
+		[
 			BuildChoiceRow(TEXT("SANDBARS"), SandbarsButton, SandbarsText, SandbarsDescription, [this]() { ToggleSandbars(); })
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(20.0f, 8.0f)
@@ -530,6 +536,15 @@ TSharedRef<SWidget> UKiteSurfGearWidget::RebuildWidget()
 
 	UpdateTexts();
 	return Root;
+}
+
+void UKiteSurfGearWidget::CycleMap()
+{
+	const TArray<FString> Maps = { TEXT("L_OpenWater"), TEXT("L_FlatWater"), TEXT("L_StormWater") };
+	int32 Index = Maps.IndexOfByKey(CurrentMapName);
+	if (Index == INDEX_NONE) Index = 0;
+	CurrentMapName = Maps[(Index + 1) % Maps.Num()];
+	UpdateTexts();
 }
 
 void UKiteSurfGearWidget::ToggleIslands()
@@ -682,6 +697,14 @@ void UKiteSurfGearWidget::UpdateTexts()
 	Set(BoardDescription, KiteGear::GetDescription(CurrentBoardSize));
 	Set(RiderText, RiderCharacter::GetDisplayName(CurrentRider));
 	Set(RiderDescription, TEXT("Who is on the board."));
+	
+	FString MapDisplayName = TEXT("Open Ocean");
+	FString MapDesc = TEXT("Deep blue water rolling with the wind.");
+	if (CurrentMapName == TEXT("L_FlatWater")) { MapDisplayName = TEXT("Flat Water"); MapDesc = TEXT("Smooth glassy water, perfect for freestyle."); }
+	else if (CurrentMapName == TEXT("L_StormWater")) { MapDisplayName = TEXT("Storm"); MapDesc = TEXT("Huge swell, moody lighting and challenging conditions."); }
+	Set(MapText, MapDisplayName);
+	Set(MapDescription, MapDesc);
+
 	Set(SandbarsText, bSandbars ? TEXT("ON") : TEXT("OFF"));
 	Set(SandbarsDescription, TEXT("Strips of sand across your reach. Jump them: riding onto one is a crash."));
 	Set(IslandsText, bIslands ? TEXT("ON") : TEXT("OFF"));
@@ -703,6 +726,7 @@ void UKiteSurfGearWidget::Confirm()
 			GI->SetKiteSizeM2(CurrentKiteSizeM2);
 			GI->SetBoardSize(CurrentBoardSize);
 			GI->SetSpotFeatures(bIslands, bSandbars, bSharks);
+			GI->SetPendingMapName(CurrentMapName);
 			GI->SaveSettingsToDisk();
 		}
 
@@ -778,6 +802,7 @@ void UKiteSurfGearWidget::BuildNavigation()
 	Navigator.AddButton(KiteModelButton, [this]() { CycleKiteModel(); }, true);
 	Navigator.AddButton(BoardButton, [this]() { CycleBoardSize(); }, true);
 	Navigator.AddButton(RiderButton, [this]() { CycleRider(); }, true);
+	Navigator.AddButton(MapButton, [this]() { CycleMap(); }, true);
 	Navigator.AddButton(SandbarsButton, [this]() { ToggleSandbars(); }, true);
 	Navigator.AddButton(IslandsButton, [this]() { ToggleIslands(); }, true);
 	Navigator.AddButton(SharksButton, [this]() { ToggleSharks(); }, true);

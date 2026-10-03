@@ -1,4 +1,5 @@
 #include "UI/KiteSurfSettingsWidget.h"
+#include "KiteGear.h"
 #include "KiteSurfUnits.h"
 #include "UI/KiteSurfMainMenuGameMode.h"
 #include "UI/KiteSurfMenuStyle.h"
@@ -86,7 +87,7 @@ void UKiteSurfSettingsWidget::InitializeSettings()
 		}
 	}
 
-	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, 8.0f, 40.0f);
+	CurrentWindKnots = FMath::Clamp(CurrentWindKnots, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 	CurrentVolume = FMath::Clamp(CurrentVolume, 0.0f, 1.0f);
 
 	if (UGameUserSettings* UserSettings = UGameUserSettings::GetGameUserSettings())
@@ -136,7 +137,7 @@ void UKiteSurfSettingsWidget::NativeConstruct()
 	if (WindSlider)
 	{
 		WindSlider->SetMinValue(8.0f);
-		WindSlider->SetMaxValue(40.0f);
+		WindSlider->SetMaxValue(KiteGear::MaxWindKnots);
 		WindSlider->SetStepSize(1.0f);
 		WindSlider->SetValue(CurrentWindKnots);
 		WindSlider->OnValueChanged.AddDynamic(this, &UKiteSurfSettingsWidget::OnWindSliderChanged);
@@ -634,7 +635,7 @@ TSharedRef<SWidget> UKiteSurfSettingsWidget::RebuildWidget()
 
 void UKiteSurfSettingsWidget::OnWindSliderChanged(float Value)
 {
-	CurrentWindKnots = FMath::Clamp(Value, 8.0f, 40.0f);
+	CurrentWindKnots = FMath::Clamp(Value, KiteGear::MinWindKnots, KiteGear::MaxWindKnots);
 	UpdateTextDisplays();
 }
 

@@ -1,0 +1,148 @@
+#include "Tricks/TrickRecognition.h"
+#include "KiteSurfUnits.h"
+
+ETrickLoopKind TrickRecognition::ClassifyLoop(const FJumpLoop& Loop, const FLoopClassifySettings& Settings)
+{
+	const FKiteLoopRecord& Kite = Loop.Loop;
+	if (Loop.StartSinceApexSeconds > 0.0f
+		&& Kite.MinElevationDeg >= Settings.HeliLoopMinElevationDeg
+		&& Kite.StartElevationDeg - Kite.MinElevationDeg <= Settings.HeliLoopMaxDropDeg)
+	{
+		return ETrickLoopKind::HeliLoop;
+	}
+	const float BodyWeightN = Settings.RiderMassKg * KiteUnits::GravityMS2;
+	if (Loop.RiderHeightAtStartCm >= Settings.MegaloopMinRiderHeightCm
+		&& Kite.MinElevationDeg <= Settings.MegaloopMaxElevationDeg
+		&& Kite.PeakTensionN >= Settings.MegaloopMinTensionBodyWeights * BodyWeightN)
+	{
+		return ETrickLoopKind::Megaloop;
+	}
+	return ETrickLoopKind::Kiteloop;
+}
+
+bool TrickRecognition::IsContraLoop(const FKiteLoopRecord& Loop)
+{
+	return Loop.Direction * Loop.RiderTravelSide < 0;
+}
+
+TArray<FTrickLoop> TrickRecognition::ClassifyLoops(const TArray<FJumpLoop>& Loops, const FLoopClassifySettings& Settings)
+{
+	// Gaps are measured on the jump's clock, from one record's end to the next one's start.
+	const auto GapSeconds = [&Loops](int32 Earlier, int32 Later)
+	{
+		return Loops[Later].StartSinceTakeoffSeconds
+			- (Loops[Earlier].StartSinceTakeoffSeconds + Loops[Earlier].Loop.DurationSeconds);
+	};
+	const auto IsSHalf = [&Loops, &Settings](int32 Index)
+	{
+		const FKiteLoopRecord& Kite = Loops[Index].Loop;
+		return !Kite.bCompleted && !Kite.bKiteCrashed && Kite.Direction != 0
+			&& FMath::Abs(Kite.TurnDeg) >= Settings.SLoopHalfMinDeg;
+	};
+
+	TArray<FTrickLoop> Result;
+	const int32 Count = Loops.Num();
+	for (int32 Index = 0; Index < Count;)
+	{
+		const FKiteLoopRecord& Kite = Loops[Index].Loop;
+
+		if (IsSHalf(Index))
+		{
+			// Halves alternating in direction, each starting soon after the last one ended.
+			int32 Last = Index;
+			while (Last + 1 < Count && IsSHalf(Last + 1)
+				&& Loops[Last + 1].Loop.Direction == -Loops[Last].Loop.Direction
+				&& GapSeconds(Last, Last + 1) <= Settings.SLoopMaxGapSeconds)
+			{
+				++Last;
+			}
+			const int32 Halves = Last - Index + 1;
+			if (Halves >= 2)
+			{
+				FTrickLoop Loop;
+				Loop.Kind = Halves >= 3 ? ETrickLoopKind::SnakeLoop : ETrickLoopKind::SLoop;
+				Result.Add(Loop);
+			}
+			Index = Last + 1;
+			continue;
+		}
+
+		if (!Kite.bCompleted)
+		{
+			++Index;
+			continue;
+		}
+
+		const ETrickLoopKind Kind = ClassifyLoop(Loops[Index], Settings);
+		if (Kind == ETrickLoopKind::HeliLoop)
+		{
+			FTrickLoop Loop;
+			Loop.Kind = Kind;
+			Loop.bContra = IsContraLoop(Kite);
+			Result.Add(Loop);
+			++Index;
+			continue;
+		}
+
+		// A chain: completed kite or megaloops one way, back to back.
+		int32 Last = Index;
+		ETrickLoopKind Strongest = Kind;
+		while (Last + 1 < Count)
+		{
+			const FJumpLoop& Next = Loops[Last + 1];
+			if (!Next.Loop.bCompleted || Next.Loop.Direction != Kite.Direction
+				|| GapSeconds(Last, Last + 1) > Settings.ChainMaxGapSeconds)
+			{
+				break;
+			}
+			const ETrickLoopKind NextKind = ClassifyLoop(Next, Settings);
+			if (NextKind == ETrickLoopKind::HeliLoop)
+			{
+				break;
+			}
+			if (NextKind == ETrickLoopKind::Megaloop)
+			{
+				Strongest = ETrickLoopKind::Megaloop;
+			}
+			++Last;
+		}
+		for (int32 Member = Index; Member <= Last; ++Member)
+		{
+			FTrickLoop Loop;
+			Loop.Kind = Strongest;
+			Loop.bContra = IsContraLoop(Loops[Member].Loop);
+			Result.Add(Loop);
+		}
+		Index = Last + 1;
+	}
+	return Result;
+}
+
+ELoopRollTiming TrickRecognition::LoopRollTiming(float RollStartSeconds, float PeakTensionTimeSeconds, const FLoopClassifySettings& Settings)
+{
+	const float MarginSeconds = FMath::Max(Settings.RollTimingMarginSeconds, 0.0f);
+	if (RollStartSeconds < PeakTensionTimeSeconds && RollStartSeconds <= PeakTensionTimeSeconds - MarginSeconds)
+	{
+		return ELoopRollTiming::Early;
+	}
+	if (RollStartSeconds > PeakTensionTimeSeconds && RollStartSeconds >= PeakTensionTimeSeconds + MarginSeconds)
+	{
+		return ELoopRollTiming::Late;
+	}
+	return ELoopRollTiming::None;
+}
+
+float TrickRecognition::PeakTensionSinceTakeoffSeconds(const FJumpLoop& Loop)
+{
+	return Loop.StartSinceTakeoffSeconds + (Loop.Loop.PeakTensionTimeSeconds - Loop.Loop.StartTimeSeconds);
+}
+
+FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, const FLoopClassifySettings& Settings,
+	const FLandingGradeSettings& GradeSettings)
+{
+	FTrickSignature Signature;
+	Signature.Loops = ClassifyLoops(Record.Loops, Settings);
+	Signature.Grade = TrickScoring::GradeLanding(Record.LandingYawDeg, Record.LandingG, Record.KiteElevationAtLandingDeg,
+		Record.Outcome == EJumpOutcome::Crashed, GradeSettings);
+	return Signature;
+}

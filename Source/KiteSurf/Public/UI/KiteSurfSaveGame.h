@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "Tricks/TrickBook.h"
 #include "KiteSurfSaveGame.generated.h"
 
 UCLASS()
@@ -73,6 +74,13 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Settings")
 	bool bSpotSharks;
+
+	/**
+	 * Tricks landed and the bests on each (T2.7). Saves made before the trick book have no such
+	 * property and load with it empty: tagged property serialisation leaves the default.
+	 */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Progress")
+	FTrickBook TrickBook;
 
 	static const FString DefaultSaveSlot;
 	static const int32 DefaultUserIndex;

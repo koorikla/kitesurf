@@ -11,6 +11,10 @@ enum class EKiteModel : uint8
 	Loop  UMETA(DisplayName = "Loop (3 strut)"),
 	/** Five struts: more lift and glide for height and hangtime, slower to turn. */
 	Boost UMETA(DisplayName = "Boost (5 strut)"),
+	/** Drifts well, turns fast with low power, great for riding waves. */
+	Wave UMETA(DisplayName = "Wave"),
+	/** C-shape, slack lines after a pop, explosive power for unhooked tricks. */
+	Freestyle UMETA(DisplayName = "Freestyle"),
 	Count UMETA(Hidden)
 };
 
@@ -47,6 +51,10 @@ struct FBoardSizeTraits
 
 namespace KiteGear
 {
+	/** The wind the player can choose: a light breeze to a hurricane. */
+	inline constexpr float MinWindKnots = 8.0f;
+	inline constexpr float MaxWindKnots = 90.0f;
+
 	KITESURF_API const TCHAR* GetDisplayName(EKiteModel Model);
 	KITESURF_API const TCHAR* GetDescription(EKiteModel Model);
 	KITESURF_API EKiteModel Next(EKiteModel Model);

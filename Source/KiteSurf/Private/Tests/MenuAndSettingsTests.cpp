@@ -56,11 +56,11 @@ bool FKiteSurfSaveGameDefaultsAndClampingTest::RunTest(const FString& Parameters
     TestEqual(TEXT("Wind clamped to minimum 8.0 kn"), SaveGame->WindStrengthKnots, 8.0f);
     TestEqual(TEXT("Volume clamped to minimum 0.0"), SaveGame->MasterVolume, 0.0f);
 
-    // Test overflow clamping (max wind = 40.0, max volume = 1.0)
-    SaveGame->WindStrengthKnots = 55.0f;
+    // Test overflow clamping (max wind = 90.0, max volume = 1.0)
+    SaveGame->WindStrengthKnots = 120.0f;
     SaveGame->MasterVolume = 2.5f;
     SaveGame->SaveSettings(TestSlot);
-    TestEqual(TEXT("Wind clamped to maximum 40.0 kn"), SaveGame->WindStrengthKnots, 40.0f);
+    TestEqual(TEXT("Wind clamped to maximum 90.0 kn"), SaveGame->WindStrengthKnots, 90.0f);
     TestEqual(TEXT("Volume clamped to maximum 1.0"), SaveGame->MasterVolume, 1.0f);
 
     // The kite size travels with the rest of the settings.
@@ -100,7 +100,9 @@ bool FKiteSurfGameInstanceSettingsTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("PendingWindKnots clamped at 8.0 kn"), GI->PendingWindKnots, 8.0f);
 
     GI->SetPendingWindKnots(45.0f);
-    TestEqual(TEXT("PendingWindKnots clamped at 40.0 kn"), GI->PendingWindKnots, 40.0f);
+    TestEqual(TEXT("45 kn is on offer"), GI->PendingWindKnots, 45.0f);
+    GI->SetPendingWindKnots(120.0f);
+    TestEqual(TEXT("PendingWindKnots clamped at 90.0 kn"), GI->PendingWindKnots, 90.0f);
 
     GI->SetMasterVolume(-0.2f);
     TestEqual(TEXT("MasterVolume clamped at 0.0"), GI->MasterVolume, 0.0f);
@@ -435,7 +437,8 @@ bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
         Gear->SetWindKnots(30.0f);
         TestEqual(TEXT("More wind recommends a smaller kite"), Gear->GetEffectiveKiteSizeM2(), 6.0f);
         Gear->SetWindKnots(99.0f);
-        TestEqual(TEXT("Wind is limited to 40 kn"), Gear->CurrentWindKnots, 40.0f);
+        TestEqual(TEXT("Wind is limited to 90 kn"), Gear->CurrentWindKnots, 90.0f);
+        TestEqual(TEXT("where the recommended kite is the smallest there is"), Gear->GetEffectiveKiteSizeM2(), 2.0f);
         Gear->SetWindKnots(30.0f);
 
         // The size button steps through every kite and back to the recommendation.
@@ -454,7 +457,10 @@ bool FKiteSurfGearScreenTest::RunTest(const FString& Parameters)
         const EKiteModel FirstModel = Gear->CurrentKiteModel;
         Gear->CycleKiteModel();
         TestNotEqual(TEXT("The kite button changes the model"), Gear->CurrentKiteModel, FirstModel);
-        Gear->CycleKiteModel();
+        for (int32 Click = 1; Click < static_cast<int32>(EKiteModel::Count); ++Click)
+        {
+            Gear->CycleKiteModel();
+        }
         TestEqual(TEXT("and comes back round"), Gear->CurrentKiteModel, FirstModel);
         const EBoardSize FirstBoard = Gear->CurrentBoardSize;
         for (int32 Click = 0; Click < static_cast<int32>(EBoardSize::Count); ++Click)
@@ -687,8 +693,8 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
     if (Gear)
     {
         FKiteMenuNavigator& Navigator = Gear->GetNavigator();
-        TestEqual(TEXT("The gear screen has ten items"), Navigator.Num(), 10);
-        TestEqual(TEXT("and opens on RIDE, so accept starts the ride"), Navigator.GetSelected(), 8);
+        TestEqual(TEXT("The gear screen has eleven items"), Navigator.Num(), 11);
+        TestEqual(TEXT("and opens on RIDE, so accept starts the ride"), Navigator.GetSelected(), 9);
 
         Navigator.Select(0);
         Gear->SetWindKnots(20.0f);
@@ -705,7 +711,7 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         Navigator.HandleKey(EKeys::Right);
         Navigator.HandleKey(EKeys::Right);
         TestEqual(TEXT("Right steps up"), Gear->CurrentKiteSizeM2, 10.0f);
-        Gear->SetKiteSizeM2(5.0f);
+        Gear->SetKiteSizeM2(2.0f);
         Navigator.HandleKey(EKeys::Left);
         TestEqual(TEXT("Below the smallest is the recommended size"), Gear->CurrentKiteSizeM2, 0.0f);
         Navigator.HandleKey(EKeys::Left);
@@ -716,7 +722,7 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         Navigator.HandleKey(EKeys::Enter);
         TestNotEqual(TEXT("Accept on KITE changes the model"), Gear->CurrentKiteModel, ModelBefore);
 
-        Navigator.Select(7);
+        Navigator.Select(8);
         const bool bSharksBefore = Gear->bSharks;
         Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);
         TestNotEqual(TEXT("Accept on SHARKS switches them"), Gear->bSharks, bSharksBefore);

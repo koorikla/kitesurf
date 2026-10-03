@@ -42,6 +42,7 @@ URiderAttitudeComponent::URiderAttitudeComponent()
 	SpinAxisTiltMaxDeg = 20.0f;
 	DefaultRollAxisTiltDeg = 65.0f;
 	RollAxisTiltRangeDeg = 45.0f;
+	AirStickTiltWithoutPreWindDeg = 0.0f;
 	FlipSectorDeg = 20.0f;
 	FlipSectorHysteresisDeg = 5.0f;
 	PreWindLoadFloor = 0.5f;
@@ -93,9 +94,9 @@ FVector URiderAttitudeComponent::OmegaFrom(const FVector& Ib) const
 	return Q.RotateVector(SafeDivide(Q.UnrotateVector(L), Ib));
 }
 
-RiderAxes::FRotationAxisChoice URiderAttitudeComponent::ChooseAxis(const FVector2D& Stick, float Sigma, bool bWasFlip) const
+RiderAxes::FRotationAxisChoice URiderAttitudeComponent::ChooseAxis(const FVector2D& Stick, float Sigma, bool bWasFlip, float DefaultTiltDeg) const
 {
-	return RiderAxes::ChooseAxisBody(Stick, Sigma, DefaultRollAxisTiltDeg, RollAxisTiltRangeDeg, FlipSectorDeg,
+	return RiderAxes::ChooseAxisBody(Stick, Sigma, DefaultTiltDeg, RollAxisTiltRangeDeg, FlipSectorDeg,
 		SpinAxisTiltMaxDeg, FlipSectorHysteresisDeg, bWasFlip);
 }
 
@@ -124,6 +125,7 @@ void URiderAttitudeComponent::Reset(const FQuat& Body, const FQuat& Board)
 	bActive = false;
 	bWasAirborne = false;
 	bControlWasFlip = false;
+	bTookOffRotating = false;
 	ComOffsetWorldCm = Q.GetAxisZ() * ComAboveBoardCm;
 	PrevComOffsetWorldCm = ComOffsetWorldCm;
 	AirSeconds = 0.0f;
@@ -141,6 +143,7 @@ void URiderAttitudeComponent::SetState(const FQuat& Body, const FVector& Angular
 	const FVector Ib = GetBodyInertiaKgM2();
 	OmegaW = OmegaFrom(Ib);
 	CommittedAxisBody = Q.UnrotateVector(OmegaW).GetSafeNormal();
+	bTookOffRotating = !CommittedAxisBody.IsZero();
 	bActive = true;
 	bWasAirborne = true;
 	bControlWasFlip = false;
@@ -164,12 +167,13 @@ void URiderAttitudeComponent::BeginAir(const FAttitudeInputs& In)
 	TuckNow = 0.0f;
 	TuckVel = 0.0f;
 	bControlWasFlip = false;
+	bTookOffRotating = false;
 	L = FVector::ZeroVector;
 	CommittedAxisBody = FVector::ZeroVector;
 
 	// Pre-wind: a target rate on the chosen axis (not L along it, which would make the light Up
 	// axis whip round), scaled by how far it was built and by the load at the pop.
-	const RiderAxes::FRotationAxisChoice Choice = ChooseAxis(In.PreWindStick, In.TravelSideSigma, false);
+	const RiderAxes::FRotationAxisChoice Choice = ChooseAxis(In.PreWindStick, In.TravelSideSigma, false, DefaultRollAxisTiltDeg);
 	const float Amount = FMath::Clamp(In.PreWindAmount, 0.0f, 1.0f);
 	const float Load = FMath::Clamp(In.TakeoffLoad, 0.0f, 1.0f);
 	const float Rate = Amount * Choice.Magnitude * (PreWindLoadFloor + (1.0f - PreWindLoadFloor) * Load) * FullRateRadS(Choice.Family);
@@ -179,6 +183,7 @@ void URiderAttitudeComponent::BeginAir(const FAttitudeInputs& In)
 		L = Q.RotateVector(Ib * (Choice.AxisBody * Rate));
 		CommittedAxisBody = Choice.AxisBody;
 		LastDebug.Family = Choice.Family;
+		bTookOffRotating = true;
 	}
 }
 
@@ -375,6 +380,7 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 		bActive = false;
 		bWasAirborne = false;
 		bControlWasFlip = false;
+		bTookOffRotating = false;
 		AirSeconds = 0.0f;
 		LastDebug = FAttitudeDebug();
 		return;
@@ -414,8 +420,11 @@ void URiderAttitudeComponent::Step(float Dt, const FAttitudeInputs& In)
 	}
 
 	OmegaW = OmegaFrom(Ib);
+	// A jump that left the water rotating keeps the plan's mapping, so stick X drives the roll it is
+	// in; one that left with no rotation spins flat on stick X alone (AirStickTiltWithoutPreWindDeg).
+	const float ControlDefaultTiltDeg = bTookOffRotating ? DefaultRollAxisTiltDeg : AirStickTiltWithoutPreWindDeg;
 	const RiderAxes::FRotationAxisChoice Control = In.bRotationInput
-		? ChooseAxis(In.RotationStick, In.TravelSideSigma, bControlWasFlip)
+		? ChooseAxis(In.RotationStick, In.TravelSideSigma, bControlWasFlip, ControlDefaultTiltDeg)
 		: RiderAxes::FRotationAxisChoice();
 	if (In.bRotationInput)
 	{

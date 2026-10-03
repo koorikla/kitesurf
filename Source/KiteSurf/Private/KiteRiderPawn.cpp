@@ -211,6 +211,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// The rider's rotation in the air: stepped by StepSimulation before the board (it does not tick).
 	RiderAttitude = CreateDefaultSubobject<URiderAttitudeComponent>(TEXT("RiderAttitude"));
 	bUseRiderAttitude = true;
+	bPreWindLatchesBoardInput = true;
 	PreWindBuildSeconds = 0.5f;
 	PreWindStickThreshold = 0.3f;
 	AirRotationDeadzone = 0.15f;
@@ -614,24 +615,107 @@ void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carv
 
 void AKiteRiderPawn::SetPreWind(FVector2D Stick)
 {
+	bPlayerRiderInput = false; // the scripted path takes over
 	PreWindStick = Stick.GetClampedToMaxSize(1.0f);
 }
 
 void AKiteRiderPawn::SetAirRotationInput(FVector2D Stick)
 {
+	bPlayerRiderInput = false;
 	AirRotationStick = Stick.GetClampedToMaxSize(1.0f);
 }
 
 void AKiteRiderPawn::SetTuck(float Amount)
 {
+	bPlayerRiderInput = false;
 	TuckInput = FMath::Clamp(Amount, 0.0f, 1.0f);
 }
 
 void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
 {
-	if (BoardMovement)
+	PlayerRiderStick.Y = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
+	bPlayerRiderInput = true;
+	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
+}
+
+float AKiteRiderPawn::ComputeScreenBackSign(const FVector& BodyFront, const FVector& CameraRight, float Fallback)
+{
+	const FVector Back = FVector(-BodyFront.X, -BodyFront.Y, 0.0f).GetSafeNormal();
+	const FVector Right = FVector(CameraRight.X, CameraRight.Y, 0.0f).GetSafeNormal();
+	constexpr float MinSideDot = 0.1f;
+	const float D = static_cast<float>(Back | Right);
+	if (Back.IsZero() || Right.IsZero() || FMath::Abs(D) < MinSideDot)
 	{
-		BoardMovement->SetWeightShift(Value.Get<float>());
+		return Fallback >= 0.0f ? 1.0f : -1.0f;
+	}
+	return D > 0.0f ? 1.0f : -1.0f;
+}
+
+void AKiteRiderPawn::UpdateScreenBackSignLatch()
+{
+	if (!BoardMovement)
+	{
+		return;
+	}
+	const bool bAirborne = BoardMovement->GetBoardState() == EBoardState::Airborne;
+	const bool bLoading = !bAirborne && BoardMovement->IsLoadHeld();
+	// Latched as the load starts (the rider winds up looking at the screen as it is then), or at a
+	// take-off without a load; a pop out of the load keeps the load's.
+	const bool bLoadStarts = bLoading && !bBackSignWasLoading;
+	const bool bUnloadedTakeoff = bAirborne && !bBackSignWasAirborne && !bBackSignWasLoading;
+	if (bLoadStarts || bUnloadedTakeoff)
+	{
+		const FVector BodyFront = (bAirborne && RiderAttitude && RiderAttitude->IsSimulating())
+			? RiderAttitude->GetBodyQuat().GetAxisX()
+			: FRotator(0.0f, GetRiderBodyYawDeg(), 0.0f).Vector();
+		// The chase camera's yaw, as UpdateCamera last set the boom: the view's right on the water.
+		const FVector CameraRight = FRotationMatrix(FRotator(0.0f, CameraYawDeg, 0.0f)).GetUnitAxis(EAxis::Y);
+		ScreenBackSign = ComputeScreenBackSign(BodyFront, CameraRight, ScreenBackSign);
+	}
+	bBackSignWasLoading = bLoading;
+	bBackSignWasAirborne = bAirborne;
+}
+
+void AKiteRiderPawn::RoutePlayerRiderInput()
+{
+	if (!bPlayerRiderInput || !BoardMovement)
+	{
+		return;
+	}
+	const bool bAirborne = BoardMovement->GetBoardState() == EBoardState::Airborne;
+	if (!RiderAttitude || !bUseRiderAttitude)
+	{
+		// Without the attitude the stick is the board everywhere, as before T1.2: carve input spins
+		// the board in the air (AirSpinRate).
+		EdgeBoard(PlayerRiderStick.X);
+		BoardMovement->SetWeightShift(PlayerRiderStick.Y);
+		PreWindStick = FVector2D::ZeroVector;
+		AirRotationStick = FVector2D::ZeroVector;
+		TuckInput = 0.0f;
+		return;
+	}
+
+	const FVector2D Rotation = FVector2D(PlayerRiderStick.X * ScreenBackSign, PlayerRiderStick.Y).GetClampedToMaxSize(1.0f);
+	if (bAirborne)
+	{
+		// The rotation stick and the tuck. The board keeps its last carve and weight shift until the
+		// landing; the attitude flies it in the air.
+		AirRotationStick = Rotation;
+		PreWindStick = FVector2D::ZeroVector;
+		TuckInput = bPlayerTuckHeld ? 1.0f : 0.0f;
+		return;
+	}
+
+	AirRotationStick = FVector2D::ZeroVector;
+	TuckInput = 0.0f;
+	bPlayerTuckHeld = false;
+	const bool bLoading = BoardMovement->IsLoadHeld();
+	PreWindStick = bLoading ? Rotation : FVector2D::ZeroVector;
+	if (!bLoading || !bPreWindLatchesBoardInput)
+	{
+		EdgeBoard(PlayerRiderStick.X);
+		BoardMovement->SetWeightShift(PlayerRiderStick.Y);
 	}
 }
 
@@ -683,17 +767,30 @@ void AKiteRiderPawn::SetSheetRateInput(float Axis)
 
 void AKiteRiderPawn::OnEdgeTriggered(const FInputActionValue& Value)
 {
-	EdgeBoard(Value.Get<float>());
+	PlayerRiderStick.X = FMath::Clamp(Value.Get<float>(), -1.0f, 1.0f);
+	bPlayerRiderInput = true;
+	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
 }
 
 void AKiteRiderPawn::OnJumpPressed(const FInputActionValue& Value)
 {
+	bPlayerRiderInput = true;
+	// Pressed in the air: the tuck, held as long as the button is. The board's crouch for the landing
+	// comes with it, as before.
+	bPlayerTuckHeld = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
 	SetLoadHeld(true);
+	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
 }
 
 void AKiteRiderPawn::OnJumpReleased(const FInputActionValue& Value)
 {
+	bPlayerRiderInput = true;
+	bPlayerTuckHeld = false;
 	ReleaseLoadAndPop();
+	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
 }
 
 void AKiteRiderPawn::SetLoadHeld(bool bHeld)
@@ -1235,6 +1332,12 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	{
 		UpdateMouseBar();
 	}
+
+	// The left stick and the jump button go where the rider's state now says: a held stick moves
+	// from the board to the pre-wind as the load starts, to the air stick at the take-off and back to
+	// the board on landing, with no new input event.
+	UpdateScreenBackSignLatch();
+	RoutePlayerRiderInput();
 
 	// The rig is stepped at a fixed rate however long the frame was, so the ride is the same at
 	// any frame rate, and a hitch slows it rather than breaking it. The root is drawn between the

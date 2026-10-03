@@ -243,6 +243,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float DefaultRollAxisTiltDeg;
 
+	/**
+	 * The air stick's axis tilt before stick Y on a jump that left the water with no rotation (no
+	 * pre-wind) (deg). 0: stick X alone spins the rider flat about Up, a backside spin towards the back
+	 * roll's side (T1.4: the A/D air spin the board had before the attitude); stick Y down tilts it
+	 * towards a roll by up to RollAxisTiltRangeDeg. A jump that took off rotating (a pre-wind, or
+	 * SetState with angular momentum) uses DefaultRollAxisTiltDeg, so stick X drives the roll it is
+	 * already in instead of turning it into a spin. Set it to DefaultRollAxisTiltDeg for the plan's
+	 * "X alone is a roll" everywhere. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float AirStickTiltWithoutPreWindDeg;
+
+	/** True when this jump left the water rotating (a pre-wind) or SetState gave it a rotation: the air stick then uses DefaultRollAxisTiltDeg. */
+	bool TookOffRotating() const { return bTookOffRotating; }
+
 	/** How far stick Y moves the roll axis tilt either way (deg): down towards inverted, up towards a flat spin. Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float RollAxisTiltRangeDeg;
@@ -337,8 +352,8 @@ private:
 	/** Take-off edge: strap offset, centre-of-mass offset and the pre-wind (T1.2.4). */
 	void BeginAir(const FAttitudeInputs& In);
 
-	/** The stick mapping with this component's tunables. */
-	RiderAxes::FRotationAxisChoice ChooseAxis(const FVector2D& Stick, float Sigma, bool bWasFlip) const;
+	/** The stick mapping with this component's tunables, from DefaultTiltDeg before stick Y. */
+	RiderAxes::FRotationAxisChoice ChooseAxis(const FVector2D& Stick, float Sigma, bool bWasFlip, float DefaultTiltDeg) const;
 
 	/** Full rate of a rotation family (rad/s). */
 	float FullRateRadS(RiderAxes::ERotationFamily Family) const;
@@ -367,6 +382,7 @@ private:
 	bool bActive = false;
 	bool bWasAirborne = false;
 	bool bControlWasFlip = false;
+	bool bTookOffRotating = false;
 	FVector ComOffsetWorldCm = FVector::ZeroVector;
 	FVector PrevComOffsetWorldCm = FVector::ZeroVector;
 	FAttitudeDebug LastDebug;

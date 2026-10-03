@@ -166,11 +166,12 @@ public:
 	bool bUseRiderAttitude;
 
 	/**
-	 * The pre-wind stick, as the rider holds it while loading (T1.4 routes the left stick here):
-	 * X +1 towards a back roll, -1 a front roll; Y +1 up, -1 down (pulled, a backflip). While the
-	 * load is held on the water and the stick is past PreWindStickThreshold, the pre-wind builds to
-	 * full over PreWindBuildSeconds; the take-off turns it into the rotation the rider leaves the water
-	 * with. Scripted for now: tests and kitesurf.PreWind set it.
+	 * The pre-wind stick, as the rider holds it while loading: X +1 towards a back roll, -1 a front
+	 * roll; Y +1 up, -1 down (pulled, a backflip). While the load is held on the water and the stick
+	 * is past PreWindStickThreshold, the pre-wind builds to full over PreWindBuildSeconds; the take-off
+	 * turns it into the rotation the rider leaves the water with. The player's left stick and WASD
+	 * reach it through the input handlers (see OnEdgeTriggered); calling this directly is the scripted
+	 * path (tests, kitesurf.PreWind), which takes the controls over from the player's stick.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
 	void SetPreWind(FVector2D Stick);
@@ -184,8 +185,9 @@ public:
 
 	/**
 	 * The rotation stick in the air, same axes as SetPreWind: past AirRotationDeadzone it drives the
-	 * attitude's capped control torque and turns the landing assist off. Scripted for now: tests and
-	 * kitesurf.Input set it.
+	 * attitude's capped control torque and turns the landing assist off. The player's left stick and
+	 * WASD reach it in the air through the input handlers; calling this directly is the scripted path
+	 * (tests, kitesurf.Input), which takes the controls over from the player's stick.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
 	void SetAirRotationInput(FVector2D Stick);
@@ -193,9 +195,55 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
 	FVector2D GetAirRotationInput() const { return AirRotationStick; }
 
-	/** Tuck in the air, 0 (stretched) to 1 (tucked): a tuck spins the rider faster. */
+	/** Tuck in the air, 0 (stretched) to 1 (tucked): a tuck spins the rider faster. The player tucks by pressing and holding jump in the air; calling this is the scripted path. */
 	UFUNCTION(BlueprintCallable, Category = "Rider|Rotation")
 	void SetTuck(float Amount);
+
+	/**
+	 * Player rider input (T1.4, docs/tricks/README.md decision 7). The left stick and WASD are
+	 * IA_Edge (X) and IA_WeightShift (Y), and are read by state, with no action of their own:
+	 * - on the water: the board's carve and weight shift, as always;
+	 * - holding jump on the water (loading): the pre-wind, while the board keeps the carve and weight
+	 *   shift it had when the load started (bPreWindLatchesBoardInput);
+	 * - in the air: the rotation stick (SetAirRotationInput), and a jump press held in the air is the
+	 *   tuck.
+	 * Stick X is turned into the rotation's X by the screen side of the rider's back
+	 * (GetScreenBackSign), so X towards the side of the screen the rider's back is on is a back roll.
+	 * These are the functions Enhanced Input calls; they are public so tests drive the player path
+	 * through them.
+	 */
+	void OnEdgeTriggered(const FInputActionValue& Value);
+	void OnWeightShiftTriggered(const FInputActionValue& Value);
+	void OnJumpPressed(const FInputActionValue& Value);
+	void OnJumpReleased(const FInputActionValue& Value);
+
+	/** The left stick / WASD as the player holds it (X from IA_Edge, Y from IA_WeightShift), before it is routed. */
+	FVector2D GetPlayerRiderStick() const { return PlayerRiderStick; }
+
+	/** True while the player's stick and jump button own the board input, pre-wind, air stick and tuck; the scripted setters and ApplyScriptedInput take them over. */
+	bool IsPlayerRiderInputActive() const { return bPlayerRiderInput; }
+
+	/**
+	 * +1 or -1: the player's stick X times this is the rotation's X (+1 back roll). +1 when the
+	 * rider's back is on the right of the screen. Latched when the load starts, or at the take-off
+	 * when the rider leaves the water without loading, and held for the whole airtime.
+	 */
+	float GetScreenBackSign() const { return ScreenBackSign; }
+
+	/**
+	 * Which way stick X is a back roll: sign((-BodyFront) . CameraRight) on the horizontal, so +1 when
+	 * the rider's back is on the right of the screen. Fallback when the rider faces nearly straight
+	 * along the view (|dot| < 0.1), where the screen cannot tell the sides apart.
+	 */
+	static float ComputeScreenBackSign(const FVector& BodyFront, const FVector& CameraRight, float Fallback);
+
+	/**
+	 * While loading on the water, the left stick and WASD set the pre-wind and the board keeps the
+	 * carve and weight shift it had when the load started, so the stick does not also carve. Off:
+	 * the stick carves and shifts the weight while loading as well as setting the pre-wind.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Rotation")
+	bool bPreWindLatchesBoardInput;
 
 	UFUNCTION(BlueprintPure, Category = "Rider|Rotation")
 	float GetTuck() const { return TuckInput; }
@@ -654,11 +702,7 @@ public:
 private:
 	void OnSteerTriggered(const FInputActionValue& Value);
 	void OnSheetTriggered(const FInputActionValue& Value);
-	void OnEdgeTriggered(const FInputActionValue& Value);
-	void OnWeightShiftTriggered(const FInputActionValue& Value);
 	void UpdateMouseBar();
-	void OnJumpPressed(const FInputActionValue& Value);
-	void OnJumpReleased(const FInputActionValue& Value);
 	void OnPauseTriggered(const FInputActionValue& Value);
 	void OnResetTriggered(const FInputActionValue& Value);
 
@@ -734,6 +778,25 @@ private:
 
 	/** Turns and places the drawn board for the attitude in the air, and eases it back onto the root after a landing. Before the rig. */
 	void UpdateBoardVisualFromAttitude(float DeltaTime);
+
+	/**
+	 * Sends the player's stick and jump button where the rider's state says (see OnEdgeTriggered):
+	 * the board, the pre-wind, or the air stick and the tuck. Does nothing while the scripted path
+	 * owns those inputs. The handlers call it, and Tick calls it before the fixed steps so a state
+	 * change (load, take-off, landing) re-routes a stick that is held still.
+	 */
+	void RoutePlayerRiderInput();
+
+	/** Latches GetScreenBackSign when the load starts, or at a take-off without a load. Every Tick and before routing. */
+	void UpdateScreenBackSignLatch();
+
+	FVector2D PlayerRiderStick = FVector2D::ZeroVector;
+	bool bPlayerRiderInput = false;
+	/** Jump was pressed in the air and is still held: the tuck. A press that began on the water (a kite lift-off with the button still down) does not tuck until pressed again. */
+	bool bPlayerTuckHeld = false;
+	float ScreenBackSign = 1.0f;
+	bool bBackSignWasLoading = false;
+	bool bBackSignWasAirborne = false;
 
 	FVector2D PreWindStick = FVector2D::ZeroVector;
 	/** The last pre-wind stick direction held past the threshold while it was building: what the take-off uses. */

@@ -2425,6 +2425,19 @@ bool FKiteSurfPhysicsDebugStepBreakdown::RunTest(const FString& Parameters)
 	TestNearlyEqual(TEXT("The heel is the board's"), BoardStep.HeelDeg, Ride.Board->GetHeelDeg(), 0.01f);
 	TestNearlyEqual(TEXT("and so is the leeway"), BoardStep.LeewayDeg, Ride.Board->GetLeewayDeg(), 0.01f);
 	TestTrue(FString::Printf(TEXT("Riding, the board slips only a few degrees (%.1f)"), BoardStep.LeewayDeg), FMath::Abs(BoardStep.LeewayDeg) < 15.0f);
+
+	// The water under the board (plan-2 item 4), which level 1 draws: five samples on the surface, the
+	// centre under the board, the nose 63 cm ahead along its heading, the rails 18 cm either side, and
+	// the plane fitted to them, here the flat sea.
+	const FVector At = Ride.Pawn->GetActorLocation();
+	const FVector Heading = FRotator(0.0f, Ride.Pawn->GetActorRotation().Yaw, 0.0f).Vector();
+	UE_LOG(LogKiteSurf, Log, TEXT("DebugStepBreakdown: water under the board at %.1f cm (board at %.1f), normal %s, rising %.2f cm/s, holding it up with %.0f N; nose sample %s, right rail %s"),
+		BoardStep.WaterHeightCm, At.Z, *BoardStep.WaterNormal.ToString(), BoardStep.SurfaceVerticalSpeedCmS, BoardStep.WaterVerticalForceN, *BoardStep.WaterSamplesCm[1].ToString(), *BoardStep.WaterSamplesCm[3].ToString());
+	TestTrue(TEXT("The centre sample is under the board, on the surface"), FVector::Dist2D(BoardStep.WaterSamplesCm[0], At) < 1.0f + Ride.Board->Velocity.Size2D() * Ride.Pawn->SimStepSeconds && FMath::Abs(BoardStep.WaterSamplesCm[0].Z) < 0.01f);
+	TestTrue(TEXT("the nose sample 63 cm ahead along the heading"), FMath::IsNearlyEqual(FVector::DotProduct(BoardStep.WaterSamplesCm[1] - BoardStep.WaterSamplesCm[0], Heading), 63.0f, 0.1f));
+	TestTrue(TEXT("and the rails 18 cm either side"), FMath::IsNearlyEqual(FVector::Dist2D(BoardStep.WaterSamplesCm[3], BoardStep.WaterSamplesCm[4]), 36.0f, 0.1f));
+	TestTrue(TEXT("On flat water the fitted plane is level and still"), BoardStep.WaterNormal.Equals(FVector::UpVector, 1.0e-4f) && FMath::Abs(BoardStep.SurfaceVerticalSpeedCmS) < 0.01f);
+	TestTrue(FString::Printf(TEXT("and the water holds the board up (%.0f N)"), BoardStep.WaterVerticalForceN), BoardStep.WaterVerticalForceN > 0.0f);
 	return true;
 }
 

@@ -216,6 +216,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	static float LandingGForSink(float SinkMS, float AbsorbDistanceCm);
 
+	/** How many landings from a jump the board has made, clean or crashed (not the kite's skips). Polled by the HUD's landing card. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	int32 GetLandingCount() const { return LandingCount; }
+
 	/** True while the touchdown absorber is taking a sink into the water out (the legs and the board's immersion). */
 	UFUNCTION(BlueprintPure, Category = "Board|Physics")
 	bool IsAbsorbingTouchdown() const { return bAbsorbing; }
@@ -686,6 +690,7 @@ private:
 	float AbsorbDecelCmS2 = 0.0f;
 	bool bWasInWaterContact = true;
 
+	int32 LandingCount = 0;
 	float LastLandingG = 1.0f;
 	float LastLandingSinkMS = 0.0f;
 	float LastLandingAbsorbCm = 0.0f;

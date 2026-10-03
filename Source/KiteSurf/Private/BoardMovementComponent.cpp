@@ -834,6 +834,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 					}
 				}
 				bLastLandingHot = LastLandingSinkMS > HotLandingSinkMS || KiteElevationDeg < HotLandingKiteElevationDeg;
+				++LandingCount;
 
 				if (LandingAngleDeg <= MaxLandingAngle && LastLandingG <= CrashLandingG)
 				{

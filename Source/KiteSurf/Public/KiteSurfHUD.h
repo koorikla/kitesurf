@@ -3,9 +3,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
 #include "BoardMovementComponent.h"
+#include "Tricks/TrickTypes.h"
 #include "KiteSurfHUD.generated.h"
 
 class AKiteRiderPawn;
+class UTrickTrackerComponent;
+struct FJumpRecord;
 
 UCLASS()
 class KITESURF_API AKiteSurfHUD : public AHUD
@@ -128,6 +131,46 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	bool IsJumpReadoutNewBest() const { return bJumpReadoutNewBest; }
 
+	/**
+	 * The trick card for a finished jump (T0.5), two lines:
+	 * "<Name>  <GRADE>  <N> pts" and "<g> g landing", e.g. "Kiteloop  CLEAN  41 pts\n3.2 g landing".
+	 * The points are what the session paid (Score.Total x RepeatFactor), rounded; a repeat paid less
+	 * than in full adds "  (repeat NN%)" to the first line.
+	 */
+	static FString FormatJumpCard(const FJumpRecord& Record);
+
+	/** STOMPED, CLEAN, SKETCHY or CRASH. */
+	static FString GradeText(ELandingGrade Grade);
+
+	/** Green, white, amber or red (the red of the rejection notice). */
+	static FLinearColor GradeColor(ELandingGrade Grade);
+
+	/**
+	 * Follows the trick tracker: when its record count goes up after a jump of at least a metre
+	 * (the jump readout's threshold), shows that jump's card for a few seconds; while a jump is in
+	 * the air and has an element such as a completed kite loop, names it live in the ticker.
+	 * Polls the record count, as UpdateJumpReadout polls the board's jump count.
+	 */
+	void UpdateJumpCard(const UTrickTrackerComponent* Tracker, float DeltaTime);
+
+	/** Shows a record's card now (and clears the ticker). UpdateJumpCard calls it; tests can too. */
+	void ShowJumpCard(const FJumpRecord& Record);
+
+	/** Names a jump in progress for the ticker; empty while it has no element (loop, rotation, grab...). */
+	static FString FormatTrickTicker(const FJumpRecord& LiveJump);
+
+	/** What the trick card shows now; empty when there is nothing to show. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetJumpCardText() const { return JumpCardText; }
+
+	/** The grade of the card being shown. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	ELandingGrade GetJumpCardGrade() const { return JumpCardGrade; }
+
+	/** The live trick name while in the air; empty when there is nothing to name. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetTrickTickerText() const { return TickerText; }
+
 protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	FString JumpRejectionText;
@@ -138,6 +181,12 @@ protected:
 	float BestHeightBeforeJumpCm = 0.0f;
 	bool bJumpReadoutNewBest = false;
 	bool bJumpReadoutLive = false;
+
+	FString JumpCardText;
+	FString TickerText;
+	ELandingGrade JumpCardGrade = ELandingGrade::Clean;
+	float JumpCardRemainingTime = 0.0f;
+	int32 SeenRecordCount = 0;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	float JumpRejectionRemainingTime = 0.0f;

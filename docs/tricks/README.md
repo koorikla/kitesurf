@@ -78,3 +78,13 @@ Updated as PRs merge.
 
 | Item | PR | State |
 | --- | --- | --- |
+| T0.4 trick core: types, signature, naming, scoring | #60 | Merged |
+| T1.2 PR D rider attitude pure step | #61 | Merged (not stepped by the pawn) |
+| T1.5 landing evaluator (pure) | #62 | Merged (not wired into the board) |
+| T0.3 kite loop tracker (pure), T2.4 loop classifier | #63 | Merged |
+| T0.2 jump recorder (pure), landing g helper | #64 | Merged |
+| T3.4 PR 1 bar state machine (pure), T3.6 freestyle heat scoring | #65 | Merged (not used in the game) |
+| T1.3 rig takes the body quaternion | #66 | Merged |
+| T2.7 trick book in the save game | #67 | Merged |
+| T1.1a visual board split from the physics root, air camera | #68 | Merged |
+| T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #TBD | Wired. Polls public getters only; take-off, popped, sink, landing g and the loop turn are synthesised in the tracker until physics phase 2 exposes them on the board and kite |

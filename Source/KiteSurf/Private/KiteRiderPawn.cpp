@@ -8,6 +8,7 @@
 #include "BoardWakeComponent.h"
 #include "WindStreakComponent.h"
 #include "KiteComponent.h"
+#include "Tricks/TrickTrackerComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -193,6 +194,11 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Tick), so neither ticks on its own. Their step functions stay callable for tests.
 	Kite->PrimaryComponentTick.bCanEverTick = false;
 	BoardMovement->PrimaryComponentTick.bCanEverTick = false;
+
+	// Jump records and tricks: polls the board and the kite after each board step.
+	TrickTracker = CreateDefaultSubobject<UTrickTrackerComponent>(TEXT("TrickTracker"));
+	TrickTracker->SetSources(BoardMovement, Kite);
+
 	SimStepSeconds = 1.0f / 240.0f;
 	MaxFrameSeconds = 0.1f;
 	MaxSimStepsPerFrame = 32;
@@ -772,6 +778,7 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->StepBoard(StepSeconds);
 	}
+	if (TrickTracker) TrickTracker->StepTracker(StepSeconds);
 
 	if (RootComponent)
 	{

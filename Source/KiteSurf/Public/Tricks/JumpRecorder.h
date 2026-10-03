@@ -9,6 +9,8 @@
 #include "Tricks/TrickScoring.h"
 #include "JumpRecorder.generated.h"
 
+struct FBarState;
+
 /**
  * One simulation step as the jump recorder sees it (docs/tricks/T0.md section 4). The tracker
  * fills one per fixed step, after the board has stepped, by polling the board and the kite:
@@ -17,7 +19,7 @@
  * Every field has a board, kite or rider attitude getter (T0.2 board events, T0.3 kite hookup,
  * T1.2 attitude); each comment names it.
  *
- * Bar state (T3.4) is not in the snapshot yet.
+ * The bar (T3.1) comes from the pawn's FBarState (Bar), summarised by BarStateMachine::SummariseJump.
  */
 struct FJumpRecorderInput
 {
@@ -128,6 +130,11 @@ struct FJumpRecorderInput
 
 	/** FBoardOffState::GetFlightBoardOffSeconds (s). */
 	float BoardOffSeconds = 0.0f;
+
+	// --- The bar (T3.1, T3.4): the pawn's FBarState ---
+
+	/** The bar's state, stepped before the board: hooked or not, the wrap and this flight's passes. Null when the pawn has none (a hooked jump). Read during Step only. */
+	const FBarState* Bar = nullptr;
 
 	// --- Kite ---
 

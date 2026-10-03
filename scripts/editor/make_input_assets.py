@@ -92,6 +92,18 @@ def build_assets():
         ia_grab_back = trick_actions['IA_GrabBack']
         ia_one_foot = trick_actions['IA_OneFoot']
 
+        # 12-13. Unhooked riding (T3.1; docs/tricks/T3.md 1.6), Digital bool, pressed: IA_Hook hooks
+        # in or out of the harness on the water, IA_Pass is the handle pass in the air while unhooked.
+        for bar_name in ['IA_Hook', 'IA_Pass']:
+            ia_bar = get_or_create_asset(bar_name, '/Game/Input', unreal.InputAction, None)
+            ia_bar.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+            editor_asset_lib.save_loaded_asset(ia_bar)
+            editor_asset_lib.save_asset(f'/Game/Input/{bar_name}', False)
+            print(f'{bar_name} configured and saved: {ia_bar}')
+            trick_actions[bar_name] = ia_bar
+        ia_hook = trick_actions['IA_Hook']
+        ia_pass = trick_actions['IA_Pass']
+
         # Assets from earlier control schemes
         for stale in ['/Game/Input/IA_EdgePressure', '/Game/Input/IA_Loop']:
             if editor_asset_lib.does_asset_exist(stale):
@@ -139,8 +151,8 @@ def build_assets():
             (ia_reset, 'R', False),
             (ia_reset, 'Gamepad_FaceButton_Right', False),
             # Recentre the motion bar: the right stick click, free while the motion bar has the
-            # bar (the right stick is idle then); Home on the keyboard. X and Y are planned for
-            # freestyle (docs/tricks.md 6.3), the D-pad is the menus'.
+            # bar (the right stick is idle then); Home on the keyboard. X and Y are freestyle's
+            # (below), the D-pad is the menus'.
             (ia_recenter_motion, 'Gamepad_RightThumbstick', False),
             (ia_recenter_motion, 'Home', False),
             # Grabs and the one-footer, in the air only (AKiteRiderPawn, FGrabState).
@@ -150,6 +162,12 @@ def build_assets():
             (ia_grab_back, 'Gamepad_RightShoulder', False),
             (ia_one_foot, 'C', False),
             (ia_one_foot, 'Gamepad_LeftThumbstick', False),
+            # Unhooked riding (T3.1): hook in or out on the water, and the handle pass. LeftShift
+            # may be bound to tricks but never to IA_Steer (docs/tricks/README.md decision 7).
+            (ia_hook, 'F', False),
+            (ia_hook, 'Gamepad_FaceButton_Top', False),
+            (ia_pass, 'LeftShift', False),
+            (ia_pass, 'Gamepad_FaceButton_Left', False),
         ]
 
         for action, key_str, _ in mappings_spec:
@@ -190,6 +208,8 @@ def build_assets():
         cdo_rider.set_editor_property('grab_front_action', ia_grab_front)
         cdo_rider.set_editor_property('grab_back_action', ia_grab_back)
         cdo_rider.set_editor_property('one_foot_action', ia_one_foot)
+        cdo_rider.set_editor_property('hook_action', ia_hook)
+        cdo_rider.set_editor_property('pass_action', ia_pass)
 
         # Camera distance, pitch and field of view are tunables on AKiteRiderPawn (applied every
         # tick by UpdateCamera); the Blueprint only smooths the boom.

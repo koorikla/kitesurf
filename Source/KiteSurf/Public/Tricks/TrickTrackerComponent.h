@@ -10,6 +10,7 @@ class UBoardMovementComponent;
 class UKiteComponent;
 class URiderAttitudeComponent;
 class FGrabState;
+struct FBarState;
 
 /**
  * Follows the rider's jumps and names, grades and scores each one (docs/tricks/T0.md sections 3
@@ -34,6 +35,8 @@ class FGrabState;
  * - Landing cause: GetLastLandingVerdict().Cause, the evaluator's reason for grading it down.
  * - Grabs and the one-footer (T2.1, T2.2): the owner's FGrabState (SetGrabSource), stepped before
  *   the board, so on the touchdown step a grab still held is counted to the landing.
+ * - The bar (T3.1): the owner's FBarState (SetBarSource), stepped after the kite: hooked or not, the
+ *   handle passes finished in the air and the stance the lines' wrap lands in.
  *
  * Finished jumps go to UKiteSurfGameInstance::RecordTrickLanding when the world has that game
  * instance; nothing is written to disk here.
@@ -51,6 +54,9 @@ public:
 
 	/** The rider's grabs and one-footer (AKiteRiderPawn's FGrabState); null for none. The pawn sets it in its constructor. */
 	void SetGrabSource(const FGrabState* InGrabs) { GrabSource = InGrabs; }
+
+	/** The rider's bar (AKiteRiderPawn's FBarState, T3.1): hooked or not, the handle passes and the wrap. Null for none (every jump hooked). */
+	void SetBarSource(const FBarState* InBar) { BarSource = InBar; }
 
 	/** One fixed step, after the kite's and the board's: reads them and steps the jump session. */
 	void StepTracker(float StepSeconds);
@@ -99,6 +105,9 @@ private:
 
 	/** Owned by the pawn, which outlives this component. */
 	const FGrabState* GrabSource = nullptr;
+
+	/** Owned by the pawn, which outlives this component. */
+	const FBarState* BarSource = nullptr;
 
 	FJumpSession Session;
 	FJumpRecord LiveJump;

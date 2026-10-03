@@ -7,6 +7,8 @@
 #include "KiteMotionBar.h"
 #include "RiderRig.h"
 #include "Tricks/GrabState.h"
+#include "Tricks/BarState.h"
+#include "Tricks/RiderAttitudeComponent.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -156,6 +158,8 @@ public:
 	UInputAction* GetGrabFrontAction() const { return GrabFrontAction.Get(); }
 	UInputAction* GetGrabBackAction() const { return GrabBackAction.Get(); }
 	UInputAction* GetOneFootAction() const { return OneFootAction.Get(); }
+	UInputAction* GetHookAction() const { return HookAction.Get(); }
+	UInputAction* GetPassAction() const { return PassAction.Get(); }
 
 	UKiteComponent* GetKite() const { return Kite.Get(); }
 	UBoardMovementComponent* GetBoardMovement() const { return BoardMovement.Get(); }
@@ -252,6 +256,89 @@ public:
 	 * stick takes the zone back on its next move.
 	 */
 	void SetTrickInput(bool bGrabFront, bool bGrabBack, bool bOneFoot, FVector2D ZoneStick = FVector2D::ZeroVector);
+
+	/**
+	 * Unhooked riding (T3.1, docs/tricks/T3.md sections 1 and 2): IA_Hook (Y, F) hooks in or out on
+	 * the water, IA_Pass (X, LeftShift) is the handle pass, used in the air while unhooked. A press is
+	 * kept until the next fixed step, which hands it to BarStateMachine::Step (StepBar). Public so
+	 * tests press them; PressHook and PressPass are the scripted path (kitesurf.Hook, kitesurf.Pass).
+	 */
+	void OnHookPressed(const FInputActionValue& Value) { PressHook(); }
+	void OnPassPressed(const FInputActionValue& Value) { PressPass(); }
+	void PressHook() { bHookPressPending = true; }
+	void PressPass() { bPassPressPending = true; }
+
+	/** The bar and handle-pass state (Tricks/BarState.h), stepped every fixed step after the kite. */
+	const FBarState& GetBarState() const { return Bar; }
+
+	UFUNCTION(BlueprintPure, Category = "Rider|Bar")
+	bool IsHooked() const { return Bar.bHooked; }
+
+	/** The bar was pulled from the hands (grip limit, a pass under load, wrapped lines): the kite is on its leash until the next reset. */
+	UFUNCTION(BlueprintPure, Category = "Rider|Bar")
+	bool IsBarLost() const { return Bar.Place == EBarPlace::Lost; }
+
+	/**
+	 * Unhooked, how far the arms are out, 0 (bar at the hips) to 1 (arms straight out along the
+	 * lines). Every bar input sets it through SheetKite while unhooked (ArmExtensionForBar), and the
+	 * kite's own sheet stays at UnhookedStopperSheet. Hooked it follows the bar too, unused.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rider|Bar")
+	float GetArmExtension() const { return ArmExtension; }
+
+	/**
+	 * The arm extension a bar position gives unhooked: the bar's middle (Neutral) is DefaultExtension,
+	 * fully in (1) is 0, the bar at the hips, and fully out (0) is 1, the arms straight; linear either
+	 * side of the middle.
+	 */
+	static float ArmExtensionForBar(float BarPosition, float Neutral, float DefaultExtension);
+
+	/** Where the lines pulled on the body on the last fixed step (cm, body frame, from the centre of mass): LineAttach::AttachPointBody. */
+	FVector GetLineAttachBodyCm() const { return LineAttachBodyCm; }
+
+	/** The bar's centre as last drawn (world, cm). */
+	FVector GetDrawnBarCentre() const { return DrawnBarCentre; }
+
+	/** How many times the motion bar was recentred for a hook toggle, for tests. */
+	int32 GetHookRecentreCount() const { return HookRecentreCount; }
+
+	/**
+	 * Unhooked, the chicken loop rides up to the stopper: the kite's sheet is held here (0..1).
+	 * docs/tricks/T3.md 1.2 has 0.6; T3.1 PR 3 lowered it to 0.45, the lowest it allows, which makes
+	 * the unhooked pop the most ballistic with the low park at 45 deg (KiteSurf.Trick.UnhookedPopIsBallistic).
+	 * Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float UnhookedStopperSheet;
+
+	/**
+	 * Unhooked, the kite's low park holds it this high (deg above the horizon; UKiteComponent::
+	 * SetLowParkAssist). Kept at 45 by T3.1 PR 3: lower is more ballistic (35 gives 8h/t^2 8.3 m/s^2
+	 * against 7.3 at 45), but the landing evaluator grades a landing with the kite under
+	 * HotLandingKiteElevationDeg (45) sketchy (KiteTooLow), so every unhooked landing would be. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "10.0", ClampMax = "85.0"))
+	float LowParkElevationDeg;
+
+	/** Unhooked, the arm extension with the bar in the middle (BarNeutralSheet). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float UnhookedArmExtensionDefault;
+
+	/** The flick assist: a pass started in the air dips the kite for slack (UKiteComponent::RequestFlick). On by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
+	bool bFlickAssist;
+
+	/** The bar on its leash hangs this far up the lines from the harness (cm). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar", meta = (ClampMin = "0.0"))
+	float LeashLengthCm;
+
+	/** The grip limit, the pass's slack window and the rest (BarStateMachine). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
+	FBarTunables BarTunables;
+
+	/** Where the lines pull on the body for each bar state (LineAttach). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
+	FLineAttachTunables LineAttachTunables;
 
 	/** The grabs and the one-footer, stepped in the fixed step before the rider attitude. */
 	const FGrabState& GetGrabState() const { return GrabState; }
@@ -881,6 +968,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> OneFootAction;
 
+	/** Hook in or out of the harness, on the water (Y, F). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> HookAction;
+
+	/** The handle pass, in the air while unhooked (X, LeftShift). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> PassAction;
+
 public:
 	UFUNCTION(BlueprintCallable, Category = "Gameplay")
 	void ResetRider();
@@ -980,6 +1075,33 @@ private:
 
 	/** Steps the grabs and the one-footer for one fixed step and hands the board the back foot. Before the rider attitude. */
 	void StepGrabs(float StepSeconds);
+
+	/**
+	 * Steps the bar for one fixed step (BarStateMachine::Step), after the kite: the hook toggle, the
+	 * grip limit, the wrap and the pass, and what they do to the kite (low park, the stopper, the
+	 * flick, the leash) and the board (a bar lost on the water crashes; in the air the landing does).
+	 * A board reset rehooks.
+	 */
+	void StepBar(float StepSeconds);
+
+	/** Back to hooked in with the bar in both hands: the kite off its leash and low park, the bar's sheet back on the kite. */
+	void ResetBar();
+
+	/** The body frame the bar and the line attach use: the attitude's body (slaved on the water). */
+	FQuat GetBarBodyQuat() const;
+
+	/** +1 when the board's nose is on the body's right (the attitude's strap offset). */
+	float GetBarNoseSideSign() const;
+
+	FBarState Bar;
+	bool bHookPressPending = false;
+	bool bPassPressPending = false;
+	float ArmExtension = 0.7f;
+	FVector LineAttachBodyCm = FVector::ZeroVector;
+	FVector DrawnBarCentre = FVector::ZeroVector;
+	int32 SeenBarResetCount = 0;
+	int32 HookRecentreCount = 0;
+	float GripHapticCooldownSeconds = 0.0f;
 
 	/** Steps the rider attitude for one fixed step and hands the board its air orientation. Called between the line force and the board. */
 	void StepRiderAttitude(float StepSeconds);

@@ -1,4 +1,5 @@
 #include "Tricks/JumpRecorder.h"
+#include "Tricks/BarState.h"
 #include "Tricks/TrickNaming.h"
 
 bool FJumpRecorder::Step(const FJumpRecorderInput& In, FJumpRecord& OutRecord)
@@ -114,6 +115,17 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	Live.OneFootSeconds = In.OneFootSeconds;
 	Live.BoardOff = In.BoardOff;
 	Live.BoardOffSeconds = In.BoardOffSeconds;
+
+	// The bar as it stands: hooked or not, the passes finished so far and the stance the wrap gives.
+	// On the landing step it is the bar as it met the water (stepped before the board landed); a pass
+	// still between the hands then is not counted.
+	if (In.Bar)
+	{
+		const FBarJumpSummary Bar = BarStateMachine::SummariseJump(*In.Bar);
+		Live.bHooked = In.Bar->bHooked;
+		Live.Passes = In.Bar->bHooked ? TArray<FTrickPass>() : Bar.Passes;
+		Live.BarLandingStance = In.Bar->bHooked ? ETrickStance::Heelside : Bar.LandingStance;
+	}
 
 	const float StepSeconds = In.BoardTimeSeconds - LastStepTimeSeconds;
 	LastStepTimeSeconds = In.BoardTimeSeconds;

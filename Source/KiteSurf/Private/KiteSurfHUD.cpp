@@ -869,6 +869,11 @@ void AKiteSurfHUD::GetBarEnds(float Steer, float Sheet, const FVector2D& ThrowTo
 	OutRightEnd = BarCentre + HalfBar;
 }
 
+float AKiteSurfHUD::ComputeGripMeterFraction(float TensionN, float BodyWeightN, float GripLimitBW)
+{
+	return FMath::Max(TensionN, 0.0f) / FMath::Max(BodyWeightN, 1.0f) / FMath::Max(GripLimitBW, 0.01f);
+}
+
 void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, float ScreenY, float Width, float Height)
 {
 	UKiteComponent* Kite = RiderPawn ? RiderPawn->GetKite() : nullptr;
@@ -888,6 +893,10 @@ void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 	{
 		DrawText(TEXT("LOOP"), FLinearColor(1.0f, 0.5f, 0.1f), ScreenX + Width - 50.0f, ScreenY + 6.0f, nullptr, 1.0f);
 	}
+
+	const FBarState& BarState = RiderPawn->GetBarState();
+	const bool bUnhooked = !BarState.bHooked;
+	const bool bBarLost = RiderPawn->IsBarLost();
 
 	// The throw: the centre lines the bar slides on, depowered at the top, pulled in at the bottom.
 	const float CentreX = ScreenX + Width * 0.5f;
@@ -941,7 +950,59 @@ void AKiteSurfHUD::DrawControlBar(AKiteRiderPawn* RiderPawn, float ScreenX, floa
 	const TCHAR* SteerSide = Steer < -0.05f ? TEXT("L") : (Steer > 0.05f ? TEXT("R") : TEXT("-"));
 	DrawText(FString::Printf(TEXT("STEER %s %.0f%%"), SteerSide, FMath::Abs(Steer) * 100.0f), FLinearColor(0.2f, 0.85f, 1.0f), ScreenX + 10.0f, TrackY + 14.0f, nullptr, 0.9f);
 	DrawText(TEXT("kite"), FLinearColor(1.0f, 0.85f, 0.2f), ScreenX + Width - 42.0f, TrackY + 14.0f, nullptr, 0.9f);
-	DrawText(FString::Printf(TEXT("PULLED IN %.0f%%"), Sheet * 100.0f), FLinearColor::White, ScreenX + 10.0f, TrackY + 32.0f, nullptr, 0.9f);
+	// The hook (T3.1), bottom right: a closed hook while hooked in, an open one unhooked, crossed out
+	// once the bar is lost.
+	{
+		const float HookX = ScreenX + Width - 96.0f;
+		const float HookTop = TrackY + 30.0f;
+		const FLinearColor HookColor = bBarLost ? FLinearColor(1.0f, 0.25f, 0.2f) : (bUnhooked ? FLinearColor(1.0f, 0.6f, 0.15f) : FLinearColor(0.45f, 0.9f, 0.5f));
+		// The shank, the curve of the hook as three segments, and the gate: shut while hooked in.
+		DrawLine(HookX, HookTop, HookX, HookTop + 10.0f, HookColor, 2.0f);
+		DrawLine(HookX, HookTop + 10.0f, HookX + 3.0f, HookTop + 14.0f, HookColor, 2.0f);
+		DrawLine(HookX + 3.0f, HookTop + 14.0f, HookX + 8.0f, HookTop + 14.0f, HookColor, 2.0f);
+		DrawLine(HookX + 8.0f, HookTop + 14.0f, HookX + 10.0f, HookTop + 9.0f, HookColor, 2.0f);
+		if (!bUnhooked)
+		{
+			DrawLine(HookX + 10.0f, HookTop + 9.0f, HookX, HookTop + 4.0f, HookColor, 1.5f);
+		}
+		if (bBarLost)
+		{
+			DrawLine(HookX - 3.0f, HookTop - 1.0f, HookX + 13.0f, HookTop + 16.0f, HookColor, 2.0f);
+		}
+		DrawText(bBarLost ? TEXT("BAR LOST") : (bUnhooked ? TEXT("UNHOOKED") : TEXT("HOOKED")), HookColor, HookX + 16.0f, HookTop + 1.0f, nullptr, 0.8f);
+	}
+
+	if (bUnhooked)
+	{
+		// Unhooked the bar moves the arms; the kite's sheet is held at the stopper.
+		DrawText(FString::Printf(TEXT("ARMS OUT %.0f%%"), RiderPawn->GetArmExtension() * 100.0f), FLinearColor::White, ScreenX + 10.0f, TrackY + 32.0f, nullptr, 0.9f);
+
+		// The grip meter, up the right of the panel: the pull against the grip limit (the tick), green,
+		// orange near it, red past it, and the hands' slip filling the frame while over it.
+		const UBoardMovementComponent* Board = RiderPawn->GetBoardMovement();
+		const float BodyWeightN = (Board ? Board->MassKg : 85.0f) * KiteUnits::GravityMS2;
+		const float Grip = bBarLost ? 0.0f : ComputeGripMeterFraction(Kite->GetLineTensionN(), BodyWeightN, RiderPawn->BarTunables.GripLimitBW);
+		const float MeterX = ScreenX + Width - 22.0f;
+		const float MeterTop = LinesTopY;
+		const float MeterHeight = ThrowBottomY + 28.0f - LinesTopY;
+		const float FullScale = 1.5f; // the meter's top is 1.5 times the grip limit
+		const float Fill = FMath::Clamp(Grip / FullScale, 0.0f, 1.0f) * MeterHeight;
+		const FLinearColor GripColor = Grip > 1.0f ? FLinearColor(1.0f, 0.2f, 0.15f) : (Grip > 0.8f ? FLinearColor(1.0f, 0.6f, 0.15f) : FLinearColor(0.35f, 0.9f, 0.45f));
+		DrawRect(FLinearColor(0.1f, 0.12f, 0.15f, 0.9f), MeterX, MeterTop, 10.0f, MeterHeight);
+		DrawRect(GripColor, MeterX, MeterTop + MeterHeight - Fill, 10.0f, Fill);
+		const float LimitY = MeterTop + MeterHeight * (1.0f - 1.0f / FullScale);
+		DrawLine(MeterX - 3.0f, LimitY, MeterX + 13.0f, LimitY, FLinearColor::White, 1.5f);
+		const float Slip = FMath::Clamp(BarState.OverGripSeconds / FMath::Max(RiderPawn->BarTunables.GripLimitSeconds, 0.01f), 0.0f, 1.0f);
+		if (Slip > 0.0f)
+		{
+			DrawRect(FLinearColor(1.0f, 0.2f, 0.15f, 0.35f + 0.5f * Slip), MeterX - 2.0f, MeterTop - 2.0f, 14.0f, 4.0f);
+		}
+		DrawText(TEXT("GRIP"), GripColor, MeterX - 8.0f, MeterTop + MeterHeight + 2.0f, nullptr, 0.7f);
+	}
+	else
+	{
+		DrawText(FString::Printf(TEXT("PULLED IN %.0f%%"), Sheet * 100.0f), FLinearColor::White, ScreenX + 10.0f, TrackY + 32.0f, nullptr, 0.9f);
+	}
 }
 
 void AKiteSurfHUD::UpdateTutorialHint()

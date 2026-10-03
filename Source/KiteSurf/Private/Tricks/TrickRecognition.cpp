@@ -1,4 +1,5 @@
 #include "Tricks/TrickRecognition.h"
+#include "Tricks/BarState.h"
 #include "KiteSurfUnits.h"
 
 ETrickLoopKind TrickRecognition::ClassifyLoop(const FJumpLoop& Loop, const FLoopClassifySettings& Settings)
@@ -161,6 +162,12 @@ FTrickSignature TrickRecognition::SignatureFromJump(const FJumpRecord& Record, c
 	// The board-off (T2.3), as the board-off state credited it.
 	Signature.BoardOff = Record.BoardOff;
 	Signature.BoardOffSeconds = Record.BoardOff != ETrickBoardOff::None ? Record.BoardOffSeconds : 0.0f;
+	// The bar (T3.1): hooked or not, the passes and, unhooked, the landing stance the lines' wrap
+	// gives, as BarStateMachine::ApplyToSignature writes them.
+	FBarJumpSummary Bar;
+	Bar.Passes = Record.Passes;
+	Bar.LandingStance = Record.BarLandingStance;
+	BarStateMachine::ApplySummaryToSignature(Record.bHooked, Bar, Signature);
 
 	// Early or late roll: the first inversion's start against the yank of the first completed kite or
 	// megaloop, given to every kite and megaloop entry so a chain still names as one.

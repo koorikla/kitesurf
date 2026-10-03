@@ -154,6 +154,40 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Hook"),
+			TEXT("Presses the hook button (Y / F) on the player's rider (T3.1): on the water, hooks in or out of the harness; ignored in the air. Unhooked, the kite parks low, its sheet is held at the stopper and the bar input moves the arms."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->PressHook();
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Hook: pressed (was %s)"), It->IsHooked() ? TEXT("hooked in") : TEXT("unhooked"));
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Pass"),
+			TEXT("Presses the handle pass button (X / LeftShift) on the player's rider (T3.1): unhooked, a pass starts when the lines are slack and the back is to the kite within the press's buffer; the flick assist dips the kite in the air."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->PressPass();
+						const FBarState& Bar = It->GetBarState();
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Pass: pressed (%s, %s, wrap %.0f deg, slack %.2f s)"), Bar.bHooked ? TEXT("hooked in") : TEXT("unhooked"),
+							*UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Bar.WrapDeg, Bar.SlackSeconds);
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Bar"),
 			TEXT("Holds the player's sheet input (Up / Down, right stick, triggers) through the same handler they use: with the bar returning to the middle, the bar goes that fraction of the way to fully in (+) or out (-) and springs back on 0. Usage: kitesurf.Bar <-1..1: +1 power>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -279,10 +313,13 @@ public:
 				{
 					return;
 				}
-				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn heading %.0f deg, height %.0f cm, kite clock %.0f deg elevation %.0f deg turned %.0f deg, tension %.0f N, steer %.2f, bar %.2f"),
+				const FBarState& Bar = Rider->GetBarState();
+				const FString BarText = Bar.bHooked ? FString()
+					: FString::Printf(TEXT(", unhooked: %s, arms %.2f, wrap %.0f deg, kite sheet %.2f"), *UEnum::GetDisplayValueAsText(Bar.Place).ToString(), Rider->GetArmExtension(), Bar.WrapDeg, Kite->Sheet);
+				UE_LOG(LogKiteSurf, Display, TEXT("State: %s%s%s, %.1f kn heading %.0f deg, height %.0f cm, kite clock %.0f deg elevation %.0f deg turned %.0f deg, tension %.0f N, steer %.2f, bar %.2f%s"),
 					*UEnum::GetDisplayValueAsText(Board->GetBoardState()).ToString(), Board->IsFloating() ? TEXT(" floating") : TEXT(""), Board->IsCrashing() ? TEXT(" crashing") : TEXT(""),
 					KiteUnits::CmSToKnots(Board->Velocity.Size2D()), Board->Velocity.Rotation().Yaw, Board->GetCurrentJumpHeight(), Kite->GetClockDeg(), Kite->GetElevationDeg(), Kite->GetTurnDeg(), Kite->GetLineTensionN(),
-					Rider->GetCurrentSteerInput(), Rider->GetCurrentSheetInput());
+					Rider->GetCurrentSteerInput(), Rider->GetCurrentSheetInput(), *BarText);
 			}),
 			ECVF_Default
 		);
@@ -518,6 +555,8 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Trick"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.JumpButton"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Bar"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Hook"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Pass"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

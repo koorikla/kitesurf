@@ -278,6 +278,15 @@ public:
 	void SetRiderBoardCatch(EBoardCatchState State) { RiderBoardCatch = State; }
 	EBoardCatchState GetRiderBoardCatch() const { return RiderBoardCatch; }
 
+	/**
+	 * Whether the rider still has the bar (T3.1, unhooked riding): the pawn sets it every fixed step
+	 * before StepBoard from its FBarState, and the next landing grades it (FLandingInputs::bBarInHands:
+	 * false crashes with BarLost). A bar lost in the air is not a crash at once, because TriggerCrash
+	 * would stop the rider where they are: they fly on and crash as they touch down. True by default.
+	 */
+	void SetRiderBarInHands(bool bInHands) { bRiderBarInHands = bInHands; }
+	bool IsRiderBarInHands() const { return bRiderBarInHands; }
+
 	/** True while the board's air orientation comes from the rider attitude (SetAirAttitude). */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	bool IsAirAttitudeActive() const { return bAirAttitudeActive; }
@@ -940,6 +949,8 @@ private:
 	EFootStrapState RiderBackFoot = EFootStrapState::In;
 	/** SetRiderBoardCatch: read by the landing. */
 	EBoardCatchState RiderBoardCatch = EBoardCatchState::Attached;
+	/** SetRiderBarInHands: read by the landing. */
+	bool bRiderBarInHands = true;
 
 	/** The rider attitude handed over by SetAirAttitude, and the board orientation the last air step took from it. */
 	bool bAirAttitudeActive = false;

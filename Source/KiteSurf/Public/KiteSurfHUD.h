@@ -106,6 +106,12 @@ public:
 	 * pulled in (Sheet 0 at ThrowTop, 1 at ThrowTop + ThrowLength) and the end of the hand that
 	 * is pulling drops towards the rider: steer right lowers the right end.
 	 */
+	/**
+	 * The control bar's grip meter (T3.1, unhooked): the line tension as a fraction of the grip limit,
+	 * (TensionN / BodyWeightN) / GripLimitBW, 0 or more; past 1 the bar is slipping from the hands.
+	 */
+	static float ComputeGripMeterFraction(float TensionN, float BodyWeightN, float GripLimitBW);
+
 	static void GetBarEnds(float Steer, float Sheet, const FVector2D& ThrowTop, float ThrowLength, float HalfWidth, float MaxTiltDeg, FVector2D& OutLeftEnd, FVector2D& OutRightEnd);
 
 	/** A jump in progress, e.g. "12.4 m high   35 m far   2.1 s". */

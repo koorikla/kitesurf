@@ -279,6 +279,26 @@ On the timed jump every holding hand is on its grip on the drawn board (0.00 cm 
 
 Not yet: the plan's "CATCH" prompt on the HUD, the board flip variant, steering with both hands off the bar (the plan's steer authority of 0 for the pass), and the board's own inertia in the attitude (above).
 
+## Unhooked pop and the handle pass
+
+T3.1 PR 2 and PR 3 in `docs/tricks/T3.md`. Unhooked (docs/movement.md, Unhooked) the pop is the same pop, but the kite stays low: its low park holds it at `LowParkElevationDeg` with the bar centred in the air too, ahead of the airborne overhead hold, so the kite pulls the hands rather than lifting the rider and the jump is nearly ballistic.
+
+**Measured** (PR 3, `KiteSurf.Trick.UnhookedPopTelemetry` logs an `unhookpop` CSV line per frame: height, vertical speed, the line's lift and tension in body weights, the kite's elevation, sheet, board state and bar place). 20 kn, 9 m2 Loop, unhooked at 0.5 s, ridden to 8 s, loaded 0.5 s with the weight back and let go, flat water:
+
+| Low park, stopper | Apex | Airtime | 8h/t² | Lift in the air | Ridden at | Landing |
+| --- | --- | --- | --- | --- | --- | --- |
+| 45 deg, 0.60 (the plan's) | 1.92 m | 1.49 s | 6.95 m/s² | 0.31 BW | 13.1 kn | Stomped, kite at 47 deg |
+| 45 deg, 0.45 (**chosen**) | 1.86 m | 1.43 s | 7.34 m/s² | 0.27 BW | 11.0 kn | Stomped, kite at 47 deg |
+| 40 deg, 0.45 | 1.88 m | 1.39 s | 7.79 m/s² | 0.23 BW | | |
+| 35 deg, 0.60 | 1.96 m | 1.40 s | 8.03 m/s² | 0.21 BW | | Sketchy, kite too low (37 deg) |
+| 35 deg, 0.45 | 1.89 m | 1.35 s | 8.27 m/s² | 0.18 BW | | |
+
+The target is an apex of 1 to 4 m with `|8h/t² - 9.81| <= 0.3 x 9.81` (2.94). The plan's 45 deg and 0.6 met it by 0.08 m/s²; `UnhookedStopperSheet` went down to 0.45, the lowest the plan allows, for a margin of 0.47. The low park stays at 45 deg: lower is more ballistic, but the landing evaluator grades every landing with the kite under `HotLandingKiteElevationDeg` (45) sketchy (KiteTooLow), and a kite parked under about 43 deg lands under it. The cost of the lower stopper is riding speed (13.1 to 11.0 kn in 20 kn; 7.5 kn in 15 kn on the 12 m, where the pop lands with the kite at 43 deg). In 25 kn on the 7 m the pop gives 6.80 m/s², just outside the target. The same numbers at 30, 60 and 120 frames a second (`KiteSurf.Trick.UnhookedPopIsBallistic`). The same pop hooked in, the kite held where the low park had it and the sheet at the stopper until the pop, then the bar centred so the kite drifts up over the rider, floats: 7.06 m/s², the kite at 58 deg at the touchdown (`KiteSurf.Trick.HookedPopFloatsMore`).
+
+**The handle pass.** **X or LeftShift** (`IA_Pass`), in the air while unhooked. The press waits `PassRequestBufferSeconds` (0.2 s) for the lines to be slack (under `PassSlackTensionBW`, 0.3 body weights) and the back within `PassBackToKiteDeg` (60 deg) of the kite; the bar then goes round the back in `PassDurationSeconds` (0.25 s), is lost if the lines load past `PassLoseTensionBW` (0.6) on the way, and may run on `SurfacePassGraceSeconds` (0.3 s) on the water as a surface pass. With the flick assist on (`AKiteRiderPawn::bFlickAssist`, on by default; no settings row yet), a pass started in the air dips the kite (`UKiteComponent::RequestFlick`). Landing with the lines wrapped round the body (a 360 with no pass) loses the bar.
+
+**Naming.** The tracker reads the bar (`UTrickTrackerComponent::SetBarSource`): the passes finished in the air before the touchdown go into `FJumpRecord::Passes`, unhooked jumps are `bHooked` false, and the stance the lines' wrap lands in is `BarLandingStance`, all through `BarStateMachine::SummariseJump`; `SignatureFromJump` writes them as `ApplyToSignature` does, so the freestyle table names the jump ("Unhooked pop", "Backside 1 to blind", "Backside 3", "Back to blind", "KGB"). A pass still between the hands at the touchdown (a surface pass) is not in the record. On the 20 kn ride, a pre-wound flat backside spin with the air stick held and the pass pressed once the back is within 60 deg of the kite, the stick let go once the bar is round, lands blind as **"Backside 1 to blind"**, one air pass, Stomped, the bar kept riding away (`KiteSurf.Trick.PassOnRide`, 60 and 30 frames a second). A backside 3 is not reachable on this pop: after the pass the lines' pull at the lower back swings the rider back to face away from the kite (with the stick still held it lands with the lines wrapped and the bar is lost), and the T1 spin rates give about 180 deg in the 1.4 s.
+
 ## Default Tunable Properties
 
 Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")`:

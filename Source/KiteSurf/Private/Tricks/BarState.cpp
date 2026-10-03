@@ -283,13 +283,17 @@ FBarJumpSummary BarStateMachine::SummariseJump(const FBarState& S, const FBarTun
 
 void BarStateMachine::ApplyToSignature(const FBarState& S, FTrickSignature& Signature, const FBarTunables& T)
 {
-	Signature.bHooked = S.bHooked;
-	if (S.bHooked)
+	ApplySummaryToSignature(S.bHooked, S.bHooked ? FBarJumpSummary() : SummariseJump(S, T), Signature);
+}
+
+void BarStateMachine::ApplySummaryToSignature(bool bHooked, const FBarJumpSummary& Summary, FTrickSignature& Signature)
+{
+	Signature.bHooked = bHooked;
+	if (bHooked)
 	{
 		Signature.Passes.Reset();
 		return;
 	}
-	const FBarJumpSummary Summary = SummariseJump(S, T);
 	Signature.Passes = Summary.Passes;
 	Signature.LandingStance = Summary.LandingStance;
 }

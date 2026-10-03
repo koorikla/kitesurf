@@ -71,8 +71,8 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 		TestEqual(TEXT("IA_Pause is Boolean"), PauseAction->ValueType, EInputActionValueType::Boolean);
 	}
 
-	// The trick buttons are held: Boolean, each mapped once on the keyboard and once on the pad.
-	const TCHAR* TrickActionNames[] = { TEXT("IA_GrabFront"), TEXT("IA_GrabBack"), TEXT("IA_OneFoot") };
+	// The trick buttons (held) and the hook and pass buttons (pressed): Boolean, each mapped once on the keyboard and once on the pad.
+	const TCHAR* TrickActionNames[] = { TEXT("IA_GrabFront"), TEXT("IA_GrabBack"), TEXT("IA_OneFoot"), TEXT("IA_Hook"), TEXT("IA_Pass") };
 	TArray<UInputAction*> TrickActions;
 	for (const TCHAR* Name : TrickActionNames)
 	{
@@ -165,6 +165,9 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			{ EKeys::Q, TEXT("IA_GrabFront") }, { EKeys::Gamepad_LeftShoulder, TEXT("IA_GrabFront") },
 			{ EKeys::E, TEXT("IA_GrabBack") }, { EKeys::Gamepad_RightShoulder, TEXT("IA_GrabBack") },
 			{ EKeys::C, TEXT("IA_OneFoot") }, { EKeys::Gamepad_LeftThumbstick, TEXT("IA_OneFoot") },
+			// Unhooked riding (T3.1; docs/tricks/T3.md 1.6).
+			{ EKeys::F, TEXT("IA_Hook") }, { EKeys::Gamepad_FaceButton_Top, TEXT("IA_Hook") },
+			{ EKeys::LeftShift, TEXT("IA_Pass") }, { EKeys::Gamepad_FaceButton_Left, TEXT("IA_Pass") },
 		};
 		// Looping needs no key of its own: it is the bar held towards the kite's side. The shift keys and
 		// RB may be bound to tricks (RB is the back hand's grab, T2.1) but never to the steering
@@ -210,6 +213,13 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has GrabFrontAction"), CDO->GetGrabFrontAction());
 			TestNotNull(TEXT("BP_KiteRider has GrabBackAction"), CDO->GetGrabBackAction());
 			TestNotNull(TEXT("BP_KiteRider has OneFootAction"), CDO->GetOneFootAction());
+			TestNotNull(TEXT("BP_KiteRider has HookAction"), CDO->GetHookAction());
+			TestNotNull(TEXT("BP_KiteRider has PassAction"), CDO->GetPassAction());
+			if (CDO->GetHookAction() && CDO->GetPassAction())
+			{
+				TestEqual(TEXT("BP_KiteRider's HookAction is IA_Hook"), CDO->GetHookAction()->GetName(), FString(TEXT("IA_Hook")));
+				TestEqual(TEXT("BP_KiteRider's PassAction is IA_Pass"), CDO->GetPassAction()->GetName(), FString(TEXT("IA_Pass")));
+			}
 			if (CDO->GetGrabBackAction())
 			{
 				TestEqual(TEXT("BP_KiteRider's GrabBackAction is IA_GrabBack"), CDO->GetGrabBackAction()->GetName(), FString(TEXT("IA_GrabBack")));

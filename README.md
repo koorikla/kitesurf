@@ -62,7 +62,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Steer the kite round the window (over the top to change tack) | Left / Right | Right stick left / right |
-| Bar in / out: power. Let go and the bar springs back to the middle (Settings: BAR TO MIDDLE; off, it holds its position) | Down / Up (hold) | Right stick pulled back / pushed forward, triggers (half a trigger: half way) |
+| Bar in / out: power (unhooked: your arms in / out). Let go and the bar springs back to the middle (Settings: BAR TO MIDDLE; off, it holds its position) | Down / Up (hold) | Right stick pulled back / pushed forward, triggers (half a trigger: half way) |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse (the bar stays where the mouse leaves it) | Hold right button: move to steer and sheet | |
 | Motion bar: recentre, with the bar in the middle | Home | Right stick click |
@@ -75,6 +75,8 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | In the air: grab the board with the front / back hand (hold) | Q / E | LB / RB |
 | While grabbing: pick the zone (nose, toe edge, heel edge, tail) | W / S: nose / tail; A / D towards your chest: toe edge, your back: heel edge | Left stick, same directions |
 | In the air: back foot out of the strap (hold; back in before landing) | C | Left stick click |
+| On the water: unhook / hook back in. Unhooked the kite parks low at 45 deg, its power is fixed, and the bar moves your arms (in to the hips, out along the lines) | F | Top face button (Y) |
+| Unhooked, in the air: pass the bar behind your back (with the lines slack and your back to the kite) | Left Shift | Left face button (X) |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, gear, session, school, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |

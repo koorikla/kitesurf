@@ -3,7 +3,88 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Tricks/RiderAxes.h"
+#include "Tricks/BarState.h"
 #include "RiderAttitudeComponent.generated.h"
+
+/**
+ * Where the lines pull on the rider's body, for LineAttach (docs/tricks/T3.md 1.1). Body frame: X
+ * Front, Y Right, Z Up (Tricks/RiderAxes.h), in cm relative to the centre of mass, which is 97 cm
+ * above the deck and 10 cm above the rig's pelvis. Every value is an estimate.
+ */
+USTRUCT(BlueprintType)
+struct KITESURF_API FLineAttachTunables
+{
+	GENERATED_BODY()
+
+	/** Hooked in: the harness hook. The same point as URiderAttitudeComponent::HookOffsetFromComCm by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	FVector HookBodyCm = FVector(12.0f, 0.0f, 20.0f);
+
+	/** Unhooked with the bar pulled to the hips (arm extension 0): the hands at the hips. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	FVector HipHandsBodyCm = FVector(25.0f, 0.0f, -5.0f);
+
+	/** A shoulder (Y is the right one; the left is mirrored). RiderRig::ShoulderOffsetCm less the 10 cm from the pelvis up to the centre of mass. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	FVector ShoulderBodyCm = FVector(4.0f, 23.0f, 42.0f);
+
+	/** How far the hands reach from the shoulders with the arms out (cm): 0.97 of RiderRig's arm. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach", meta = (ClampMin = "0.0"))
+	float ArmReachCm = 52.0f;
+
+	/** Half angle of the cone the arms can point the bar in (deg), about Front tilted ArmConeUpTilt up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float ArmConeDeg = 100.0f;
+
+	/** The arm cone's axis is normalize(Front + this x Up): 0.36 is 20 deg up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	float ArmConeUpTilt = 0.36f;
+
+	/** Blind: the bar held at the lower back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	FVector BehindBackBodyCm = FVector(-18.0f, 0.0f, -2.0f);
+
+	/** The pass arc runs from the giving hip, (HipX, +-HipY, Z), round the back through (BackX, 0, Z), to the other hip. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	float PassHipXCm = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	float PassHipYCm = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	float PassBackXCm = -22.0f;
+
+	/** Height of the pass arc relative to the centre of mass (cm): the pelvis, 10 cm below it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks|Line attach")
+	float PassZCm = -10.0f;
+};
+
+/**
+ * Where the lines pull on the body for each bar state (docs/tricks/T3.md 1.1). Pure functions, used
+ * both by the physics (the line torque about the centre of mass, AKiteRiderPawn::StepRiderAttitude)
+ * and by the drawn bar (AKiteRiderPawn::UpdateRiderPose), so the picture matches the physics.
+ */
+namespace LineAttach
+{
+	/**
+	 * The attach point in the body frame (cm from the centre of mass). Hooked or lost: the harness
+	 * hook (a lost bar pulls through the leash at the harness). Unhooked with the bar in front: from
+	 * the hands at the hips (ArmExtension 0) to the hands at arm's reach along the line, clamped to the
+	 * arm cone, from between the shoulders (both hands) or that hand's shoulder (one hand; the front
+	 * hand is on the nose's side, NoseSideSign x Right). Behind the back: the lower back. Passing: on
+	 * the pass arc at FBarState::PassT, from the hip on the giving side round the back.
+	 */
+	KITESURF_API FVector AttachPointBody(const FBarState& Bar, const FVector& LineDirBody, float ArmExtension, float NoseSideSign, const FLineAttachTunables& Tunables);
+
+	/** Dir (unit) if it is within HalfAngleDeg of ConeAxis, otherwise the cone's edge on the way to it. */
+	KITESURF_API FVector ClampToArmCone(const FVector& DirBody, const FVector& ConeAxisBody, float HalfAngleDeg);
+
+	/** The pass arc at progress P (0..1), body frame: Side +1 starts on the right hip. */
+	KITESURF_API FVector PassArcBody(float P, float Side, const FLineAttachTunables& Tunables);
+
+	/** The giving side of a pass (+1 right): the front hand gives for a backside pass. */
+	KITESURF_API float PassGivingSide(const FBarState& Bar, float NoseSideSign);
+}
 
 /**
  * What one fixed step of the rider's attitude reads. The pawn fills it at the start of each step,
@@ -69,6 +150,15 @@ struct KITESURF_API FAttitudeInputs
 
 	/** Sigma, the travel side latched at load start or take-off (RiderAxes::TravelSide): +1 or -1. */
 	float TravelSideSigma = 1.0f;
+
+	/**
+	 * Unhooked (T3.1): the lines pull at LineAttachBodyCm, the hands, with HandsLineTorqueScale,
+	 * instead of at the hook with LineTorqueScale. False while hooked in and with the bar lost.
+	 */
+	bool bUseLineAttach = false;
+
+	/** Where the lines pull (cm, body frame, from the centre of mass): LineAttach::AttachPointBody. Read with bUseLineAttach. */
+	FVector LineAttachBodyCm = FVector::ZeroVector;
 };
 
 /** What the last step did, for debug drawing, telemetry and the landing evaluator. Torques in N*m, world. */
@@ -222,6 +312,14 @@ public:
 	/** Scale on the line torque r x F at the hook. Calibrated so a full pre-wind back roll at 800 N hang tension takes 1.5 to 2.5 s (KiteSurf.Trick.BackRollFromPreWind). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
 	float LineTorqueScale;
+
+	/**
+	 * Scale on the line torque r x F with the lines pulling at the hands (unhooked, FAttitudeInputs::
+	 * bUseLineAttach), separate from the hooked LineTorqueScale. docs/tricks/T3.md 1.1 has 1.0, at
+	 * which a raley falls out of the physics; T3.2 tunes it. Estimate.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))
+	float HandsLineTorqueScale;
 
 	/** Roll rate from a full pre-wind at full load (deg/s). Estimate. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Rotation", meta = (ClampMin = "0.0"))

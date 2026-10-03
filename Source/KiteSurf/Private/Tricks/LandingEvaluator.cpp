@@ -53,6 +53,11 @@ FLandingVerdict LandingEvaluator::Evaluate(const FLandingInputs& In, const FLand
 	{
 		return Finish(ELandingGrade::Crash, ELandingCause::PassUnfinished);
 	}
+	// The one-footer (T2.2): a back foot still out of its strap cannot take the landing.
+	if (In.BackFoot == EFootStrapState::Out)
+	{
+		return Finish(ELandingGrade::Crash, ELandingCause::FootOutOfStrap);
+	}
 	if (!(In.BodyUpDot >= T.InvertedBodyUpDot))
 	{
 		return Finish(ELandingGrade::Crash, ELandingCause::Inverted);
@@ -96,7 +101,14 @@ FLandingVerdict LandingEvaluator::Evaluate(const FLandingInputs& In, const FLand
 		const ELandingCause Cause = bKiteLow ? ELandingCause::KiteTooLow
 			: bTooHard ? ELandingCause::TooHard
 			: ELandingCause::KiteTooLow;
-		return Finish(ELandingGrade::Sketchy, Cause);
+		// A foot coming back into its strap is named before the kite and the g (the foot is what the
+		// rider did wrong; docs/tricks/T2.md T2.6 priority).
+		return Finish(ELandingGrade::Sketchy, In.BackFoot == EFootStrapState::Returning ? ELandingCause::FootLate : Cause);
+	}
+	if (In.BackFoot == EFootStrapState::Returning)
+	{
+		// The foot was on its way back in: the rider lands on it, at best sketchy.
+		return Finish(ELandingGrade::Sketchy, ELandingCause::FootLate);
 	}
 	return Finish(Grade, ELandingCause::None);
 }

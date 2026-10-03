@@ -261,6 +261,14 @@ public:
 	 */
 	void SetAirAttitude(const FQuat& BoardQuat, bool bActive, const FQuat& BodyQuat = FQuat::Identity, const FVector& AngularVelocityRadS = FVector::ZeroVector);
 
+	/**
+	 * Where the rider's back foot is relative to its strap (T2.2, the one-footer): the pawn sets it
+	 * every fixed step before StepBoard from its FGrabState, and the next landing grades it
+	 * (FLandingInputs::BackFoot: Out crashes, Returning is at best sketchy). In by default.
+	 */
+	void SetRiderBackFoot(EFootStrapState State) { RiderBackFoot = State; }
+	EFootStrapState GetRiderBackFoot() const { return RiderBackFoot; }
+
 	/** True while the board's air orientation comes from the rider attitude (SetAirAttitude). */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	bool IsAirAttitudeActive() const { return bAirAttitudeActive; }
@@ -919,6 +927,8 @@ private:
 	bool bLastLandingHot = false;
 	FLandingVerdict LastLandingVerdict;
 	FLandingInputs LastLandingInputs;
+	/** SetRiderBackFoot: read by the landing. */
+	EFootStrapState RiderBackFoot = EFootStrapState::In;
 
 	/** The rider attitude handed over by SetAirAttitude, and the board orientation the last air step took from it. */
 	bool bAirAttitudeActive = false;

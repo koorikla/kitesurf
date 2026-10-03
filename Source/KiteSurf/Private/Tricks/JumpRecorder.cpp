@@ -104,6 +104,15 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	Live.ApexTimeSeconds = HighestZTimeSeconds;
 	Live.AirtimeSeconds = FMath::Max(In.BoardTimeSeconds - Live.TakeoffTimeSeconds, 0.0f);
 
+	// The grabs and the one-footer as the grab state has them; on the landing step the grab still
+	// held is counted to the touchdown (the grab state stepped before the board landed).
+	if (In.Grabs)
+	{
+		Live.Grabs = *In.Grabs;
+	}
+	Live.bOneFooter = In.bOneFooter;
+	Live.OneFootSeconds = In.OneFootSeconds;
+
 	const float StepSeconds = In.BoardTimeSeconds - LastStepTimeSeconds;
 	LastStepTimeSeconds = In.BoardTimeSeconds;
 	if (Rotation.HasBegun() && In.bHasAttitude && In.bAttitudeActive && StepSeconds > 0.0f)
@@ -153,7 +162,8 @@ void FJumpRecorder::Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecor
 		ApplyRotation(Rotation.Finish(In.BodyQuat), Record);
 	}
 
-	FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade);
+	FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record, Settings.LoopClassify, Settings.LandingGrade,
+		Settings.Scoring.GrabMinHoldSeconds);
 	if (In.bHasLandingVerdict)
 	{
 		// Decision 6: the board's landing verdict owns the grade. The signature's GradeLanding is the

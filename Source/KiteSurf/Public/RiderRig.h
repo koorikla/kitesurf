@@ -80,6 +80,19 @@ struct FRiderRigInput
 	TOptional<FVector> PelvisUp;
 	/** 0 standing, 1 a full crouch. */
 	float Crouch = 0.0f;
+	/**
+	 * Where the pelvis is (world, cm), instead of over the feet at the crouch's height. For a grab
+	 * (T2.1) in the air: the body stays where it is and the board is pulled up towards it, so the
+	 * knees come up. The legs still reach the straps as long as the board is within the legs' reach
+	 * of the hips. Unset, the pelvis sits over the feet as always.
+	 */
+	TOptional<FVector> PelvisAnchor;
+	/**
+	 * The torso folded forwards at the hips (deg; + brings the chest down towards Front), for a grab
+	 * (T2.1). The fold is about the hip axis, so the hips, the pelvis and the legs do not move; the
+	 * shoulders, the arms and the drawn torso follow it. 0 leaves the torso along the body.
+	 */
+	float TorsoPitchDeg = 0.0f;
 	/** Index 0 is the rider's left foot, 1 their right. */
 	FRiderFootInput Feet[2];
 	/**
@@ -141,7 +154,7 @@ namespace RiderRig
 	 */
 	KITESURF_API FQuat MakeBodyQuat(const FVector& Facing, const FVector& BodyUp);
 
-	/** Pelvis, torso and legs. The arms are left hanging towards where the hands would hold a bar. */
+	/** Pelvis, torso and legs (PelvisAnchor and TorsoPitchDeg included). The arms are left hanging towards where the hands would hold a bar. */
 	KITESURF_API FRiderRigPose SolveBody(const FRiderRigInput& Input);
 
 	/** Puts the hands on these points (or as near as the arms reach). */

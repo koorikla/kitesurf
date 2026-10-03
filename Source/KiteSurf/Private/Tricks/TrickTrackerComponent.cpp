@@ -3,6 +3,7 @@
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "Tricks/RiderAttitudeComponent.h"
+#include "Tricks/GrabState.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -82,6 +83,12 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 		In.BodyQuat = Attitude->GetBodyQuat();
 		In.AngularVelocityRadS = Attitude->GetAngularVelocity();
 	}
+	if (GrabSource)
+	{
+		In.Grabs = &GrabSource->GetGrabs();
+		In.bOneFooter = GrabSource->IsOneFooter();
+		In.OneFootSeconds = GrabSource->GetOneFootSeconds();
+	}
 	In.TensionN = Kite->GetLineTensionN();
 	In.KiteElevationDeg = Kite->GetElevationDeg();
 	In.KiteTimeSeconds = Kite->GetSimTimeSeconds();
@@ -93,9 +100,9 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 	{
 		const FRotationRecognizer& Rotation = Session.GetRecorder().GetRotation();
 		const float AboutUpDeg = FMath::RadiansToDegrees(static_cast<float>(Rotation.GetSpinAboutURad()));
-		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s (cause %s), %.1f pts; rotation: %d inversion(s), spin %.0f deg (%d half turns; about up %.0f, flight turned %.0f, sigma %+.0f), heading %.0f deg, landed %s"),
+		UE_LOG(LogKiteSurf, Log, TEXT("Trick tracker: jump %d %s, %s (cause %s), %.1f pts; %d grab(s)%s; rotation: %d inversion(s), spin %.0f deg (%d half turns; about up %.0f, flight turned %.0f, sigma %+.0f), heading %.0f deg, landed %s"),
 			Finished.Index, *Finished.TrickName, *UEnum::GetValueAsString(Finished.Grade), *UEnum::GetValueAsString(Finished.LandingCause),
-			Finished.Score.Total * Finished.RepeatFactor, Finished.Inversions.Num(), Finished.SpinDeg, Finished.SpinHalfTurns,
+			Finished.Score.Total * Finished.RepeatFactor, Finished.Grabs.Num(), Finished.bOneFooter ? TEXT(", one-footer") : TEXT(""), Finished.Inversions.Num(), Finished.SpinDeg, Finished.SpinHalfTurns,
 			AboutUpDeg, AboutUpDeg - Finished.SpinDeg,
 			Rotation.GetFrame().Sigma, Finished.NetHeadingDeg, *UEnum::GetValueAsString(Finished.LandingStance));
 		if (UWorld* World = GetWorld())

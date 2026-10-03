@@ -200,6 +200,44 @@ Every default is an *estimate*.
 - On the real timed jump (30 kn, the recommended kite, about 2 kN as the rider leaves the water) the same pre-wind goes over once: inverted at 0.52 s, upright again at 2.97 s (`KiteSurf.Trick.BackRollFromPreWindOnRide`).
 - In a `-game` run on the 9 m kite in 24 kn, which pulls 3.5 kN at the pop, the pre-wind alone turns the rider only to horizontal: they come down 60 to 77 deg over and crash, under-rotated. Holding the air stick towards the back roll and tucking for the first second takes them over (inverted with the board above them, landed clean). Whether the line torque should scale less than linearly with the tension, or the roll axis lean towards the lines, is open (a calibration question for the next pass).
 
+## Grabs and the one-footer
+
+T2.1 and T2.2 in `docs/tricks.md` and `docs/tricks/T2.md`. `FGrabState` (`Tricks/GrabState.h`) is a small pure class the pawn owns and steps in the fixed step before the rider attitude (`AKiteRiderPawn::StepGrabs`), so the attitude takes the grab's tuck and the board grades the foot if it lands that step. The tracker reads its grab log (`UTrickTrackerComponent::SetGrabSource`).
+
+**Controls** (in the air only; on the water the buttons do nothing for now):
+
+| Action | Keyboard | Gamepad | Input action |
+| --- | --- | --- | --- |
+| Grab with the front hand (hold) | Q | LB | `IA_GrabFront` |
+| Grab with the back hand (hold) | E | RB | `IA_GrabBack` |
+| Pick the zone while a grab button is held | W / S: nose / tail; A / D towards the chest: toe edge, towards the back: heel edge | Left stick, same directions | (the rider stick, `IA_Edge` / `IA_WeightShift`) |
+| Back foot out of its strap (hold) | C | Left stick click (L3) | `IA_OneFoot` |
+
+- **Only a press in the air grabs.** A button held from the water into the air does nothing until pressed again, as with the tuck.
+- **The stick picks the zone, not the rotation.** While either grab button is held in the air, the stick's rotation input is ignored: no control torque, and the rotation keeps its momentum. The zone uses the same screen-side mapping as the air stick (`GetScreenBackSign`): the stick towards the side of the screen the chest is on is the toe edge. The strongest push during the reach picks the zone; it is latched when the hand reaches the board. Inside the deadzone (0.5) the zone is the toe edge: Mute for the front hand, Indy for the back.
+- **One hand at a time.** Both grab buttons together are kept for the board-off (T2.3): pressing both at once starts nothing, and a press while the other button is held is ignored, so it never becomes a double grab.
+- **Names** (`TrickNaming::GrabName`): front hand Nose, Mute, Melon, Seatbelt; back hand Crail, Indy, Stalefish, Tail (nose, toe edge, heel edge, tail).
+
+**Timing.** The hand reaches the board over `ReachSeconds` (0.2 s); the hold counts from the step it gets there. Letting go (or landing) ends the grab and the hand goes back to the bar over `ReturnSeconds` (0.15 s). Every grab goes into the jump record as an `FTrickGrab` (hand, zone, hold seconds; a release during the reach logs a hold of 0). `TrickRecognition::SignatureFromJump` keeps only grabs held at least `GrabMinHoldSeconds` (0.3 s), so a shorter grab is neither named nor scored; a counted grab scores 0.2 plus up to 0.2 more for a hold up to 1.5 s (`TrickScoring`). A jump with one counted grab and nothing else is named after it ("Indy"), and the ticker names it as soon as it counts.
+
+**The tuck.** A grab asks for its zone's tuck (`FGrabState::TuckForZone`: 1 on the edges, 0.8 on the nose and tail) times the reach, on top of the jump-held tuck, into the attitude's tuck spring. So a grab spins the rider faster: on the timed jump's pre-wind back roll the rate from 0.5 to 1 s after the take-off goes from 125 to 233 deg/s with an Indy held (x1.87, front inertia 13 to 7.2 kg*m^2; `KiteSurf.Trick.GrabOnRide`).
+
+**The pose.** The arms are too short to reach the board standing (#76), so the drawn rider (`UpdateRiderPose`) does three things, scaled by the reach:
+- the torso folds forwards at the hips (`FRiderRigInput::TorsoPitchDeg`, `FGrabState::TorsoFoldDegForZone`: toe edge 55 deg, nose and tail 40, heel edge 15); the fold is about the hip axis, so the legs do not move;
+- the body holds still (`FRiderRigInput::PelvisAnchor`) and the drawn board is pulled towards the grabbing hand's shoulder until the socket is `GrabReachFraction` (0.92) of the arm's reach away, at most `GrabMaxBoardPullCm` (60 cm), so the knees come up; only the drawn board moves, never the physics root, and only while the attitude draws it;
+- the grabbing hand goes from the bar to its socket (`BoardGrabPoints::SocketFor`) through `RiderRig::SolveArmsPerHand`, the elbow out; the other hand stays on the bar and both feet stay in their straps.
+On the timed jump the Indy pulls the board about 50 cm, and the hand is on the socket (0.00 cm off) with the feet in the straps (0.000 cm) for the whole hold (`KiteSurf.Trick.GrabOnRide`).
+
+**The one-footer.** Held in the air, the back foot comes out of its strap over `FootOutSeconds` (0.12 s) to `OneFootKickStanceCm` (off the tail, on the heel side, lifted: stance (-58, -16, 24) cm; `FRiderFootInput::AnkleTarget`) and goes back over `FootReturnSeconds` (0.15 s) when let go. Out fully for `MinOneFootSeconds` (0.3 s) the jump is a one-footer: `FJumpRecord::bOneFooter` (and `OneFootSeconds`), named "One-footer" and scoring 0.2. The foot must be back by the touchdown: the pawn hands the board `FGrabState::GetFootAtTouchdown()` every step (`SetRiderBackFoot`) and the landing grades it (`FLandingInputs::BackFoot`):
+- in its strap: no change;
+- on its way back (out less than half way, let go 0 to 0.075 s too late): at best **sketchy**, cause `FootLate` ("Back foot back in too late");
+- half way out or more: a **crash**, cause `FootOutOfStrap` ("Back foot still out of the strap").
+The plan (`T2.md` T2.2) reads it this way: a foot nearly back is a sketchy landing, a foot still out cannot take the landing. On the timed jump, let go about 0.5 s before the touchdown the landing stands (sketchy, too hard, as without the trick); held to the water it crashes with `FootOutOfStrap` on the card (`KiteSurf.Trick.OneFooterFootReturns`).
+
+**Scripted path.** `SetTrickInput(bFront, bBack, bOneFoot, ZoneStick)` holds the buttons and the zone stick in rotation axes (X -1 toe edge, +1 heel edge, Y +1 nose, -1 tail), with no screen-side mapping; from the console `kitesurf.Trick <front 0|1> <back 0|1> <one foot 0|1> [<zone x> <zone y>]`. The player's handlers are `OnGrabFrontPressed` and so on.
+
+Not yet: steering with fewer hands on the bar (the plan's steer authority), through-the-legs grabs, the board-off (T2.3), a hold timer on the HUD and a grab sound.
+
 ## Default Tunable Properties
 
 Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")`:

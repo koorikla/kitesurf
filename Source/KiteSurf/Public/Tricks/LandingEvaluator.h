@@ -73,6 +73,13 @@ struct FLandingInputs
 	/** True when a handle pass is still between the hands at contact. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
 	bool bPassInProgress = false;
+
+	/**
+	 * The back foot at contact (T2.2, the one-footer; FGrabState::GetFootAtTouchdown): Out is a crash
+	 * (FootOutOfStrap), Returning caps the grade at sketchy (FootLate).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tricks")
+	EFootStrapState BackFoot = EFootStrapState::In;
 };
 
 /** The worst tilt and yaw a grade allows (deg, inclusive). */
@@ -194,7 +201,7 @@ namespace LandingEvaluator
 {
 	/**
 	 * Grades a landing. In order, the first that applies:
-	 * - board off, bar lost, pass unfinished, inverted (BodyUpDot under InvertedBodyUpDot) and
+	 * - board off, bar lost, pass unfinished, the back foot out of its strap (FootOutOfStrap), inverted (BodyUpDot under InvertedBodyUpDot) and
 	 *   landing g over CrashLandingG are crashes with those causes;
 	 * - tilt over Sketchy.MaxTiltDeg is a crash, UnderRotated when ErrorAlongSpin >= 0, otherwise
 	 *   OverRotated; yaw (folded) over Sketchy.MaxYawDeg is a crash, Sideways;
@@ -202,7 +209,9 @@ namespace LandingEvaluator
 	 *   also needs the kite at StompedMinKiteElevationDeg or higher and g at StompedMaxLandingG
 	 *   or lower, else it is clean. A hot landing (kite under HotLandingKiteElevationDeg, sink over
 	 *   HotLandingSinkMS or bHotLanding) or g over SketchyMinLandingG is at best sketchy, with
-	 *   cause KiteTooLow (kite low or the board's hot flag alone) or TooHard (sink or g).
+	 *   cause KiteTooLow (kite low or the board's hot flag alone) or TooHard (sink or g);
+	 * - a back foot still returning to its strap (BackFoot Returning) is at best sketchy, cause
+	 *   FootLate, which is named before the kite and the g.
 	 * A non-finite tilt, yaw or g fails its limit.
 	 */
 	KITESURF_API FLandingVerdict Evaluate(const FLandingInputs& Inputs, const FLandingThresholds& Thresholds = FLandingThresholds());

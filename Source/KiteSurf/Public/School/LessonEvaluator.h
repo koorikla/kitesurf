@@ -4,6 +4,9 @@
 #include "School/LessonTypes.h"
 #include "School/LessonTelemetry.h"
 #include "Tricks/TrickTypes.h"
+
+#include <limits>
+
 #include "LessonEvaluator.generated.h"
 
 struct FJumpRecord;
@@ -130,6 +133,18 @@ namespace LessonEval
 	inline constexpr float HeadingBeforeTakeoffSeconds = 0.3f;
 	/** KiteLeadAtTransition looks for the kite crossing 12 within this long either side of the change (s). */
 	inline constexpr float KiteCrossingSearchSeconds = 4.0f;
+	/**
+	 * UpwindGain and DistanceRidden: a leg is lost (a missed attempt) when the rider has planed in it and then
+	 * stays off the plane this long (s): the speed collapsed, or a fall. A tack change starts a new leg on a
+	 * bEachTack objective, so a transition does not lose one. Estimate, tuned on rides (docs/tutorials.md 2.1).
+	 */
+	inline constexpr float LegLostSeconds = 2.0f;
+	/**
+	 * Fault diagnosis with no event being judged (a held objective's hint, a leg lost): rules read at the Event
+	 * anchor use the newest settled tack change only if it is at most this old (s), so a turn from long ago is not
+	 * taken for the cause. Estimate.
+	 */
+	inline constexpr float FaultEventMaxAgeSeconds = 4.0f;
 
 	KITESURF_API ELessonMetricSource GetMetricSource(ELessonMetric Metric);
 
@@ -168,9 +183,17 @@ namespace LessonEval
 	/** Stores an evaluation's progress. */
 	KITESURF_API void ApplyResult(FLessonProgress& Progress, const FObjectiveResult& Result);
 
-	/** The highest-priority fault whose measure compares true, the earlier on a tie; null when none matches. */
+	/**
+	 * The highest-priority fault whose measure compares true, the earlier on a tie; null when none matches.
+	 * EventTimeSeconds is the ride event being judged (a tack change, a dive's start), read by rules at the Event
+	 * anchor. Without one (not finite) those rules read the newest settled tack change only when it is at most
+	 * FaultEventMaxAgeSeconds old, and do not match otherwise.
+	 */
 	KITESURF_API const FLessonFault* DiagnoseFault(const TArray<FLessonFault>& Faults, const FLessonTelemetry& Telemetry,
-		const FJumpRecord& Jump, const FLessonJumpExtras& Extras = FLessonJumpExtras());
+		const FJumpRecord& Jump, const FLessonJumpExtras& Extras = FLessonJumpExtras(), float EventTimeSeconds = std::numeric_limits<float>::quiet_NaN());
+
+	/** The measure is read at the Event anchor: a channel window placed there, or a transition metric. */
+	KITESURF_API bool ReadsEvent(const FLessonMeasure& Measure);
 
 	/** The pass objective with the star rules' higher-bar conditions added. */
 	KITESURF_API FLessonObjective HigherBarObjective(const FLessonDef& Lesson);

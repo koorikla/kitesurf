@@ -367,6 +367,30 @@ namespace LessonEvalPrivate
 		return true;
 	}
 
+	/**
+	 * A leg that began at LegStart is lost: the newest samples have been off the plane for LegLostSeconds
+	 * without a break, the run starting after LegStart, and the rider planed in the leg before it.
+	 */
+	bool IsLegLost(const FLessonTelemetry& Telemetry, float LegStart)
+	{
+		auto OffPlane = [&Telemetry](int32 I) { return Telemetry.Get(I).BoardState != EBoardState::Planing; };
+		const float Off = Telemetry.TrailingTimeWhere(OffPlane, LegStart);
+		if (Off < LessonEval::LegLostSeconds)
+		{
+			return false;
+		}
+		const float RunStart = Telemetry.LatestTime() - Off;
+		for (int32 I = 0; I < Telemetry.Num(); ++I)
+		{
+			const FLessonSample& S = Telemetry.Get(I);
+			if (S.TimeSeconds >= LegStart && S.TimeSeconds < RunStart && S.BoardState == EBoardState::Planing)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** Where upwind gain and distance start: the reference, the step start, or with bEachTack the last tack change after them. */
 	float RideBaseTime(const FLessonObjective& Objective, const FLessonProgress& P, const FLessonTelemetry& Telemetry)
 	{
@@ -464,6 +488,15 @@ namespace LessonEvalPrivate
 			if (bReady && Latest.TimeSeconds > P.LastEventTimeSeconds)
 			{
 				CountEvent(Objective, R, true, Latest.Tack, Value);
+				P.LastEventTimeSeconds = Latest.TimeSeconds;
+				P.ReferenceTimeSeconds = Latest.TimeSeconds;
+				P.ReferenceUpwindM = Latest.UpwindM;
+			}
+			else if (IsLegLost(Telemetry, FMath::Max(Base, P.LastEventTimeSeconds)))
+			{
+				// Planed in this leg, then off the plane for LegLostSeconds: the leg is a missed attempt, and
+				// the next one is measured from here.
+				CountEvent(Objective, R, false, Latest.Tack, Value);
 				P.LastEventTimeSeconds = Latest.TimeSeconds;
 				P.ReferenceTimeSeconds = Latest.TimeSeconds;
 				P.ReferenceUpwindM = Latest.UpwindM;
@@ -792,14 +825,39 @@ void LessonEval::ApplyResult(FLessonProgress& Progress, const FObjectiveResult& 
 	Progress = Result.NewProgress;
 }
 
-const FLessonFault* LessonEval::DiagnoseFault(const TArray<FLessonFault>& Faults, const FLessonTelemetry& Telemetry,
-	const FJumpRecord& Jump, const FLessonJumpExtras& Extras)
+bool LessonEval::ReadsEvent(const FLessonMeasure& Measure)
 {
+	return (Measure.Metric == ELessonMetric::Channel && Measure.Anchor == ELessonAnchor::Event)
+		|| GetMetricSource(Measure.Metric) == ELessonMetricSource::Ride;
+}
+
+const FLessonFault* LessonEval::DiagnoseFault(const TArray<FLessonFault>& Faults, const FLessonTelemetry& Telemetry,
+	const FJumpRecord& Jump, const FLessonJumpExtras& Extras, float EventTimeSeconds)
+{
+	// The event the Event-anchored rules read: the one judged, or a recent settled tack change, or none.
+	float EventTime = EventTimeSeconds;
+	bool bHasEvent = FMath::IsFinite(EventTime);
+	if (!bHasEvent && !Telemetry.IsEmpty())
+	{
+		const TArray<float> Changes = Telemetry.FindTackChanges();
+		for (int32 I = Changes.Num() - 1; I >= 0; --I)
+		{
+			const float Age = Telemetry.LatestTime() - Changes[I];
+			if (Age >= TransitionSettleSeconds)
+			{
+				bHasEvent = Age <= FaultEventMaxAgeSeconds;
+				EventTime = Changes[I];
+				break;
+			}
+		}
+	}
 	const FLessonFault* Best = nullptr;
 	for (const FLessonFault& Fault : Faults)
 	{
 		float Value = 0.0f;
-		if (!ReadMeasure(Fault.Measure, Telemetry, &Jump, Extras, LessonEvalPrivate::NoEvent, Value)
+		const bool bEvent = ReadsEvent(Fault.Measure);
+		if ((bEvent && !bHasEvent)
+			|| !ReadMeasure(Fault.Measure, Telemetry, &Jump, Extras, bEvent ? EventTime : LessonEvalPrivate::NoEvent, Value)
 			|| !Compare(Fault.Compare, Value, Fault.Threshold))
 		{
 			continue;

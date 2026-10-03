@@ -116,7 +116,8 @@ The kite games on Steam have a training mode at most (Winds Up) or nothing struc
 Six chapters and 28 lessons. Each lesson has a prerequisite, a drill set-up, a pass criterion
 the game measures, and the common mistakes with the feedback line the game shows. "12" is the
 zenith; kite elevation is in degrees above the water. Winds are the lesson's default and the
-player can raise them.
+player can raise them. The tables keep the original estimates; section 2.1 lists what the catalogue
+uses after tuning on rides.
 
 ### A. Riding (10 to 14 kn)
 
@@ -179,6 +180,77 @@ player can raise them.
 The trick lessons that come after these (grab variations, board-offs, KGB and so on) use the same
 lesson format. Each one is generated from the trick book's names, with the trick's prerequisite
 from `docs/tricks.md` as its gate.
+
+### 2.1 Tuned on rides
+
+S6 (2026-10-03) rode every available lesson under `-nullrhi`: a competent scripted ride and a ride with
+the lesson's typical mistake, both from the player's default start (the bar in the middle with BAR TO
+MIDDLE), through `ALessonDirector` (`KiteSurf.School.Ride<Id>` in
+`Source/KiteSurf/Private/Tests/SchoolLessonRideTests.cpp`). The scripted hands work as a player's do:
+the bar through the player's sheet input, the steering, the edge and the jump button. The thresholds
+and set-ups below are the ones the catalogue now uses. They are still estimates, now set against
+measured rides on the physics of 2026-10-03. The tables above keep the original estimates.
+
+| # | Set-up before → after | Pass before → after | Competent ride measured | Mistake ride → line shown |
+| --- | --- | --- | --- | --- |
+| A1 | 12 kn → **14 kn** | Back above 70° within 2 s → **within 10 s** (6 dives, under 55°, never under 30°) | Dives of about 8 s to 46-48°; six in 62 s | Turned back at 40°: down to 29.9° → "Turn it back up before 45°" |
+| A2 | — | Planing within 4 s → **6 s**, then 50 m on each tack | Planing at 3.8 s; both legs done at 28 s | Weight on the nose once up: the board carves off the kite and the leg is lost → "Point the nose at the kite" |
+| A3 | — | ±15% of 15 kn → **±15% of 12 kn** for 20 s, kite 35-55° | Held 6.2 m/s; passed at 32 s with two stars (higher bar met) | Kite parked high: never past step 1; the HUD hint reads "Kite too high: fly it at 45°" |
+| A4 | — | 50 m upwind on each tack (unchanged) | 25° above the beam, about 2.2 m/s upwind; passed at 99 s, no failed legs | Carved 55° up at once: speed gone, leg lost → "Ease the edge" |
+| A5 | 12 kn → **14 kn** | 3 turns keeping 70% of the speed (unchanged) | Kept 0.78, 0.94 and 0.78 | Kite steered slowly through the turn → "Steer the kite faster through the turn" |
+| A7 | No assists → **auto-edge** | At most 0.1 s off the plane (unchanged) | **Not passable**: off the plane for 2.6 to 3.9 s of the 4 s round the tack change, with the kite's lead in A7's band (0.5 to 1.6 s) | Kite across long before the board → "The kite left the power too soon" |
+| B1 | — | 0.5 m popped, kite moving under 10° (unchanged) | Pops of 1.0 to 1.1 m, the kite moving 1.5 to 4.3° | A fast send popped at 45°, a kite jump (the kite rises 11 to 14°) → "You lifted the kite: pop with the board" |
+| B2 | — | Step 1 kite over 80° → **75°**; jumps 1 to 2 m Clean, five in a row, **with the bar kept out while the kite climbed** | Five jumps of 1.6 to 1.7 m Stomped (two stars); five sheet-ins graded Perfect | Bar in at 45° while the kite climbs → "Bar out while it climbs, in at 12" |
+| B3 | — | 3 to 5 m → **1.5 to 5 m**, Clean, dive 0.15 to 1 s before touchdown | 1.85 m Stomped, dive 0.56 to 0.60 s before touchdown | Hard, flat send: the kite still climbing at touchdown → "Dived late: no pull, you sank" |
+| B5 | — | Heading ≥ 120°, Clean (unchanged); too fast 10 → **2.5 m/s** | 174° Stomped on the first jump, from a take-off at about 0.5 m/s | Hard send popped at speed → "Pop harder to kill your speed" |
+| B6 | 10 kn on the Boost → **14 kn on the loop kite** | A completed loop round a tack change, no fall (unchanged) | Passed at 19 s, on the second tack change; the first came before its loop finished | Let go mid-loop → "Keep steering until the kite climbs" |
+
+What the rides showed:
+
+- **The kite is slow.** Over a floating or slow rider the kite at 12 moves 5 to 10° a second. A2's
+  water start still planes in 3.8 s in 12 kn, but A1's dive needs about 8 s in 14 kn and 10 to 13 s in
+  12 kn.
+- **Part of the bar.** A full bar reversed against a kite flying along the window edge asks the steering
+  assist for a heading more than 180° round, which it reaches through the bottom of the window: the
+  kite goes into the water. The rides steer with 0.35 to 0.6 of the bar for that reason. Players will
+  meet this too.
+- **Light wind and the board.** In 12 kn the kite between 35 and 55° pulls the rider at 5.6 to
+  6.5 m/s, and fully sheeted in it stalls. In 10 kn the medium board does not plane at all. Without
+  auto-edge the board rides flat and slows to 3 m/s unless the jump button's load is held.
+- **Transitions.** Flying the kite over the top after slowing down works in 14 kn: the kite is then dived
+  down the new side to pull the rider away, as in a water start. In 12 kn it often stalls at 12 and
+  the rider stops.
+- **The send takes the speed.** Popped with the kite at the top, B2's jumps leave at 0.3 to 2.5 m/s and
+  reach 1.8 to 2.0 m in 14 kn or 16 kn. A hard send popped at 45° reached 3.3 m once, but left the kite
+  at 45° with nothing to dive from.
+- **One "kite at the top".** `LessonTelemetry::KiteTopDeg` (75°) is now one number for four things:
+  B2's step 1, the slow-motion cue (`IsKiteAtTop`: 75° or more, or 70° once the kite has stopped
+  climbing), the sheet-in grade (Perfect there, Good from 60°) and the sheeted-in-while-climbing rule's
+  ceiling. Before, the cue fired as low as 70° on a send that topped out there. The grade called that
+  moment Good, and the climbing rule could fault it.
+- **Fault rules.** A rule read at a tack change now reads only a recent change (settled, at most 4 s old)
+  when no event is being judged. Before, a held objective's hint could blame a turn from 20 s earlier.
+  An upwind or distance leg the rider planed in and then stayed off the plane for 2 s is now a missed
+  attempt, so A2's and A4's lines can show. A tack change starts a new leg, so a turn does not lose one.
+
+Left for the user:
+
+- **A7 is not passable on today's physics.** Measured on the best carving transition found: 2.6 to
+  3.9 s off the plane in the 4 s round the tack change (the pass allows 0.1 s). Crossing the kite over
+  the top takes 2 to 3 s in 14 kn. Carving downwind at about the wind's speed leaves the kite with no
+  apparent wind, so its lines go slack and the board drops off the plane; it planes again about 1 s
+  after the change. The threshold is unchanged. `KiteSurf.School.RideA7` rides the transition and
+  records these numbers, and checks the mistake ride's line.
+- **B3's dive is not under the rider's control.** A kite at 12 over a rider in the air barely answers
+  the bar: a full bar for 1 s moves it under 5°. The dive measure reads 0.56 to 0.60 s before
+  touchdown with or without the steer, so B3 now passes on keeping the kite high and fails on a flat,
+  hard send. The 4 m slow-motion cue is kept.
+- **B6 counts its loop late.** The rider's first tack change comes before the loop finishes (the loop
+  is counted from 4 s before the change to 2 s after it). The competent ride passes on its second
+  change.
+- **Docs mistakes the physics does not produce.** In A2 the board held square in the water start is
+  turned to the pull by the harness, and no fall followed a nose-weighted start. The mistake ride
+  therefore loses the leg after the start, and the line shown is "Point the nose at the kite".
 
 ## 3. Design
 
@@ -300,15 +372,18 @@ struct FLessonDef {
 - **Ghost kite.** A translucent kite at the target position. It follows the expert run by phase
   (send, 12, hang, dive), not by wall clock.
 - **Timing grades.** The moment of the action shows Early, Good, Perfect or Late, OlliOlli style:
-  - sheet in against the kite reaching 80 to 90°;
+  - sheet in against the kite at the top (75° or more, or 70° once it has stopped climbing: the
+    moment the slow-motion cue marks), Good from 60°;
   - the stomp against peak edge load;
   - the back-hand steer at about 4 m and the front-hand dive at 1 to 2 m;
   - the loop start against the apex.
 - **Slow motion.** Only at the step's one decision point (the kite at the top of a send, the 4 m landing
   cue), with one prompt. It switches off after three Clean attempts. Built in S8 (#101): the step's
   `SlowMoCue` and the slow-motion assist; 0.6x for about 0.6 s, eased in and out over real time
-  (estimates). The kite counts as at the top at 80 deg, or within 10 deg of it once it stops climbing:
-  loaded for the pop on B2's 14 kn set-up it tops out near 74 deg. The simulation keeps its fixed
+  (estimates). The kite counts as at the top at 75°, or within 5° of it once it stops climbing
+  (S6, tuned on rides): loaded for the pop on B2's 14 kn set-up it tops out at 74 to 79°. The cue,
+  the sheet-in grade, B2's step 1 and the sheeted-in-while-climbing rule use the same top
+  (`LessonTelemetry::KiteTopDeg`). The simulation keeps its fixed
   240 Hz steps, so the ride in sim time is the same with or without it.
 - **Diagnosis rules.** Each common mistake is a test on the jump record or the last seconds of
   telemetry:
@@ -358,7 +433,7 @@ Each task ships with `KiteSurf.School.*` automation tests and follows the merge-
 | S3 | **Done** (#91). `ALessonDirector`: set-up, state machine, pass and fail, drop-back offer; `ULessonSubsystem::StartLesson` opens `L_FlatWater` (or starts in the ride) and `kitesurf.Lesson <Id> [force]` | A scripted ride passes lesson B2 under `-nullrhi`; a bad send fails with "Bar out while it climbs" | M | S1, S2 |
 | S4 | **Done** (#98). HUD lesson layer: prompt with glyph, objective progress, window-arc target zones, ghost kite, timing grades, result card with stars (`School/LessonHUD.h`, `School/LessonTiming.h`, `KiteSurf.HUD.Lesson*` tests) | `KiteSurf.HUD.Lesson*` text and state tests; seen in a `-game` run | M | S3 |
 | S5 | **Done** (#96). School menu from the main and pause menus: chapter map, tiles with stars and lock state, detail panel with best result and attempts, Start, Watch demo, wind and assists for reruns, Continue, overall progress, reset with confirm, Retry, Next and Lesson menu on the result card | Menu navigation tests like the gear screen's; a locked lesson cannot start; rerunning a passed lesson keeps the best stars; seen in a `-game` run | M | S2 |
-| S6 | Chapters A and B as data (A6 waits for toeside riding, B4 for grabs), text prompts only | A scripted ride passes each lesson's test | M | S3, S4 |
+| S6 | **Done** (#105). Chapters A and B tuned on rides (section 2.1): a competent scripted ride passes and a typical mistake fails with its line, from the player's default start (`KiteSurf.School.Ride*`); one "kite at the top" for B2's step, cue, grade and climbing rule; fault rules read only recent tack changes; a lost upwind or distance leg is a missed attempt. A7 is left unpassable (section 2.1) | A scripted ride passes each lesson's test | M | S3, S4 |
 | S7 | **Done** (#100). Replace today's four-step onboarding with A1 to A3 and a guided first jump; keep the skip option (`School/SchoolOnboarding.h`: PLAY on a first run starts A1, SKIP TUTORIAL in the pause menu, passing A3 completes it and points to B2 or the School menu; `KiteSurf.School.Onboarding*` tests) | First run starts lesson A1; "skip" goes to free ride | S | S6 |
 | S8 | **Done** (#101). Slow motion at decision points (`FLessonSlowMoCue` per step, B2 and B3, `KiteSurf.School.SlowMo*` tests); the drop-back offer now needs reset held for 1 s | Time dilation on and off around the cue; the simulation stays deterministic in fixed steps | S | S3 |
 | S9 | Chapters C to F as data, as their trick features land | Per lesson, as S6 | M each | Tricks T1, T2.1, T3; phase 3 redirect; kickers |

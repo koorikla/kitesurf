@@ -20,6 +20,8 @@
 #include "UI/KiteSurfPauseMenuWidget.h"
 #include "UObject/UObjectIterator.h"
 #include "KiteSurfUnits.h"
+#include "InputActionValue.h"
+#include "School/LessonTiming.h"
 #include "Capture/KiteSurfCinematicCamera.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/PlayerController.h"
@@ -302,6 +304,12 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.PopAtTop"),
+			TEXT("While on (1), pops the player's rider at the top of a send, as a rider timing it by eye: with the load held on the water and the kite at the top (LessonTiming::IsKiteAtTop, the kite school's sheet-in moment), the bar comes in and the load is let go a moment later; on the way down it crouches for the landing. For scripted lesson rides (kite school B2). Usage: kitesurf.PopAtTop <0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateRaw(this, &FKiteSurfGameModule::HandlePopAtTop),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.State"),
 			TEXT("Logs the player's ride in one line: board state, speed, height, kite position, line tension and the bar. For scripting rides."),
 			FConsoleCommandDelegate::CreateLambda([]()
@@ -542,6 +550,12 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.State"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.HoldKite"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.PopAtTop"));
+		if (PopAtTopHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(PopAtTopHandle);
+			PopAtTopHandle.Reset();
+		}
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Kite"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Shot"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.CaptureFrames"));
@@ -581,6 +595,93 @@ private:
 			}
 		}
 		return nullptr;
+	}
+
+	FTSTicker::FDelegateHandle PopAtTopHandle;
+	float PopAtTopLastElevation = -1.0f;
+	/** Seconds of game time since the bar came in at the top; below 0 while waiting for the top. */
+	float PopAtTopBarInSeconds = -1.0f;
+	/** The rider crouched for the landing (let go once back on the water, without a pop). */
+	bool bPopAtTopCrouched = false;
+
+	void HandlePopAtTop(const TArray<FString>& Args)
+	{
+		if (PopAtTopHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(PopAtTopHandle);
+			PopAtTopHandle.Reset();
+		}
+		PopAtTopLastElevation = -1.0f;
+		PopAtTopBarInSeconds = -1.0f;
+		bPopAtTopCrouched = false;
+		if (!Args.IsValidIndex(0) || FCString::Atoi(*Args[0]) == 0)
+		{
+			return;
+		}
+		PopAtTopHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([this](float)
+		{
+			AKiteRiderPawn* Rider = FindPlayerRider();
+			const UKiteComponent* Kite = Rider ? Rider->GetKite() : nullptr;
+			const UBoardMovementComponent* Board = Rider ? Rider->GetBoardMovement() : nullptr;
+			const UWorld* World = Rider ? Rider->GetWorld() : nullptr;
+			if (!Kite || !Board || !World)
+			{
+				return true;
+			}
+			const float Dt = World->GetDeltaSeconds();
+			const float Elevation = Kite->GetElevationDeg();
+			const float ClimbRate = PopAtTopLastElevation >= 0.0f && Dt > KINDA_SMALL_NUMBER ? (Elevation - PopAtTopLastElevation) / Dt : UE_BIG_NUMBER;
+			PopAtTopLastElevation = Elevation;
+			// In the air: crouch on the way down for the landing, and stand again once back on the water.
+			const bool bAirborne = Board->GetBoardState() == EBoardState::Airborne;
+			if (bAirborne)
+			{
+				PopAtTopBarInSeconds = -1.0f;
+				if (Board->Velocity.Z < 0.0f && !Board->IsLoadHeld())
+				{
+					Rider->SetLoadHeld(true);
+					bPopAtTopCrouched = true;
+				}
+				return true;
+			}
+			if (bPopAtTopCrouched)
+			{
+				Rider->SetLoadHeld(false);
+				bPopAtTopCrouched = false;
+				return true;
+			}
+			const bool bLoadedOnWater = Board->IsLoadHeld() && !Board->IsCrashing();
+			if (!bLoadedOnWater)
+			{
+				PopAtTopBarInSeconds = -1.0f;
+				return true;
+			}
+			if (PopAtTopBarInSeconds < 0.0f)
+			{
+				if (LessonTiming::IsKiteAtTop(Elevation, ClimbRate))
+				{
+					// The bar in at the top (0.8 with the bar springing about the middle), then the pop.
+					Rider->OnSheetTriggered(FInputActionValue(0.6f));
+					PopAtTopBarInSeconds = 0.0f;
+					UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.PopAtTop: kite at the top (%.1f deg, climbing %.1f deg/s): bar in"), Elevation, ClimbRate);
+				}
+				return true;
+			}
+			PopAtTopBarInSeconds += Dt;
+			if (PopAtTopBarInSeconds >= 0.15f)
+			{
+				Rider->ReleaseLoadAndPop();
+				// Off the edge and the tail for the flight: a held edge yaws the board in the air.
+				Rider->EdgeBoard(0.0f);
+				if (UBoardMovementComponent* RiderBoard = Rider->GetBoardMovement())
+				{
+					RiderBoard->SetWeightShift(0.0f);
+				}
+				PopAtTopBarInSeconds = -1.0f;
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.PopAtTop: pop"));
+			}
+			return true;
+		}));
 	}
 
 	FTSTicker::FDelegateHandle HoldKiteHandle;

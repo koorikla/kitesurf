@@ -44,6 +44,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	static FString FormatLandingCard(float LandingG, bool bHot, bool bClean);
 
+	/** The frame-rate readout, "FPS: 60", from a frame's real length (s). */
+	static FString FormatFPS(float RealFrameSeconds);
+
+	/**
+	 * The frame length the frame-rate readout uses: the world's real, undilated delta (s). A lesson's slow motion
+	 * dilates game time, not the frames, so the dilated delta would read 0.6x the frame rate. 0 without a world.
+	 */
+	static float GetRealFrameSeconds(const UWorld* World);
+
+	/**
+	 * A finished jump is a new best for the readout: landed (not crashed), higher than the best landed jump before
+	 * it, and there was one. A crashed jump never is, however high.
+	 */
+	static bool IsNewBestJump(float ApexCm, float BestLandedBeforeCm, bool bLandedClean);
+
+	/** "NEW BEST" is drawn under the finished jump: a new best, the readout showing its result, and the trick card not a crash. */
+	bool ShouldShowNewBest() const;
+
 	/**
 	 * Shows the landing card for LandingCardSeconds when the board has landed since the last call
 	 * (UBoardMovementComponent::GetLandingCount), and counts it down by DeltaTime. DrawHUD calls it with
@@ -130,7 +148,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetJumpReadoutText() const { return JumpReadoutText; }
 
-	/** Whether the jump being shown beat the session's best height. */
+	/** Whether the jump being shown beat the session's best landed height (a crash never does). */
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	bool IsJumpReadoutNewBest() const { return bJumpReadoutNewBest; }
 
@@ -290,6 +308,7 @@ protected:
 	FString JumpReadoutText;
 	float JumpResultRemainingTime = 0.0f;
 	int32 SeenJumpCount = 0;
+	/** The highest jump landed (not crashed) so far (cm). */
 	float BestHeightBeforeJumpCm = 0.0f;
 	bool bJumpReadoutNewBest = false;
 	bool bJumpReadoutLive = false;

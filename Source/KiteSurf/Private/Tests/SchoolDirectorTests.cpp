@@ -131,6 +131,7 @@ namespace SchoolDirectorTest
 		int32 Sends = 0;
 		/** While this director is on its first step ("send the kite to 12"), hold the send until it moves on. */
 		const ALessonDirector* WaitOnFirstStep = nullptr;
+		bool bWaited = false;
 
 		void Step(AKiteRiderPawn* Pawn, float Dt)
 		{
@@ -175,6 +176,15 @@ namespace SchoolDirectorTest
 					// The first step asks for the kite at 12 and nothing else: ride on and fly it up with the bar out.
 					Pawn->SetLoadHeld(false);
 					Board->SetWeightShift(0.0f);
+					bWaited = true;
+					break;
+				}
+				if (bWaited)
+				{
+					// The first step is done with the kite at the top: ride again and start a send from low down.
+					bWaited = false;
+					Phase = EPhase::Ride;
+					PhaseSeconds = 0.0f;
 					break;
 				}
 				if (AtTopSeconds >= PopHoldSeconds || PhaseSeconds > MaxSendSeconds)
@@ -257,7 +267,7 @@ bool FKiteSurfSchoolDirectorPassesB2::RunTest(const FString& Parameters)
 	FJumpRider Rider;
 	Rider.WaitOnFirstStep = Fx.Director;
 	const bool bFirstStep = RideUntil(Fx, Rider, 40.0f, [&] { return Fx.Director->GetStepIndex() == 1; });
-	TestTrue(TEXT("Step 1 (send the kite to 12) is met: the kite went over 80 deg"), bFirstStep);
+	TestTrue(TEXT("Step 1 (send the kite to 12) is met: the kite went over the top (LessonTiming::SheetPerfectMinDeg)"), bFirstStep);
 	TestEqual(TEXT("Step 2 prompts the bar in at 12"), Fx.Director->GetPrompt().ToString(), FString(TEXT("Bar in at 12")));
 	TestEqual(TEXT("Step 2's glyph is the bar"), Fx.Director->GetInputGlyph(), FName(TEXT("IA_Sheet")));
 	TestEqual(TEXT("Step 2's cue is the timing ring"), Fx.Director->GetCue(), ELessonCue::TimingRing);
@@ -432,7 +442,7 @@ bool FKiteSurfSchoolDirectorAppliesSetup::RunTest(const FString& Parameters)
 	FLessonRunOptions Lower;
 	Lower.WindKnots = 6.0f;
 	Fx.Director->BeginLesson(*A1, Fx.Pawn, Lower);
-	TestNearlyEqual(TEXT("A run cannot lower the lesson's wind"), KiteUnits::CmSToKnots(Wind->BaseWind.Size()), 12.0f, 0.01f);
+	TestNearlyEqual(TEXT("A run cannot lower the lesson's wind"), KiteUnits::CmSToKnots(Wind->BaseWind.Size()), A1->Setup.WindKnots, 0.01f);
 	TestTrue(TEXT("Without the override the lesson's assists: A1 auto-park"), Kite->bParkHoldAssist);
 	TestEqual(TEXT("Unsupported starts: standing floats, airborne rides"),
 		FString::Printf(TEXT("%d %d"), int32(ALessonDirector::SupportedStart(ELessonStart::Standing)), int32(ALessonDirector::SupportedStart(ELessonStart::Airborne))),

@@ -621,9 +621,27 @@ void ALessonDirector::OnAttemptFailed(const FJumpRecord* Jump, const FLessonJump
 {
 	++StepFailures;
 	const FLessonFault* Fault = nullptr;
+	// A missed tack change or kite dive is the event its Event-anchored rules read; other misses have none
+	// (DiagnoseFault then reads only a recent tack change).
+	float EventTime = std::numeric_limits<float>::quiet_NaN();
+	if (const FLessonObjective* Objective = GetCurrentObjective())
+	{
+		switch (Objective->Metric)
+		{
+		case ELessonMetric::Transition:
+		case ELessonMetric::TransitionSpeedKept:
+		case ELessonMetric::TransitionNotPlaningSeconds:
+		case ELessonMetric::KiteLeadAtTransition:
+		case ELessonMetric::KiteDives:
+			EventTime = StepProgress.LastEventTimeSeconds;
+			break;
+		default:
+			break;
+		}
+	}
 	if (Jump)
 	{
-		Fault = LessonEval::DiagnoseFault(Lesson.Faults, Telemetry, *Jump, Extras);
+		Fault = LessonEval::DiagnoseFault(Lesson.Faults, Telemetry, *Jump, Extras, EventTime);
 	}
 	else
 	{
@@ -636,7 +654,7 @@ void ALessonDirector::OnAttemptFailed(const FJumpRecord* Jump, const FLessonJump
 				RideFaults.Add(F);
 			}
 		}
-		const FLessonFault* Found = LessonEval::DiagnoseFault(RideFaults, Telemetry, FJumpRecord(), FLessonJumpExtras());
+		const FLessonFault* Found = LessonEval::DiagnoseFault(RideFaults, Telemetry, FJumpRecord(), FLessonJumpExtras(), EventTime);
 		if (Found)
 		{
 			Fault = Lesson.Faults.FindByPredicate([Found](const FLessonFault& F) { return F.Id == Found->Id; });

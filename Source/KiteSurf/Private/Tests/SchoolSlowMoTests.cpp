@@ -114,6 +114,8 @@ namespace SchoolSlowMoTest
 				{
 					Pawn->SetLoadHeld(false);
 					Board->SetWeightShift(0.0f);
+					// The send's clock starts when the step that asks for the kite at 12 is done.
+					PhaseSeconds = 0.0f;
 					break;
 				}
 				if (AtTopSeconds >= PopHoldSeconds || StalledSeconds >= StalledPopSeconds || PhaseSeconds > MaxSendSeconds)
@@ -306,9 +308,12 @@ bool FKiteSurfSchoolSlowMoCues::RunTest(const FString& Parameters)
 		// A loaded send that tops out under 80 deg: the top of the climb is the decision point.
 		FSlowMoArm Loaded;
 		TestFalse(TEXT("Climbing through 60 deg"), DetectSlowMoCue(AtTop, SlowMoSample(0.0f, EBoardState::Planing, 60.0f, 0.5f), Loaded));
-		TestFalse(TEXT("Climbing through 70 deg at 10 deg/s"), DetectSlowMoCue(AtTop, SlowMoSample(1.0f, EBoardState::Planing, 70.0f, 0.5f), Loaded));
-		TestFalse(TEXT("Still climbing at 73 deg"), DetectSlowMoCue(AtTop, SlowMoSample(1.5f, EBoardState::Planing, 73.0f, 0.5f), Loaded));
-		TestTrue(TEXT("Stopped climbing at 74 deg (under 2 deg/s): the top"), DetectSlowMoCue(AtTop, SlowMoSample(2.0f, EBoardState::Planing, 73.8f, 0.5f), Loaded));
+		TestFalse(TEXT("Climbing through 72 deg at 12 deg/s"), DetectSlowMoCue(AtTop, SlowMoSample(1.0f, EBoardState::Planing, 72.0f, 0.5f), Loaded));
+		TestFalse(TEXT("Still climbing at 75 deg (inside the band, but climbing)"), DetectSlowMoCue(AtTop, SlowMoSample(1.5f, EBoardState::Planing, 75.0f, 0.5f), Loaded));
+		TestTrue(TEXT("Stopped climbing at 76 deg (under 2 deg/s, within SlowMoTopBandDeg of 80): the top"), DetectSlowMoCue(AtTop, SlowMoSample(2.0f, EBoardState::Planing, 75.8f, 0.5f), Loaded));
+		FSlowMoArm Under;
+		DetectSlowMoCue(AtTop, SlowMoSample(0.0f, EBoardState::Planing, 73.8f, 0.5f), Under);
+		TestFalse(TEXT("Stopped at 74 deg: more than SlowMoTopBandDeg under 80"), DetectSlowMoCue(AtTop, SlowMoSample(1.0f, EBoardState::Planing, 73.8f, 0.5f), Under));
 		FSlowMoArm Low;
 		DetectSlowMoCue(AtTop, SlowMoSample(0.0f, EBoardState::Planing, 66.0f, 0.5f), Low);
 		TestFalse(TEXT("Stopped at 66 deg: too far under the top"), DetectSlowMoCue(AtTop, SlowMoSample(1.0f, EBoardState::Planing, 66.0f, 0.5f), Low));
@@ -340,7 +345,7 @@ bool FKiteSurfSchoolSlowMoCues::RunTest(const FString& Parameters)
 			|| DetectSlowMoCue(Descending, SlowMoSample(3.1f, EBoardState::Airborne, 85.0f, 0.9f, 0.25f, -1.0f), Arm));
 	}
 
-	// The catalogue: B2's sheet-in step at 80 deg and both B3 steps at 4 m, each lesson with the
+	// The catalogue: B2's sheet-in step at the top (LessonTiming::SheetPerfectMinDeg) and both B3 steps at 4 m, each lesson with the
 	// slow-motion assist on; nothing else.
 	for (const FLessonDef& L : LessonCatalog::GetAll())
 	{
@@ -362,7 +367,7 @@ bool FKiteSurfSchoolSlowMoCues::RunTest(const FString& Parameters)
 	if (TestTrue(TEXT("B2 and B3"), B2 && B3))
 	{
 		TestEqual(TEXT("B2: the kite at the top"), B2->Steps[1].SlowMo.Trigger, ELessonSlowMoTrigger::KiteAtTop);
-		TestEqual(TEXT("B2: at 80 deg"), B2->Steps[1].SlowMo.Threshold, 80.0f);
+		TestEqual(TEXT("B2: at the top, the same threshold as the sheet-in grade's Perfect and step 1"), B2->Steps[1].SlowMo.Threshold, LessonTiming::SheetPerfectMinDeg);
 		TestEqual(TEXT("B2: \"Bar in now\""), B2->Steps[1].SlowMo.Prompt.ToString(), FString(TEXT("Bar in now")));
 		TestEqual(TEXT("B3: the rider coming down"), B3->Steps[0].SlowMo.Trigger, ELessonSlowMoTrigger::RiderDescending);
 		TestEqual(TEXT("B3: at 4 m"), B3->Steps[0].SlowMo.Threshold, 4.0f);
@@ -411,7 +416,7 @@ bool FKiteSurfHUDLessonSlowMoPrompt::RunTest(const FString& Parameters)
 	return true;
 }
 
-// B2 on a rider: slow motion starts at the decision point (the kite reaching 80 deg as the bar-in
+// B2 on a rider: slow motion starts at the decision point (the kite at the top as the bar-in
 // step starts), writes the world's time dilation down to 0.6x and back on its real-time schedule,
 // shows its prompt through the HUD layer, and leaves the world at exactly 1 afterwards.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfSchoolSlowMoEngagesAndReleases, "KiteSurf.School.SlowMoEngagesAndReleases", SchoolSlowMoTest::Flags)
@@ -441,7 +446,7 @@ bool FKiteSurfSchoolSlowMoEngagesAndReleases::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Step 2's slow motion is on"), Fx.Director->IsSlowMotionOnForStep());
 	TestTrue(TEXT("Slow motion starts with step 2: the kite is at the top and the bar not in yet"), Fx.Director->IsSlowMotionActive());
 	TestEqual(TEXT("One slow motion so far"), Fx.Director->GetSlowMotionSerial(), 1);
-	TestTrue(TEXT("...with the kite at 80 deg or more"), Fx.Pawn->GetKite()->GetElevationDeg() >= 80.0f);
+	TestTrue(TEXT("...with the kite at the top"), Fx.Pawn->GetKite()->GetElevationDeg() >= LessonTiming::SheetPerfectMinDeg - LessonTiming::SlowMoTopBandDeg);
 	TestEqual(TEXT("Its prompt"), Fx.Director->GetSlowMotionPrompt().ToString(), FString(TEXT("Bar in now")));
 	FLessonHUDLayer Layer;
 	Layer.Update(Fx.Director, RealFrameSeconds);

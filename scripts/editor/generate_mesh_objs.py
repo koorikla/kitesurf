@@ -499,8 +499,17 @@ def generate_rider_parts(output_dir):
     return paths
 
 
+# The foot straps, either side of the middle of the board along its length (cm). This is the rig's
+# RiderRig::StrapHalfSpacingCm (Source/KiteSurf/Public/RiderRig.h), which
+# Tricks/BoardGrabPoints.h shares: the rider's feet go there, so the loops must too. Change them together.
+STRAP_HALF_SPACING_CM = 30.0
+
+
 def generate_board_obj(filepath):
-    # Dimensions: length = 140 cm, width = 42 cm, thickness = 2.5 cm, rocker = 4 cm
+    # Dimensions: nominal length 138 cm (KiteGear.h's reference board, GetLengthScale = 1; the
+    # outline below runs x = +-70, 140 cm tip to tip), width = 42 cm, thickness = 2.5 cm, rocker = 4 cm.
+    # The outline, rocker and thickness are mirrored in Tricks/BoardGrabPoints.h (HalfWidthCm,
+    # RockerCm, DeckTopCm), whose grab points sit on this board.
     length_half = 70.0
     width_half = 21.0
     thickness_half = 1.25
@@ -639,8 +648,8 @@ def generate_board_obj(filepath):
 
     # Add foot straps
     strap_positions = [
-        (-20, 0),
-        (20, 0)
+        (-STRAP_HALF_SPACING_CM, 0),
+        (STRAP_HALF_SPACING_CM, 0)
     ]
     for sx, sy in strap_positions:
         u = (sx / length_half + 1.0) / 2.0

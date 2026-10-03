@@ -22,6 +22,36 @@ struct FRiderFootInput
 	TOptional<FVector> AnkleTarget;
 };
 
+/** Where a hand goes. */
+enum class ERiderHandTarget : uint8
+{
+	/** On the bar: the hand point SolveArmsPerHand is given for this side, elbow down and out. */
+	Bar,
+	/** On the board: FRiderHandInput::BoardSocket on SocketBoard (or the strapped board), elbow out to the side. */
+	BoardSocket,
+	/** Anywhere: FRiderHandInput::WorldTarget, elbow down and out unless told otherwise. */
+	Free,
+	/** Behind the back at the hip (RiderRig::BehindBackHand), elbow out and back. */
+	BehindBack
+};
+
+/**
+ * What one hand is asked to do. By default it is on the bar, exactly as SolveArms puts it. A target
+ * the arm cannot reach is clamped to the arm's reach along the line from the shoulder towards it.
+ */
+struct FRiderHandInput
+{
+	ERiderHandTarget Target = ERiderHandTarget::Bar;
+	/** Free: where the hand goes (world, cm). */
+	FVector WorldTarget = FVector::ZeroVector;
+	/** BoardSocket: the grip point on the board (board-local, cm), for example from BoardGrabPoints::SocketFor. */
+	FVector BoardSocket = FVector::ZeroVector;
+	/** BoardSocket: the board the socket is on (world). Unset, the strapped board, FRiderRigInput::Board. */
+	TOptional<FTransform> SocketBoard;
+	/** Which way the elbow points (world direction). Unset, the target's default pole (see ERiderHandTarget). */
+	TOptional<FVector> ElbowPole;
+};
+
 /** What the rider's body is asked to do. */
 struct FRiderRigInput
 {
@@ -44,8 +74,11 @@ struct FRiderRigInput
 	float Crouch = 0.0f;
 	/** Index 0 is the rider's left foot, 1 their right. */
 	FRiderFootInput Feet[2];
-	// Hands: SolveArms takes the hand points for now. T2.1 adds an FRiderHandInput Hands[2] here
-	// (bar, board socket, free pose or behind the back), next to Feet.
+	/**
+	 * Index 0 is the rider's left hand, 1 their right. Read by SolveArmsPerHand only: SolveBody and
+	 * SolveArms ignore it. Both on the bar (the default) gives exactly what SolveArms gives.
+	 */
+	FRiderHandInput Hands[2];
 };
 
 /** The whole figure, posed. Index 0 is the rider's left, 1 their right. */
@@ -77,7 +110,11 @@ namespace RiderRig
 	constexpr float StandingPelvisHeightCm = 80.0f;
 	constexpr float CrouchDropFraction = 0.4f;
 
-	/** The straps: either side of the middle of the board along its length, and how high the ankle sits above the deck. */
+	/**
+	 * The straps: either side of the middle of the board along its length, and how high the ankle
+	 * sits above the deck. This is the one strap spacing: Tricks/BoardGrabPoints.h takes it from
+	 * here, and generate_mesh_objs.py (STRAP_HALF_SPACING_CM) puts the board mesh's strap loops there.
+	 */
 	constexpr float StrapHalfSpacingCm = 30.0f;
 	constexpr float AnkleHeightCm = 7.0f;
 
@@ -101,6 +138,37 @@ namespace RiderRig
 
 	/** Puts the hands on these points (or as near as the arms reach). */
 	KITESURF_API void SolveArms(FRiderRigPose& Pose, const FVector& LeftHand, const FVector& RightHand);
+
+	/** Where the arm on this side (0 left, 1 right) starts: the shoulder, from the pose's pelvis and torso. */
+	KITESURF_API FVector ShoulderPosition(const FRiderRigPose& Pose, int32 Side);
+
+	/**
+	 * Solves one arm (0 left, 1 right) to put its hand on Hand, or as near as it reaches along the
+	 * line from the shoulder, with the elbow towards ElbowPole. The other arm is left as it is.
+	 */
+	KITESURF_API void SolveArm(FRiderRigPose& Pose, int32 Side, const FVector& Hand, const FVector& ElbowPole);
+
+	/** The bar's elbow pole: down and out (-Up + 0.6 Right on the right, mirrored on the left), what SolveArms uses. */
+	KITESURF_API FVector DefaultElbowPole(const FRiderRigPose& Pose, int32 Side);
+	/** Reaching for the board: the elbow out to the side and a little forwards (Right + 0.3 Front, mirrored). */
+	KITESURF_API FVector GrabElbowPole(const FRiderRigPose& Pose, int32 Side);
+	/** A hand behind the back: the elbow out and back (Right - 0.5 Front, mirrored). */
+	KITESURF_API FVector BehindBackElbowPole(const FRiderRigPose& Pose, int32 Side);
+	/** Where a hand behind the back goes: at the hip, 22 cm behind the pelvis, 6 cm to its side and 12 cm up. */
+	KITESURF_API FVector BehindBackHand(const FRiderRigPose& Pose, int32 Side);
+
+	/** Where FRiderRigInput::Hands[Side] asks that hand to go (world, cm); BarHand is its point on the bar. */
+	KITESURF_API FVector HandTarget(const FRiderRigPose& Pose, const FRiderRigInput& Input, int32 Side, const FVector& BarHand);
+	/** The elbow pole for FRiderRigInput::Hands[Side]: its ElbowPole if set, otherwise its target's default. */
+	KITESURF_API FVector HandElbowPole(const FRiderRigPose& Pose, const FRiderRigInput& Input, int32 Side);
+
+	/**
+	 * Solves each arm to its own target from FRiderRigInput::Hands: the bar point given here, a
+	 * socket on the board, a free point or behind the back. Out of reach, the hand stops at the
+	 * arm's reach on the line from the shoulder to the target. Both hands on the bar is exactly
+	 * SolveArms(Pose, BarLeft, BarRight).
+	 */
+	KITESURF_API void SolveArmsPerHand(FRiderRigPose& Pose, const FRiderRigInput& Input, const FVector& BarLeft, const FVector& BarRight);
 
 	/** Where to draw a limb part: at Start, with its bone (+X) along the line to End and its bend side (+Z) towards Pole. */
 	KITESURF_API FTransform SegmentTransform(const FVector& Start, const FVector& End, const FVector& Pole);

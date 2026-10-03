@@ -2031,7 +2031,8 @@ bool FKiteSurfPhysicsGoodLandingIsThreeToSixG::RunTest(const FString& Parameters
 	const float MinG = 3.0f;          // research
 	const float MaxG = 6.0f;
 	const FJumpResult Overhead = RunJump(true, true, TimedReleaseSeconds);
-	const FJumpResult KiteLow = RunJump(true, true, TimedReleaseSeconds, EKiteModel::Loop, 0.0f, 0.0f, 1.0f);
+	// A bar of 0.8 brings the kite down: in the air a full bar (AirLoopFullBarThreshold, 0.85) loops it.
+	const FJumpResult KiteLow = RunJump(true, true, TimedReleaseSeconds, EKiteModel::Loop, 0.0f, 0.0f, 0.8f);
 	for (const FJumpResult* Jump : { &Overhead, &KiteLow })
 	{
 		UE_LOG(LogKiteSurf, Log, TEXT("GoodLandingIsThreeToSixG: %s: %.1f m, %.2f s in the air; touched down sinking %.2f m/s with the kite %.1f deg up, over %.0f cm: %.2f g, hot %d, clean %d, rode away %d"),

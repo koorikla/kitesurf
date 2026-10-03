@@ -692,7 +692,7 @@ named and scored, and crash an under-rotation.
 | T2.1 | Grabs: hand plus zone, IK to board sockets, hold timing, tuck inertia | `KiteSurf.Trick.GrabNamesByHandAndZone`; `KiteSurf.Trick.GrabHoldCounts` (0.3 s minimum) | M |
 | T2.2 | One-footer | `KiteSurf.Trick.OneFooterFootReturns` | S |
 | T2.3 | Board-off: board follows the hand socket, re-catch, variants (plain, superman, tic tac, board pass) | `KiteSurf.Trick.BoardOffNotCaughtCrashes`; `KiteSurf.Trick.BoardOffCaughtLands` | M |
-| T2.4 | Loop families: contra, double and triple, S-loop and snake, heli-loop landing, early or late roll | `KiteSurf.Trick.ClassifiesLoops` on recorded loop sets | S |
+| T2.4 | Loop families: contra, double and triple, S-loop and snake, heli-loop landing, early or late roll; the kite's in-air loop entry so that S-loops and contra loops can be flown | `KiteSurf.Trick.ClassifiesLoops` on recorded loop sets; `KiteSurf.Kite.AirLoopFromAnyClock`, `KiteSurf.Kite.AirReverseMakesSLoop`, `KiteSurf.Kite.WaterLoopEntryUnchanged`, `KiteSurf.Kite.AirContraLoopIsContra` | S |
 | T2.5 | Best-three session and repeat devaluation (backlog F5) | `KiteSurf.Trick.SessionBestThree`, `SessionCrashScoresZero`, `SessionTakeoffBeforeHorn`, `SessionOnPawn`, `SessionHornMidAirOnPawn`, `SessionHUDFormatting`, `SessionBestPersists`, `SessionOldSaveLoads`, `SessionStartsFromPauseMenu` | S |
 | T2.6 | Failure cause messages (backlog F6) | `KiteSurf.Trick.FailureCauseNamed` | S |
 | T2.7 | Trick book: tricks landed, saved with the save game (backlog G4) | `KiteSurf.Trick.TrickBookPersists` | S |
@@ -721,7 +721,10 @@ first-trick-per-tack scoring. This builds on T2.3's detached board.
   and the physics tests. The trick work that changes those files waits for phase 2 to merge:
   - stepping the rider attitude and replacing the kinematic air spin (T1.2 PR E);
   - air rotation input (T1.4) and live rotation tracking (T1.6);
-  - the kite's loop entry for S-loops and contra loops;
+  - the kite's loop entry for S-loops and contra loops (done: in the air a full bar loops the kite
+    from any clock and a full bar reversed mid-loop starts a loop the other way,
+    `UKiteComponent::AirLoopFullBarThreshold`, `docs/jumping.md`; until then S-loops could not be
+    flown and a contra loop needed the kite parked 35 deg round on the side the rider came from);
   - the board's own take-off and landing values.
 
   The status table in `docs/tricks/README.md` lists what has landed.
@@ -750,6 +753,7 @@ Every value is an **estimate** unless tagged otherwise.
 | Unhooked grip limit | 1.3 body weights for 0.15 s | |
 | Pass slack and duration | Tension under 0.3 body weights for 0.25 s | Pass window 0.2 to 0.4 s (**typical** timing) |
 | Megaloop | Rider at 8 m or more, kite at 20° or less, tension 3 body weights or more | `research.md` C6 |
+| Air loop full bar | 0.85 of the bar, at the kite after the dead time | In the air a bar this far over loops the kite from any clock (`AirLoopFullBarThreshold`); less still flies it across, for the redirect |
 | Freestyle unhooked pop | 5.4 to 7.4 m/s vertical | **derived** from 1.1 to 1.5 s airtime |
 
 ## 9. Open questions
@@ -765,7 +769,10 @@ Every value is an **estimate** unless tagged otherwise.
   T1.2 and T3.4 fix them in tests. Two cases are already pending:
   - `RollInversionSign` in `Tricks/RiderAxes.h`: −1 tilts the roll axis away from the lines,
     +1 towards them.
-  - The contra rule: a plain held loop in the game reads as a contra loop.
+  - The contra rule: a plain held loop in the game reads as a contra loop. Since the in-air loop
+    entry a loop either way can be flown from overhead, and riding right a full bar to the left is
+    named contra (`KiteSurf.Kite.AirContraLoopIsContra`), on the sign in
+    `TrickRecognition::IsContraLoop`, which is still to be checked against footage.
 - [ ] **Freestyle names for odd numbers.** Under the wrap model, KGB 5 and 315 land blind or
   toeside. The name table expects heelside, so those jumps are described rather than named.
   Which landing does a real KGB 5 have?

@@ -15,6 +15,7 @@
 #include "KiteSurfHUD.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/GameViewportClient.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Components/AudioComponent.h"
@@ -149,6 +150,16 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraKiteHeadroomDeg = 22.0f;
 	CameraMinLookPitchDeg = -6.0f;
 	CameraMaxLookPitchDeg = 10.0f;
+	CameraMaxFramingPitchDeg = 55.0f;
+	CameraMaxFOVDeg = 115.0f;
+	CameraMaxArmLengthCm = 2000.0f;
+	CameraFrameMarginDeg = 2.0f;
+	CameraComfortFrameFraction = 0.8f;
+	CameraComfortTopFraction = 0.6f;
+	CameraKiteFrameRadiusCm = 200.0f;
+	CameraZoomOutSpeed = 4.0f;
+	CameraZoomInSpeed = 0.8f;
+	CameraMinHeightAboveWaterCm = 150.0f;
 	CameraTurnSpeed = 2.5f;
 	RiderMaxLeanDeg = 22.0f;
 	RiderFloatLeanDeg = 30.0f;
@@ -176,6 +187,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraBoom->SetRelativeRotation(FRotator(CameraBoomPitchDeg, 0.0f, 0.0f));
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->CameraLagSpeed = 3.0f;
+	// The lag gives a sense of speed, but at 30 kn and more it would leave the camera far behind
+	// and, rising off a kicker, below the rider; UpdateCamera frames with the lag it predicts.
+	CameraBoom->CameraLagMaxDistance = 250.0f;
 	CameraBoom->bUsePawnControlRotation = false;
 	CameraBoom->bDoCollisionTest = false;
 	CameraBoom->SetUsingAbsoluteRotation(true);
@@ -276,6 +290,10 @@ AKiteRiderPawn::AKiteRiderPawn()
 	CameraLookPitchDeg = 0.0f;
 	CameraHeadingYawDeg = 0.0f;
 	CameraPivotAirBlend = 0.0f;
+	CameraCurrentFOVDeg = CameraFOVDeg;
+	CameraCurrentArmCm = CameraArmLengthCm;
+	CameraCurrentBoomPitchDeg = CameraBoomPitchDeg;
+	CameraLastPivotLocation = FVector::ZeroVector;
 	bBoardVisualOverride = false;
 	RiderFacingYawDeg = 0.0f;
 	RiderStanceSide = 1.0f;
@@ -303,6 +321,13 @@ AKiteRiderPawn::AKiteRiderPawn()
 void AKiteRiderPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// The boom places the camera after UpdateCamera has aimed it this frame, so the framing it
+	// worked out is the one drawn.
+	if (CameraBoom)
+	{
+		CameraBoom->AddTickPrerequisiteActor(this);
+	}
 
 	if (const UWorld* World = GetWorld())
 	{
@@ -1280,8 +1305,126 @@ void AKiteRiderPawn::ClearBoardVisualOverride()
 	}
 }
 
+namespace KiteCamera
+{
+	/** Something the camera must keep in frame: a point and how much room it needs round it (cm). */
+	struct FFrameTarget
+	{
+		FVector Location;
+		float RadiusCm;
+	};
+
+	/**
+	 * How the targets must sit in the frame: the screen's width over its height, the room kept round
+	 * each target (deg), and how far out from the centre they may go, as fractions of the half frame
+	 * to the side, to the top and to the bottom.
+	 */
+	struct FFrameRules
+	{
+		float Aspect = 16.0f / 9.0f;
+		float MarginDeg = 0.0f;
+		float Side = 1.0f;
+		float Top = 1.0f;
+		float Bottom = 1.0f;
+	};
+
+	/** Above this a target cannot be framed at all (the tangent of an 85 deg half field of view). */
+	constexpr float UnframeableTan = 11.43f;
+
+	/**
+	 * The tangent of the smallest horizontal half field of view that shows every target, with its
+	 * radius and the rules' margin round it and inside the rules' fractions of the frame, from a
+	 * level camera at CameraLocation looking along Yaw and Pitch. UnframeableTan if one is behind
+	 * the camera.
+	 */
+	float RequiredTanHalfFov(const FVector& CameraLocation, float YawDeg, float PitchDeg, TConstArrayView<FFrameTarget> Targets, const FFrameRules& Rules)
+	{
+		const FQuat View = FRotator(PitchDeg, YawDeg, 0.0f).Quaternion();
+		float Required = 0.0f;
+		for (const FFrameTarget& Target : Targets)
+		{
+			const FVector Local = View.UnrotateVector(Target.Location - CameraLocation);
+			const float Distance = Local.Size();
+			if (Distance < 1.0f)
+			{
+				continue;
+			}
+			if (Local.X <= 1.0f)
+			{
+				return UnframeableTan;
+			}
+			const float PadDeg = Rules.MarginDeg + FMath::RadiansToDegrees(FMath::Asin(FMath::Min(Target.RadiusCm / Distance, 0.5f)));
+			const float AcrossDeg = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Local.Y), Local.X)) + PadDeg;
+			const float UpDownDeg = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Local.Z), Local.X)) + PadDeg;
+			if (AcrossDeg >= 85.0f || UpDownDeg >= 85.0f)
+			{
+				return UnframeableTan;
+			}
+			const float UpDownFraction = Local.Z >= 0.0f ? Rules.Top : Rules.Bottom;
+			Required = FMath::Max3(Required, FMath::Tan(FMath::DegreesToRadians(AcrossDeg)) / Rules.Side,
+				FMath::Tan(FMath::DegreesToRadians(UpDownDeg)) * Rules.Aspect / UpDownFraction);
+		}
+		return FMath::Min(Required, UnframeableTan);
+	}
+
+	/**
+	 * The look pitch between MinPitch and MaxPitch nearest Preferred at which every target fits a
+	 * horizontal half field of view whose tangent is TanBudget; if none does, the pitch that needs
+	 * the narrowest view. OutRequiredTan is what the returned pitch needs.
+	 */
+	float SolvePitch(const FVector& CameraLocation, float YawDeg, TConstArrayView<FFrameTarget> Targets, const FFrameRules& Rules,
+		float PreferredDeg, float MinPitchDeg, float MaxPitchDeg, float TanBudget, float& OutRequiredTan)
+	{
+		constexpr float StepDeg = 0.5f;
+		float BestFitDeg = 0.0f;
+		float BestFitRequired = 0.0f;
+		bool bFound = false;
+		float NarrowestDeg = PreferredDeg;
+		float NarrowestRequired = TNumericLimits<float>::Max();
+		const int32 Steps = FMath::Max(FMath::CeilToInt((MaxPitchDeg - MinPitchDeg) / StepDeg), 0);
+		// The preferred pitch itself first, so a shot that already works is kept exactly.
+		for (int32 Index = -1; Index <= Steps; ++Index)
+		{
+			const float PitchDeg = Index < 0 ? FMath::Clamp(PreferredDeg, MinPitchDeg, MaxPitchDeg) : FMath::Min(MinPitchDeg + Index * StepDeg, MaxPitchDeg);
+			const float Required = RequiredTanHalfFov(CameraLocation, YawDeg, PitchDeg, Targets, Rules);
+			if (Required < NarrowestRequired)
+			{
+				NarrowestRequired = Required;
+				NarrowestDeg = PitchDeg;
+			}
+			if (Required <= TanBudget && (!bFound || FMath::Abs(PitchDeg - PreferredDeg) < FMath::Abs(BestFitDeg - PreferredDeg)))
+			{
+				bFound = true;
+				BestFitDeg = PitchDeg;
+				BestFitRequired = Required;
+			}
+		}
+		OutRequiredTan = bFound ? BestFitRequired : NarrowestRequired;
+		return bFound ? BestFitDeg : NarrowestDeg;
+	}
+
+	float TanHalf(float FovDeg) { return FMath::Tan(FMath::DegreesToRadians(FovDeg * 0.5f)); }
+	float FovFromTanHalf(float Tan) { return 2.0f * FMath::RadiansToDegrees(FMath::Atan(Tan)); }
+
+	/** The view's width over its height: the game viewport's when there is one, else 16:9. */
+	float ViewAspect(const UWorld* World)
+	{
+		if (const UGameViewportClient* Viewport = World ? World->GetGameViewport() : nullptr)
+		{
+			FVector2D Size;
+			Viewport->GetViewportSize(Size);
+			if (Size.X > 0.0 && Size.Y > 0.0)
+			{
+				return FMath::Clamp(static_cast<float>(Size.X / Size.Y), 1.0f, 4.0f);
+			}
+		}
+		return 16.0f / 9.0f;
+	}
+}
+
 void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 {
+	using namespace KiteCamera;
 	if (!CameraBoom || !FollowCamera)
 	{
 		return;
@@ -1307,6 +1450,24 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 		const FVector WorldOffset = FMath::Lerp(RootTransform.TransformVectorNoScale(PivotOffset), PivotOffset, CameraPivotAirBlend);
 		CameraBoom->SetRelativeLocation(RootTransform.InverseTransformVectorNoScale(WorldOffset));
 	}
+	const FVector Pivot = CameraBoom->GetComponentLocation();
+
+	// Where the boom's location lag will leave the camera this frame, relative to where it would be
+	// without lag. The camera moved with the pivot since the boom last placed it, so what is left
+	// over is the lag then; the boom closes part of the gap and caps it at CameraLagMaxDistance.
+	FVector PredictedLag = FVector::ZeroVector;
+	if (bViewInitialized && CameraBoom->bEnableCameraLag)
+	{
+		const FVector UnlaggedCamera = Pivot - CameraBoom->GetComponentRotation().Vector() * CameraBoom->TargetArmLength;
+		const FVector LastLag = FollowCamera->GetComponentLocation() - UnlaggedCamera;
+		const float Closed = CameraBoom->CameraLagSpeed > 0.0f ? FMath::Clamp(DeltaTime * CameraBoom->CameraLagSpeed, 0.0f, 1.0f) : 1.0f;
+		PredictedLag = (LastLag - (Pivot - CameraLastPivotLocation)) * (1.0f - Closed);
+		if (CameraBoom->CameraLagMaxDistance > 0.0f)
+		{
+			PredictedLag = PredictedLag.GetClampedToMaxSize(CameraBoom->CameraLagMaxDistance);
+		}
+	}
+	CameraLastPivotLocation = Pivot;
 
 	// The heading the camera looks along. On the water it is the board's: switch stance keeps the
 	// nose forward, so that is the way the rider is going. In the air the board spins, so it is the
@@ -1326,40 +1487,142 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 	}
 	CameraHeadingYawDeg = HeadingYawDeg;
 	float TargetYawDeg = HeadingYawDeg;
-	float TargetLookPitchDeg = CameraMinLookPitchDeg;
 
-	if (HasKitePosition())
+	const bool bHasKite = HasKitePosition();
+	const FVector SmoothedKitePosition = GetActorLocation() + SmoothedKiteOffset;
+	if (bHasKite)
 	{
-		// Look along the heading, but never further from the kite than the offset that keeps it in frame.
-		const FVector SmoothedKitePosition = GetActorLocation() + SmoothedKiteOffset;
-		const FVector PivotToKite = SmoothedKitePosition - CameraBoom->GetComponentLocation();
+		// Look along the heading, but never further from the kite than the offset that keeps it in
+		// frame. Near the zenith the kite's direction across the water means little and flips as it
+		// goes over, so the clamp lets go there: any heading has an overhead kite in frame.
+		const FVector PivotToKite = SmoothedKitePosition - Pivot;
 		const float KiteYawDeg = PivotToKite.Rotation().Yaw;
+		const float KiteElevationDeg = FMath::RadiansToDegrees(FMath::Atan2(PivotToKite.Z, PivotToKite.Size2D()));
+		const float YawLimitDeg = FMath::Lerp(CameraMaxKiteYawOffsetDeg, 180.0f, FMath::SmoothStep(60.0f, 85.0f, KiteElevationDeg));
 		const float HeadingFromKiteDeg = FMath::FindDeltaAngleDegrees(KiteYawDeg, HeadingYawDeg);
-		TargetYawDeg = KiteYawDeg + FMath::Clamp(HeadingFromKiteDeg, -CameraMaxKiteYawOffsetDeg, CameraMaxKiteYawOffsetDeg);
-
-		// Tilt up only as far as needed to keep a high kite below the top of the screen.
-		const FVector CameraToKite = SmoothedKitePosition - FollowCamera->GetComponentLocation();
-		const float KiteElevationFromCameraDeg = FMath::RadiansToDegrees(FMath::Atan2(CameraToKite.Z, CameraToKite.Size2D()));
-		TargetLookPitchDeg = FMath::Clamp(KiteElevationFromCameraDeg - CameraKiteHeadroomDeg, CameraMinLookPitchDeg, CameraMaxLookPitchDeg);
+		TargetYawDeg = KiteYawDeg + FMath::Clamp(HeadingFromKiteDeg, -YawLimitDeg, YawLimitDeg);
 	}
-
 	if (bViewInitialized)
 	{
 		const float YawStepDeg = FMath::FindDeltaAngleDegrees(CameraYawDeg, TargetYawDeg) * FMath::Clamp(CameraTurnSpeed * DeltaTime, 0.0f, 1.0f);
 		CameraYawDeg = FRotator::NormalizeAxis(CameraYawDeg + YawStepDeg);
-		CameraLookPitchDeg = FMath::FInterpTo(CameraLookPitchDeg, TargetLookPitchDeg, DeltaTime, CameraTurnSpeed);
 	}
 	else
 	{
 		CameraYawDeg = TargetYawDeg;
-		CameraLookPitchDeg = TargetLookPitchDeg;
 	}
 
+	// What must stay in frame: the kite where it really is (a loop swings it far from the smoothed
+	// position the shot is composed on) and the rider, from the board to the head.
+	TArray<FFrameTarget, TInlineAllocator<3>> Targets;
+	Targets.Add({ GetActorLocation(), 60.0f });
+	Targets.Add({ GetActorLocation() + GetActorUpVector() * 170.0f, 50.0f });
+	if (bHasKite)
+	{
+		Targets.Add({ Kite->GetKiteWorldPosition(), CameraKiteFrameRadiusCm * Kite->GetSizeScale() });
+	}
+	FFrameRules FullFrame;
+	FullFrame.Aspect = ViewAspect(GetWorld());
+	FullFrame.MarginDeg = CameraFrameMarginDeg;
+	const float BaseFovDeg = FMath::Min(CameraFOVDeg, CameraMaxFOVDeg);
+	const float MaxFramingPitchDeg = FMath::Max(CameraMaxFramingPitchDeg, CameraMaxLookPitchDeg);
+	const float MaxArmCm = FMath::Max(CameraMaxArmLengthCm, CameraArmLengthCm);
+
+	// The boom keeps the camera above the water: it tilts further down, lifting the camera, when a
+	// lagging camera would otherwise drop towards the surface.
+	float WaterHeightCm = 0.0f;
+	if (BoardMovement)
+	{
+		FVector WaterNormal;
+		BoardMovement->SampleWaterSurface(Pivot - FRotator(0.0f, CameraYawDeg, 0.0f).Vector() * CameraCurrentArmCm, WaterHeightCm, WaterNormal);
+	}
+	auto BoomPitchFor = [&](float ArmCm)
+	{
+		const float LiftNeededCm = WaterHeightCm + CameraMinHeightAboveWaterCm - Pivot.Z - PredictedLag.Z;
+		const float SinNeeded = ArmCm > 1.0f ? LiftNeededCm / ArmCm : 0.0f;
+		const float NeededPitchDeg = -FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(SinNeeded, -1.0f, FMath::Sin(FMath::DegreesToRadians(45.0f)))));
+		return FMath::Min(CameraBoomPitchDeg, NeededPitchDeg);
+	};
+	auto CameraLocationFor = [&](float ArmCm)
+	{
+		return Pivot - FRotator(BoomPitchFor(ArmCm), CameraYawDeg, 0.0f).Vector() * ArmCm + PredictedLag;
+	};
+
+	// The shot as composed: tilt up only as far as needed to keep a high kite below the top of the
+	// screen, at the normal field of view and boom length. If the kite and the rider do not both
+	// fit, tilt further up, then widen the view, then pull the boom back.
+	float PreferredPitchDeg = CameraMinLookPitchDeg;
+	if (bHasKite)
+	{
+		const FVector CameraToKite = SmoothedKitePosition - CameraLocationFor(CameraCurrentArmCm);
+		const float KiteElevationFromCameraDeg = FMath::RadiansToDegrees(FMath::Atan2(CameraToKite.Z, CameraToKite.Size2D()));
+		PreferredPitchDeg = FMath::Clamp(KiteElevationFromCameraDeg - CameraKiteHeadroomDeg, CameraMinLookPitchDeg, CameraMaxLookPitchDeg);
+	}
+	float TargetPitchDeg = PreferredPitchDeg;
+	float TargetFovDeg = BaseFovDeg;
+	float TargetArmCm = CameraArmLengthCm;
+	{
+		// The composed shot keeps both well inside the frame, and the kite clear of the HUD along the top.
+		FFrameRules Composed = FullFrame;
+		Composed.Side = Composed.Bottom = FMath::Clamp(CameraComfortFrameFraction, 0.3f, 1.0f);
+		Composed.Top = FMath::Clamp(CameraComfortTopFraction, 0.3f, 1.0f);
+		const float BaseTan = TanHalf(BaseFovDeg);
+		float RequiredTan = 0.0f;
+		TargetPitchDeg = SolvePitch(CameraLocationFor(CameraArmLengthCm), CameraYawDeg, Targets, Composed,
+			PreferredPitchDeg, CameraMinLookPitchDeg, MaxFramingPitchDeg, BaseTan, RequiredTan);
+		if (RequiredTan > BaseTan)
+		{
+			// Too much to show at the normal view: widen it, as little as can be, by tilting to the
+			// pitch that needs the narrowest view; pull back once widening is not enough.
+			const float MaxTan = TanHalf(CameraMaxFOVDeg);
+			constexpr float ArmStepCm = 100.0f;
+			for (float ArmCm = CameraArmLengthCm; ; ArmCm = FMath::Min(ArmCm + ArmStepCm, MaxArmCm))
+			{
+				TargetArmCm = ArmCm;
+				TargetPitchDeg = SolvePitch(CameraLocationFor(ArmCm), CameraYawDeg, Targets, Composed,
+					PreferredPitchDeg, CameraMinLookPitchDeg, MaxFramingPitchDeg, 0.0f, RequiredTan);
+				if (RequiredTan <= MaxTan || ArmCm >= MaxArmCm)
+				{
+					break;
+				}
+			}
+			TargetFovDeg = FMath::Clamp(FovFromTanHalf(RequiredTan), BaseFovDeg, CameraMaxFOVDeg);
+		}
+	}
+
+	// Ease towards that shot: out quickly when more room is needed, back in slowly so it does not pump.
+	if (bViewInitialized)
+	{
+		CameraLookPitchDeg = FMath::FInterpTo(CameraLookPitchDeg, TargetPitchDeg, DeltaTime, CameraTurnSpeed);
+		CameraCurrentArmCm = FMath::FInterpTo(CameraCurrentArmCm, TargetArmCm, DeltaTime, TargetArmCm > CameraCurrentArmCm ? CameraZoomOutSpeed : CameraZoomInSpeed);
+		CameraCurrentFOVDeg = FMath::FInterpTo(CameraCurrentFOVDeg, TargetFovDeg, DeltaTime, TargetFovDeg > CameraCurrentFOVDeg ? CameraZoomOutSpeed : CameraZoomInSpeed);
+	}
+	else
+	{
+		CameraLookPitchDeg = TargetPitchDeg;
+		CameraCurrentArmCm = TargetArmCm;
+		CameraCurrentFOVDeg = TargetFovDeg;
+	}
+
+	// The easing must never let the kite or the rider out: where the eased shot would lose one,
+	// the view widens at once as far as needed, and past CameraMaxFOVDeg the camera tilts too.
+	const FVector CameraLocation = CameraLocationFor(CameraCurrentArmCm);
+	float RequiredTan = RequiredTanHalfFov(CameraLocation, CameraYawDeg, CameraLookPitchDeg, Targets, FullFrame);
+	if (RequiredTan > TanHalf(CameraMaxFOVDeg))
+	{
+		CameraLookPitchDeg = SolvePitch(CameraLocation, CameraYawDeg, Targets, FullFrame,
+			CameraLookPitchDeg, CameraMinLookPitchDeg, MaxFramingPitchDeg, TanHalf(CameraMaxFOVDeg), RequiredTan);
+	}
+	constexpr float HardMaxFovDeg = 140.0f;
+	CameraCurrentFOVDeg = FMath::Clamp(FMath::Max(CameraCurrentFOVDeg, FovFromTanHalf(RequiredTan)), 1.0f, HardMaxFovDeg);
+	CameraCurrentBoomPitchDeg = BoomPitchFor(CameraCurrentArmCm);
+
 	// The boom keeps the camera above the water; the camera itself tilts to look up at the kite.
-	CameraBoom->TargetArmLength = CameraArmLengthCm;
-	CameraBoom->SetWorldRotation(FRotator(CameraBoomPitchDeg, CameraYawDeg, 0.0f));
-	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraBoomPitchDeg, 0.0f, 0.0f));
-	FollowCamera->SetFieldOfView(CameraFOVDeg);
+	// Neither ever rolls, so the horizon stays level.
+	CameraBoom->TargetArmLength = CameraCurrentArmCm;
+	CameraBoom->SetWorldRotation(FRotator(CameraCurrentBoomPitchDeg, CameraYawDeg, 0.0f));
+	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraCurrentBoomPitchDeg, 0.0f, 0.0f));
+	FollowCamera->SetFieldOfView(CameraCurrentFOVDeg);
 }
 
 void AKiteRiderPawn::OnResetTriggered(const FInputActionValue& Value)

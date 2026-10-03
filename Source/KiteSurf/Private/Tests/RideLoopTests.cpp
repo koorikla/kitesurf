@@ -744,7 +744,7 @@ bool FKiteSurfPawnCameraFramesKite::RunTest(const FString& Parameters)
 
 		const FRotator View = Camera->GetComponentRotation();
 		const FRotator ToKite = (Ride.Kite->GetKiteWorldPosition() - Camera->GetComponentLocation()).Rotation();
-		const float HalfHorizontalFovDeg = Ride.Pawn->CameraFOVDeg * 0.5f;
+		const float HalfHorizontalFovDeg = Camera->FieldOfView * 0.5f;
 		const float HalfVerticalFovDeg = FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(FMath::DegreesToRadians(HalfHorizontalFovDeg)) * 9.0f / 16.0f));
 		const float YawOffDeg = FMath::Abs(FMath::FindDeltaAngleDegrees(View.Yaw, ToKite.Yaw));
 		const float PitchOffDeg = FMath::Abs(ToKite.Pitch - View.Pitch);

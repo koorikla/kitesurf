@@ -281,7 +281,7 @@ struct FLessonDef {
   - the trick book.
 
   The lesson system adds no new physics.
-- **Demonstrations:** "show me" plays the lesson's demonstration on the player's own rider.
+- **Demonstrations (later, S11):** "show me" plays the lesson's demonstration on the player's own rider.
   - It is a scripted input track run through `ApplyScriptedInput` (what `kitesurf.Input` and the
     menu-video recorder already use), with a ghost kite drawn along.
   - Then control returns at the same spot.
@@ -349,27 +349,31 @@ Each task ships with `KiteSurf.School.*` automation tests and follows the merge-
 | S3 | `ALessonDirector`: set-up, state machine, pass and fail, drop-back offer | A scripted ride passes lesson B2 under `-nullrhi`; a bad send fails with "Bar out while it climbs" | M | S1, S2 |
 | S4 | HUD lesson layer: prompt with glyph, objective progress, window-arc target zones, ghost kite, timing grades, result card with stars | `KiteSurf.HUD.Lesson*` text and state tests; seen in a `-game` run | M | S3 |
 | S5 | School menu from the main and pause menus: chapter map, tiles with stars and lock state, detail panel with best result and attempts, Start, Watch demo, wind and assists for reruns, Continue, overall progress, reset with confirm, Retry, Next and Lesson menu on the result card | Menu navigation tests like the gear screen's; a locked lesson cannot start; rerunning a passed lesson keeps the best stars; seen in a `-game` run | M | S2 |
-| S6 | Chapters A and B as data (A6 waits for toeside riding, B4 for grabs), plus demonstration input tracks | Each lesson's demonstration passes its own test in a scripted run | M | S3, S4 |
+| S6 | Chapters A and B as data (A6 waits for toeside riding, B4 for grabs), text prompts only | A scripted ride passes each lesson's test | M | S3, S4 |
 | S7 | Replace today's four-step onboarding with A1 to A3 and a guided first jump; keep the skip option | First run starts lesson A1; "skip" goes to free ride | S | S6 |
 | S8 | Slow motion at decision points | Time dilation on and off around the cue; the simulation stays deterministic in fixed steps | S | S3 |
 | S9 | Chapters C to F as data, as their trick features land | Per lesson, as S6 | M each | Tricks T1, T2.1, T3; phase 3 redirect; kickers |
 | S10 | Replay of the last attempt with event markers | Needs the backlog G2 recorder | L | G2 |
+| S11 | Bot demonstration: before a lesson, a bot rider performs the skill from a scripted input track, filmed with the cinematic cameras (`AKiteSurfCinematicCamera`, as the menu video does), then hands over to the player at the same spot | Each lesson's demonstration track passes its own pass test in a scripted run; seen in a `-game` run | L | S6 |
+| S12 | Voice-over for demonstrations and prompts, with subtitles; the text prompts stay | Each line has an audio asset and a subtitle; volume follows the existing volume settings | M | S11 |
+| S13 | Input animation: a small on-screen gamepad, keyboard or mouse that shows the stick, trigger or mouse movement for the current step, matching the player's active control scheme | Animation matches the bindings in `make_input_assets.py` for each scheme | M | S4 |
 
-Order: S1 → S2 → S3 → S4 and S5 in parallel → S6 → S7. S8 can go any time after S3, and S9
+Order: S1 → S2 → S3 → S4 and S5 in parallel → S6 → S7. The first round is S1 to S7, text only.
+Demonstrations, voice and input animation (S11 to S13) come after it. S8 can go any time after S3, and S9
 follows the trick work. S1 to S7 touch no physics, so they can run alongside physics phase 3 and
 the trick wiring.
 
 ## 6. Open questions
 
-- [ ] **Where lessons live.** One flat-water map with set-up per lesson, or a dedicated "school"
-  spot (shallow lagoon, buoys, a kicker)? Recommended: `L_FlatWater` now, and a school spot when
-  kickers exist.
-- [ ] **Narration.** Text and glyphs only, or recorded voice lines? Voice is the Trials Rising
-  model and needs audio assets.
-- [ ] **Unhooked gate.** Follow Kitesurf College (loops before unhooking) or let freestyle players
-  start chapter F after chapter B?
-- [ ] **Stars against assists.** Is three stars "every assist off" right for a game whose default
-  is sim-cade with assists?
+- [x] **Where lessons live.** `L_FlatWater` for every lesson (decided 2026-10-03). A school spot
+  can come later, with kickers.
+- [x] **Narration.** The first round is text only: short prompts with input glyphs (decided
+  2026-10-03). Later, each lesson gets a demonstration before the player tries: a bot rider
+  performing the trick with cinematic cameras and a voice-over, plus an animation of how to move
+  the controller or mouse (tasks S11 to S13).
+- [x] **Unhooked gate.** Keep Kitesurf College's order: chapter F needs chapters C and E (decided
+  2026-10-03).
+- [x] **Stars against assists.** Three stars means every assist is off (decided 2026-10-03).
 
 ## Sources
 

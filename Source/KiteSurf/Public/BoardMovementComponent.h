@@ -37,8 +37,14 @@ enum class EJumpRejectReason : uint8
 /** What the water and the air did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
 struct FBoardStepDebug
 {
-	/** Drag of the hull (planing or displacement), against the board's velocity over the water. */
+	/** Drag of the hull (planing or displacement), against the board's velocity over the water; on the plane it includes PressureDragN. */
 	FVector DragForceN = FVector::ZeroVector;
+	/** The water's normal force on the board (N): the weight it carries over the cosine of its heel, while the rider stands on it. */
+	float NormalForceN = 0.0f;
+	/** The planing pressure drag (N): the normal force tilted back by the trim, NormalForceN * tan(TrimDeg); only on the plane. */
+	float PressureDragN = 0.0f;
+	/** The planing trim the pressure drag used (deg), UBoardMovementComponent::GetPlaningTrimDeg at the board's speed; 0 off the plane. */
+	float TrimDeg = 0.0f;
 	/** Angle between the board's velocity over the water and its axis, either end first (deg); positive sliding to its right. */
 	float LeewayDeg = 0.0f;
 	/** Heel of the board (deg): positive heeled to hold a pull towards its right, as UBoardMovementComponent::GetHeelDeg. */
@@ -256,13 +262,40 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float DisplacementQuadraticDragKgPerCm;
 
-	/** Planing drag per speed (kg/s). */
+	/** Planing drag per speed (kg/s): with PlaningQuadraticDragKgPerCm, the drag that grows with speed, on top of the pressure drag of PlaningTrimDeg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningDragKgPerS;
 
 	/** Planing drag per speed squared (kg/cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningQuadraticDragKgPerCm;
+
+	/**
+	 * Trim of the planing board at speed (deg), from PlaningTrimHumpSpeedCmS up. The water's normal
+	 * force on the planing surface leans back by the trim, so it drags the board by N tan(trim), N the
+	 * weight it carries over the cosine of its heel (Savitsky's pressure drag, docs/physics/research.md
+	 * 2.2: trim 6 to 10 deg). Carrying the edge therefore costs drag: the more the board heels, the
+	 * larger N. See GetPlaningTrimDeg.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+	float PlaningTrimDeg;
+
+	/**
+	 * Trim of the board just over the planing threshold (deg). A planing hull trims highest just past
+	 * the hump and flattens out as it speeds up (Savitsky), so a board slowed towards the threshold,
+	 * pointed high or loaded, pays more pressure drag for the weight it carries. The trim falls from
+	 * this at PlaningThresholdCmS to PlaningTrimDeg at PlaningTrimHumpSpeedCmS, linearly in speed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+	float PlaningTrimHumpDeg;
+
+	/** Speed by which the planing trim has fallen from PlaningTrimHumpDeg to PlaningTrimDeg (cm/s); scaled with the planing threshold by SetBoardSize. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float PlaningTrimHumpSpeedCmS;
+
+	/** The planing board's trim at this speed over the water (deg): PlaningTrimHumpDeg at the planing threshold, falling to PlaningTrimDeg by PlaningTrimHumpSpeedCmS. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetPlaningTrimDeg(float SpeedCmS) const;
 
 	/** How far the full carve input turns the board's heading off its course (deg); also the default CarveHeelDeg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -518,17 +551,19 @@ private:
 
 	/**
 	 * Moves the heel towards its target for this step and returns the sideways part of the water's
-	 * normal force on the heeled board (kg*cm/s^2), across its axis. PullN is the external force on
-	 * the board this step (N); bOnWater says the rider is standing on the board on the water.
+	 * normal force on the heeled board (kg*cm/s^2), across its axis; the whole normal force (N) goes
+	 * in LastStepDebug.NormalForceN. PullN is the external force on the board this step (N); bOnWater
+	 * says the rider is standing on the board on the water.
 	 */
 	FVector UpdateHeelAndNormalSideForce(float DeltaTime, const FVector& PullN, const FVector& LevelRight, bool bOnWater);
 
 	/**
 	 * The hull's drag against the horizontal velocity and the fins' and rail's side force from leeway,
-	 * both integrated exactly over the step: the drag shortens the velocity, and the side force,
-	 * across the board's axis, takes out the speed across it and so turns the velocity onto the axis.
+	 * both integrated without overshoot over the step: the drag shortens the velocity (first the
+	 * constant pressure drag, DragDecelCmS2, then a + c v^2 exactly), and the side force, across the
+	 * board's axis, takes out the speed across it and so turns the velocity onto the axis.
 	 */
-	void ApplyWaterDragAndSideForce(float DeltaTime, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward);
+	void ApplyWaterDragAndSideForce(float DeltaTime, float DragDecelCmS2, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward);
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();

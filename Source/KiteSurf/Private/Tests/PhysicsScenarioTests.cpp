@@ -210,7 +210,9 @@ bool FKiteSurfPhysicsSteadyRideAcross::RunTest(const FString& Parameters)
 // Before plan-2 item 3 this pointed 25 deg up in 15 kn, held there by the viscous grip with the edge
 // input neutral, and made 1.79 m/s good at 12.2 kn with 8.2 deg of leeway. With the force balance
 // the board holds its heading with no leeway, so pointing 25 deg up in 15 kn makes 3.07 m/s good at
-// 14.1 kn. The model points much higher than a rider can: see KiteSurf.Physics.CourseTheorem.
+// 14.1 kn; with the pressure drag of the edge (plan-2 item 3b) it makes 2.72 m/s good at 12.5 kn. The
+// closest course the model holds is 30 deg up, against the research's 15 to 25: see
+// KiteSurf.Physics.CourseTheorem.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsUpwindAtEdgeAngle, "KiteSurf.Physics.UpwindAtEdgeAngle", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsUpwindAtEdgeAngle::RunTest(const FString& Parameters)
@@ -373,111 +375,180 @@ bool FKiteSurfPhysicsBeamReachIn25kn::RunTest(const FString& Parameters)
 	return true;
 }
 
-// The course theorem (research 2.3, Marchaj): sailing steadily, the course makes an angle with the
-// apparent wind equal to the sum of the two drag angles, atan(1 / (L/D)_kite) + atan(1 / (L/D)_board).
-// The rider on the 15 kn ride points up 5 deg at a time until the board will not plane. On the closest
-// course it still planes on, the angle between the course and the apparent wind at the rider is within
-// 8 deg of the theorem, with both ratios read from the debug structs: the kite's lift over its drag,
-// and the water's force across the board's velocity over its drag along it.
+namespace KiteScenario
+{
+	/** What a ride turned up onto a course and held there did. */
+	struct FHeldCourse
+	{
+		float AboveBeamReachDeg = 0.0f;
+		/** Planing at every frame and still on the course it was pointed (within CourseHoldToleranceDeg) at the end. */
+		bool bSustained = false;
+		/** First time off the plane after the turn started (s), -1 if it never was. */
+		float DroppedAtSeconds = -1.0f;
+		float SpeedKnots = 0.0f;
+		float MadeGoodMS = 0.0f;
+		float CourseAboveBeamDeg = 0.0f;
+		/** Averaged over the last AverageSeconds: the angle from the course to the apparent wind at the rider, and the two lift to drag ratios. */
+		float ApparentAngleDeg = 0.0f;
+		float KiteLiftToDrag = 0.0f;
+		float BoardLiftToDrag = 0.0f;
+		float TheoremDeg = 0.0f;
+	};
+
+	constexpr float CourseSettleSeconds = 5.0f;        // on the beam reach the ride starts on
+	constexpr float CourseTurnRateDegPerS = 10.0f;     // pointing up, the velocity with the heading
+	constexpr float CourseHoldSeconds = 15.0f;
+	constexpr float CourseAverageSeconds = 2.0f;
+	constexpr float CourseHoldToleranceDeg = 5.0f;
+
+	/**
+	 * A fresh ride on the beam reach in this wind, turned up AboveBeamReachDeg towards the wind at
+	 * CourseTurnRateDegPerS and held there for CourseHoldSeconds, edge input neutral (the heel holds
+	 * the course). The invariants of the whole ride are asserted under What.
+	 */
+	FHeldCourse HoldCourse(FAutomationTestBase& Test, float WindKnots, float KiteAreaM2, float AboveBeamReachDeg, const FString& What)
+	{
+		FHeldCourse Course;
+		Course.AboveBeamReachDeg = AboveBeamReachDeg;
+		FScenarioRide Ride(WindKnots, KiteAreaM2);
+		if (!Ride.IsValid())
+		{
+			return Course;
+		}
+		Ride.Simulate(CourseSettleSeconds);
+		const float BeamReachYawDeg = Ride.Pawn->GetActorRotation().Yaw;
+		bool bPlaning = Ride.Board->IsPlaning();
+		float Seconds = 0.0f;
+		for (float TurnedDeg = 0.0f; TurnedDeg < AboveBeamReachDeg; )
+		{
+			TurnedDeg = FMath::Min(TurnedDeg + CourseTurnRateDegPerS * Ride.FrameSeconds, AboveBeamReachDeg);
+			const FRotator Heading(0.0f, BeamReachYawDeg + TurnedDeg, 0.0f);
+			Ride.Pawn->SetActorRotation(Heading);
+			Ride.Board->Velocity = Heading.Vector() * Ride.Board->Velocity.Size2D() + FVector(0.0f, 0.0f, Ride.Board->Velocity.Z);
+			Ride.Frame();
+			Seconds += Ride.FrameSeconds;
+			if (bPlaning && !Ride.Board->IsPlaning())
+			{
+				Course.DroppedAtSeconds = Seconds;
+			}
+			bPlaning &= Ride.Board->IsPlaning();
+		}
+		const int32 HoldFrames = FMath::RoundToInt(CourseHoldSeconds / Ride.FrameSeconds);
+		const int32 AverageFrames = FMath::RoundToInt(CourseAverageSeconds / Ride.FrameSeconds);
+		int32 Samples = 0;
+		for (int32 Index = 0; Index < HoldFrames; ++Index)
+		{
+			Ride.Frame();
+			Seconds += Ride.FrameSeconds;
+			if (bPlaning && !Ride.Board->IsPlaning())
+			{
+				Course.DroppedAtSeconds = Seconds;
+			}
+			bPlaning &= Ride.Board->IsPlaning();
+			if (Index >= HoldFrames - AverageFrames)
+			{
+				const FVector Velocity(Ride.Board->Velocity.X, Ride.Board->Velocity.Y, 0.0f);
+				const FVector WindAtRider = Ride.Wind->GetWindAtTime(Ride.Pawn->GetActorLocation() + FVector(0.0f, 0.0f, Ride.Kite->RiderWindHeightCm), Ride.Pawn->GetSimTimeSeconds());
+				const FVector Apparent = FVector(WindAtRider.X, WindAtRider.Y, 0.0f) - Velocity;
+				const FKiteStepDebug& KiteStep = Ride.Kite->GetLastStepDebug();
+				const FBoardStepDebug& BoardStep = Ride.Board->GetLastStepDebug();
+				const FVector Along = Velocity.GetSafeNormal();
+				const FVector Water = BoardStep.DragForceN + BoardStep.SideForceN + BoardStep.NormalSideForceN;
+				const float WaterDragN = -FVector::DotProduct(Water, Along);
+				const float WaterAcrossN = (Water + Along * WaterDragN).Size2D();
+				Course.ApparentAngleDeg += FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(-Apparent.GetSafeNormal(), Along), -1.0f, 1.0f)));
+				Course.KiteLiftToDrag += KiteStep.LiftN.Size() / FMath::Max(KiteStep.DragN.Size(), 1.0f);
+				Course.BoardLiftToDrag += WaterAcrossN / FMath::Max(WaterDragN, 1.0f);
+				++Samples;
+			}
+		}
+		const float Count = static_cast<float>(FMath::Max(Samples, 1));
+		Course.ApparentAngleDeg /= Count;
+		Course.KiteLiftToDrag /= Count;
+		Course.BoardLiftToDrag /= Count;
+		Course.TheoremDeg = FMath::RadiansToDegrees(FMath::Atan(1.0f / FMath::Max(Course.KiteLiftToDrag, KINDA_SMALL_NUMBER)) + FMath::Atan(1.0f / FMath::Max(Course.BoardLiftToDrag, KINDA_SMALL_NUMBER)));
+		const FVector Velocity = Ride.Board->Velocity;
+		Course.SpeedKnots = Ride.SpeedKnots();
+		Course.MadeGoodMS = KiteUnits::CmToM(-Velocity.X);
+		Course.CourseAboveBeamDeg = FMath::RadiansToDegrees(FMath::Atan2(-Velocity.X, FMath::Abs(Velocity.Y)));
+		Course.bSustained = bPlaning && FMath::Abs(Course.CourseAboveBeamDeg - AboveBeamReachDeg) < CourseHoldToleranceDeg;
+		Ride.Invariants.Assert(Test, What);
+		return Course;
+	}
+}
+
+// The closest course a rider holds (research 2.3; docs/physics/plan-2.md items 3 and 3b). On the 15 kn
+// ride on the 12 m^2 the rider turns up at 10 deg/s, 5 deg further each time, and holds the heading
+// for 15 s with the edge input neutral; the closest sustainable course is the highest from which the
+// board is still planing and still on that course (within 5 deg) after the 15 s. It is 25 to 40 deg
+// above the beam reach (measured 30). On it the angle between the course and the apparent wind at
+// the rider is within 8 deg of the course theorem (Marchaj), atan(1 / (L/D)_kite) + atan(1 /
+// (L/D)_board), with both ratios read from the debug structs: the kite's lift over its drag, and the
+// water's force across the board's velocity over its drag along it.
 //
-// Known gap, logged: the model points far higher than a rider. The closest course is about 55 deg
-// above the beam reach (research 15 to 25), because nothing in the force balance costs drag for
-// carrying the edge: the board's L/D is its lateral force over the a + c v^2 hull drag, and as it
-// slows that drag falls while the pull it carries does not, so its drag angle shrinks and it points
-// higher until it drops off the plane at 4 m/s.
+// The research gives 15 to 25 deg. Carrying the edge costs pressure drag, N tan(trim) with N the
+// normal force the heel demands, and the trim rises from 6 deg at speed to 13 just over the planing
+// hump (PlaningTrimDeg, PlaningTrimHumpDeg), so a board pointed too high slows, trims up and drops off
+// the plane (KiteSurf.Physics.PointingTooHighDropsOffThePlane). Before that (plan-2 item 3) nothing
+// cost drag for the edge and the board held 55 deg. It stops at 30 rather than 25 because the kite's
+// drive along the course barely falls as the board slows: with the park-hold assist holding it where
+// it is, the drive on a course 30 deg up in 15 kn is 157 to 171 N from 3 to 12 m/s of board speed
+// (the side pull grows instead), so a slow board on a high course is still driven nearly as hard as
+// a fast one. A kite flown by hand would be sheeted and moved, and lose its drive as the board slows.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsCourseTheorem, "KiteSurf.Physics.CourseTheorem", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FKiteSurfPhysicsCourseTheorem::RunTest(const FString& Parameters)
 {
 	const float WindKnots = 15.0f;
+	const float KiteAreaM2 = 12.0f;
 	const float StepDeg = 5.0f;
-	const float StepSeconds = 10.0f;
-	const float AverageSeconds = 2.0f;
+	const float MostAboveDeg = 60.0f;
+	const float MinClosestDeg = 25.0f;   // research 15 to 25; the model stops at 30 (above)
+	const float MaxClosestDeg = 40.0f;
 	const float ToleranceDeg = 8.0f;
-	FScenarioRide Ride(WindKnots, 12.0f);
-	TestTrue(TEXT("Ride created"), Ride.IsValid());
-	if (!Ride.IsValid())
-	{
-		return false;
-	}
-	const float BeamReachYawDeg = Ride.Pawn->GetActorRotation().Yaw;
-
-	struct FCourse
-	{
-		float AboveBeamReachDeg = 0.0f;
-		float SpeedKnots = 0.0f;
-		float MadeGoodMS = 0.0f;
-		float ApparentAngleDeg = 0.0f;
-		float KiteLiftToDrag = 0.0f;
-		float BoardLiftToDrag = 0.0f;
-		float TheoremDeg = 0.0f;
-		bool bPlaning = false;
-	};
-	FCourse Closest;
+	FHeldCourse Closest;
 	bool bFoundLimit = false;
-	for (float AboveDeg = 0.0f; AboveDeg <= 85.0f; AboveDeg += StepDeg)
+	for (float AboveDeg = 0.0f; AboveDeg <= MostAboveDeg; AboveDeg += StepDeg)
 	{
-		const FRotator Heading(0.0f, BeamReachYawDeg + AboveDeg, 0.0f);
-		Ride.Pawn->SetActorRotation(Heading);
-		Ride.Board->Velocity = Heading.Vector() * Ride.Board->Velocity.Size2D();
-
-		// Planing all the way, averaged over the last seconds on this heading. (Off the plane the board
-		// pivots to the pull and would plane again across the wind.)
-		FCourse Course;
-		Course.AboveBeamReachDeg = AboveDeg;
-		Course.bPlaning = true;
-		const int32 SettleFrames = FMath::RoundToInt((StepSeconds - AverageSeconds) / Ride.FrameSeconds);
-		for (int32 Index = 0; Index < SettleFrames; ++Index)
-		{
-			Ride.Frame();
-			Course.bPlaning &= Ride.Board->IsPlaning();
-		}
-		int32 Samples = 0;
-		const int32 Frames = FMath::RoundToInt(AverageSeconds / Ride.FrameSeconds);
-		for (int32 Index = 0; Index < Frames; ++Index)
-		{
-			Ride.Frame();
-			Course.bPlaning &= Ride.Board->IsPlaning();
-			const FVector Velocity(Ride.Board->Velocity.X, Ride.Board->Velocity.Y, 0.0f);
-			const FVector WindAtRider = Ride.Wind->GetWindAtTime(Ride.Pawn->GetActorLocation() + FVector(0.0f, 0.0f, Ride.Kite->RiderWindHeightCm), Ride.Pawn->GetSimTimeSeconds());
-			const FVector Apparent = FVector(WindAtRider.X, WindAtRider.Y, 0.0f) - Velocity;
-			const FKiteStepDebug& KiteStep = Ride.Kite->GetLastStepDebug();
-			const FBoardStepDebug& BoardStep = Ride.Board->GetLastStepDebug();
-			const FVector Along = Velocity.GetSafeNormal();
-			const FVector Water = BoardStep.DragForceN + BoardStep.SideForceN + BoardStep.NormalSideForceN;
-			const float WaterDragN = -FVector::DotProduct(Water, Along);
-			const float WaterAcrossN = (Water + Along * WaterDragN).Size2D();
-			Course.SpeedKnots += Ride.SpeedKnots();
-			Course.MadeGoodMS += KiteUnits::CmToM(-Velocity.X);
-			Course.ApparentAngleDeg += FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(-Apparent.GetSafeNormal(), Along), -1.0f, 1.0f)));
-			Course.KiteLiftToDrag += KiteStep.LiftN.Size() / FMath::Max(KiteStep.DragN.Size(), 1.0f);
-			Course.BoardLiftToDrag += WaterAcrossN / FMath::Max(WaterDragN, 1.0f);
-			++Samples;
-		}
-		const float Count = static_cast<float>(FMath::Max(Samples, 1));
-		Course.SpeedKnots /= Count;
-		Course.MadeGoodMS /= Count;
-		Course.ApparentAngleDeg /= Count;
-		Course.KiteLiftToDrag /= Count;
-		Course.BoardLiftToDrag /= Count;
-		Course.TheoremDeg = FMath::RadiansToDegrees(FMath::Atan(1.0f / FMath::Max(Course.KiteLiftToDrag, KINDA_SMALL_NUMBER)) + FMath::Atan(1.0f / FMath::Max(Course.BoardLiftToDrag, KINDA_SMALL_NUMBER)));
-		UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: %.0f deg above the beam reach: %.1f kn, %.2f m/s made good, planing %d, %.1f deg off the apparent wind, kite L/D %.2f, board L/D %.2f, theorem %.1f deg"),
-			Course.AboveBeamReachDeg, Course.SpeedKnots, Course.MadeGoodMS, Course.bPlaning, Course.ApparentAngleDeg, Course.KiteLiftToDrag, Course.BoardLiftToDrag, Course.TheoremDeg);
-		if (!Course.bPlaning)
+		const FHeldCourse Course = HoldCourse(*this, WindKnots, KiteAreaM2, AboveDeg, FString::Printf(TEXT("Course %.0f deg up"), AboveDeg));
+		UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: %.0f deg above the beam reach: sustained %d (off the plane after %.1f s), %.1f kn, %.2f m/s made good, course %.1f deg; %.1f deg off the apparent wind, kite L/D %.2f, board L/D %.2f, theorem %.1f deg"),
+			Course.AboveBeamReachDeg, Course.bSustained, Course.DroppedAtSeconds, Course.SpeedKnots, Course.MadeGoodMS, Course.CourseAboveBeamDeg, Course.ApparentAngleDeg, Course.KiteLiftToDrag, Course.BoardLiftToDrag, Course.TheoremDeg);
+		if (!Course.bSustained)
 		{
 			bFoundLimit = true;
 			break;
 		}
 		Closest = Course;
 	}
-	UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: closest course planing in %.0f kn: %.0f deg above the beam reach at %.1f kn, %.2f m/s made good; %.1f deg off the apparent wind against the theorem's %.1f deg (kite L/D %.2f, board L/D %.2f)"),
-		WindKnots, Closest.AboveBeamReachDeg, Closest.SpeedKnots, Closest.MadeGoodMS, Closest.ApparentAngleDeg, Closest.TheoremDeg, Closest.KiteLiftToDrag, Closest.BoardLiftToDrag);
+	UE_LOG(LogKiteSurf, Log, TEXT("CourseTheorem: closest sustainable course in %.0f kn on %.0f m^2: %.0f deg above the beam reach at %.1f kn, %.2f m/s made good; %.1f deg off the apparent wind against the theorem's %.1f deg (kite L/D %.2f, board L/D %.2f)"),
+		WindKnots, KiteAreaM2, Closest.AboveBeamReachDeg, Closest.SpeedKnots, Closest.MadeGoodMS, Closest.ApparentAngleDeg, Closest.TheoremDeg, Closest.KiteLiftToDrag, Closest.BoardLiftToDrag);
 
-	TestTrue(TEXT("The board stops planing before it points into the wind"), bFoundLimit);
-	TestTrue(FString::Printf(TEXT("It planes above a beam reach (%.0f deg)"), Closest.AboveBeamReachDeg), Closest.AboveBeamReachDeg > 0.0f);
-	TestNearlyEqual(FString::Printf(TEXT("On the closest course the angle to the apparent wind is the sum of the drag angles within %.0f deg"), ToleranceDeg),
+	TestTrue(FString::Printf(TEXT("The board cannot hold a course %.0f deg above the beam reach"), MostAboveDeg), bFoundLimit);
+	TestTrue(FString::Printf(TEXT("The closest sustainable course is %.0f to %.0f deg above the beam reach (%.0f deg)"), MinClosestDeg, MaxClosestDeg, Closest.AboveBeamReachDeg),
+		Closest.AboveBeamReachDeg >= MinClosestDeg && Closest.AboveBeamReachDeg <= MaxClosestDeg);
+	TestNearlyEqual(FString::Printf(TEXT("On it the angle to the apparent wind is the sum of the drag angles within %.0f deg"), ToleranceDeg),
 		Closest.ApparentAngleDeg, Closest.TheoremDeg, ToleranceDeg);
-	Ride.Invariants.Assert(*this, TEXT("Course theorem"));
+	return true;
+}
+
+// Pointing too high (docs/physics/plan-2.md item 3b): turned up 50 deg above the beam reach in 15 kn on
+// the 12 m^2 and held there, the board slows, trims up past the planing hump, pays more pressure drag
+// for the edge it carries and drops off the plane within 15 s.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsPointingTooHighDropsOffThePlane, "KiteSurf.Physics.PointingTooHighDropsOffThePlane", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsPointingTooHighDropsOffThePlane::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 15.0f;
+	const float AboveBeamReachDeg = 50.0f;
+	const float WithinSeconds = 15.0f;
+	const float TurnSeconds = AboveBeamReachDeg / CourseTurnRateDegPerS;
+	const FHeldCourse Course = HoldCourse(*this, WindKnots, 12.0f, AboveBeamReachDeg, TEXT("Too high"));
+	UE_LOG(LogKiteSurf, Log, TEXT("PointingTooHighDropsOffThePlane: turned up %.0f deg above the beam reach in %.0f kn over %.1f s: off the plane %.1f s after the turn started; %.1f kn after %.0f s more, course %.1f deg"),
+		AboveBeamReachDeg, WindKnots, TurnSeconds, Course.DroppedAtSeconds, Course.SpeedKnots, CourseHoldSeconds, Course.CourseAboveBeamDeg);
+
+	TestTrue(FString::Printf(TEXT("Pointed %.0f deg up the board drops off the plane within %.0f s of getting there (%.1f s after the turn started, which took %.1f s)"), AboveBeamReachDeg, WithinSeconds, Course.DroppedAtSeconds, TurnSeconds),
+		Course.DroppedAtSeconds >= 0.0f && Course.DroppedAtSeconds <= TurnSeconds + WithinSeconds);
+	TestFalse(TEXT("and cannot hold that course"), Course.bSustained);
 	return true;
 }
 

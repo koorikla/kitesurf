@@ -10,6 +10,16 @@
 #include "WaterBodyComponent.h"
 #include "KiteSurfUnits.h"
 
+namespace
+{
+	// The reference (138 cm) board's planing drag that grows with speed, a + c v^2. Re-based when the
+	// pressure drag of the trim came in (docs/physics/plan-2.md item 3b) so that the flat board
+	// carrying the default 85 kg at 10 m/s still drags 380 N: 87.6 N of pressure drag at 6 deg of
+	// trim and 292.5 N from these (they were 8 kg/s and 0.03 kg/cm, 380 N on their own).
+	constexpr float ReferencePlaningDragKgPerS = 6.15f;
+	constexpr float ReferencePlaningQuadraticDragKgPerCm = 0.0231f;
+}
+
 UBoardMovementComponent::UBoardMovementComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -21,8 +31,11 @@ UBoardMovementComponent::UBoardMovementComponent()
 	BuoyancyN = 1500.0f;
 	PlaningThresholdCmS = 400.0f;
 	DisplacementQuadraticDragKgPerCm = 0.1f;
-	PlaningDragKgPerS = 8.0f;
-	PlaningQuadraticDragKgPerCm = 0.03f; // mostly quadratic, so board speed scales with wind speed
+	PlaningDragKgPerS = ReferencePlaningDragKgPerS;
+	PlaningQuadraticDragKgPerCm = ReferencePlaningQuadraticDragKgPerCm; // mostly quadratic, so board speed scales with wind speed
+	PlaningTrimDeg = 6.0f;              // research 6 to 10 deg (Savitsky)
+	PlaningTrimHumpDeg = 10.0f;         // just over the hump the hull trims highest: the top of research's 6 to 10
+	PlaningTrimHumpSpeedCmS = 600.0f;   // 1.5 times the planing threshold
 	MaxEdgeAngleDeg = 35.0f;
 	MaxBoardSpeedCmS = KiteUnits::KnotsToCmS(35.0f);
 	DisplacementDragKgPerS = 8.0f;
@@ -241,10 +254,19 @@ void UBoardMovementComponent::SetBoardSize(EBoardSize InSize)
 	PopImpulseKgCmPerS = 21000.0f * Traits.PopScale;
 	PlaningThresholdCmS = 400.0f * Traits.PlaningSpeedScale;
 	LowSpeedPivotMaxSpeedCmS = PlaningThresholdCmS;
-	PlaningDragKgPerS = 8.0f * Traits.PlaningDragScale;
-	PlaningQuadraticDragKgPerCm = 0.03f * Traits.PlaningDragScale;
+	PlaningDragKgPerS = ReferencePlaningDragKgPerS * Traits.PlaningDragScale;
+	PlaningQuadraticDragKgPerCm = ReferencePlaningQuadraticDragKgPerCm * Traits.PlaningDragScale;
+	PlaningTrimHumpSpeedCmS = 600.0f * Traits.PlaningSpeedScale; // the hump is where this board planes
 	RailAreaM2 = 0.08f * Traits.GripScale; // a longer board has more rail in the water
 	CarveTurnRate = 60.0f * Traits.TurnRateScale;
+}
+
+float UBoardMovementComponent::GetPlaningTrimDeg(float SpeedCmS) const
+{
+	// Savitsky: the hull trims highest just past the hump and flattens out with speed.
+	const float HumpSpanCmS = PlaningTrimHumpSpeedCmS - PlaningThresholdCmS;
+	const float PastHump = HumpSpanCmS > KINDA_SMALL_NUMBER ? FMath::Clamp((SpeedCmS - PlaningThresholdCmS) / HumpSpanCmS, 0.0f, 1.0f) : 1.0f;
+	return FMath::Max(FMath::Lerp(PlaningTrimHumpDeg, PlaningTrimDeg, PastHump), 0.0f);
 }
 
 float UBoardMovementComponent::GetFloatDepthForSpeed(float SpeedCmS) const
@@ -526,12 +548,24 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const bool bStandingOnWater = !bIsAirborne && !bHydrodynamicsDisabled;
 		TotalForce += UpdateHeelAndNormalSideForce(DeltaTime, ExternalForceN, LevelRight, bStandingOnWater);
 
+		// On the plane the normal force leans back by the trim: its horizontal part, N tan(trim), is
+		// the pressure drag (research 2.2), and N grows as 1 / cos(heel), so carrying the edge costs
+		// drag. The trim is highest just over the planing hump and falls as the board speeds up
+		// (docs/physics/plan-2.md item 3b).
+		float DragDecelCmS2 = 0.0f;
+		if (!bHydrodynamicsDisabled && bPlaning)
+		{
+			LastStepDebug.TrimDeg = GetPlaningTrimDeg(Speed2D);
+			LastStepDebug.PressureDragN = LastStepDebug.NormalForceN * FMath::Tan(FMath::DegreesToRadians(LastStepDebug.TrimDeg));
+			DragDecelCmS2 = KiteUnits::NToUnrealForce(LastStepDebug.PressureDragN) / EffectiveMass;
+		}
+
 		// 5. Velocity Integration: the forces, then the drag and the side force as exact solutions over
 		// the step, which is the same at any step length.
 		Velocity += TotalForce / EffectiveMass * DeltaTime;
 		if (!bHydrodynamicsDisabled)
 		{
-			ApplyWaterDragAndSideForce(DeltaTime, DragRatePerS, DragRatePerCm, LevelForward);
+			ApplyWaterDragAndSideForce(DeltaTime, DragDecelCmS2, DragRatePerS, DragRatePerCm, LevelForward);
 		}
 
 		// Velocity clamping at MaxBoardSpeed
@@ -807,12 +841,13 @@ FVector UBoardMovementComponent::UpdateHeelAndNormalSideForce(float DeltaTime, c
 	// vertical.
 	const float OnBoard = FloatSubmersionCm > 0.0f ? FMath::Clamp(1.0f - CurrentFloatDepthCm / FloatSubmersionCm, 0.0f, 1.0f) : 1.0f;
 	const float HeelRad = FMath::DegreesToRadians(FMath::Clamp(HeelDeg, -MaxHeelDeg, MaxHeelDeg));
+	LastStepDebug.NormalForceN = CarriedN * OnBoard / FMath::Cos(HeelRad);
 	const FVector NormalSideN = -LevelRight * (CarriedN * FMath::Tan(HeelRad) * OnBoard);
 	LastStepDebug.NormalSideForceN = NormalSideN;
 	return NormalSideN * KiteUnits::UnrealForcePerN;
 }
 
-void UBoardMovementComponent::ApplyWaterDragAndSideForce(float DeltaTime, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward)
+void UBoardMovementComponent::ApplyWaterDragAndSideForce(float DeltaTime, float DragDecelCmS2, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward)
 {
 	const FVector HorizontalBefore(Velocity.X, Velocity.Y, 0.0f);
 	const float SpeedBefore = HorizontalBefore.Size();
@@ -822,8 +857,10 @@ void UBoardMovementComponent::ApplyWaterDragAndSideForce(float DeltaTime, float 
 	}
 	const float EffectiveMass = FMath::Max(MassKg, 1.0f);
 
-	// The hull's drag, a + c v^2, against the velocity over the water: the closed-form decay of the speed.
-	const float Speed = DecayWithLinearAndQuadraticDrag(SpeedBefore, DragRatePerS, DragRatePerCm, DeltaTime);
+	// The hull's drag against the velocity over the water: the pressure drag, constant over the step,
+	// takes its share of the speed (never past zero), then a + c v^2 decays the rest in closed form.
+	const float SpeedAfterPressure = FMath::Max(SpeedBefore - FMath::Max(DragDecelCmS2, 0.0f) * DeltaTime, 0.0f);
+	const float Speed = DecayWithLinearAndQuadraticDrag(SpeedAfterPressure, DragRatePerS, DragRatePerCm, DeltaTime);
 	LastStepDebug.DragForceN = HorizontalBefore / SpeedBefore * (EffectiveMass * (Speed - SpeedBefore) / DeltaTime / KiteUnits::UnrealForcePerN);
 
 	// Leeway: the angle from the board's axis (whichever end leads) to its velocity, positive to the

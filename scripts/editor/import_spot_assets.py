@@ -36,6 +36,8 @@ def make_flat(name, color, roughness):
     rough.set_editor_property('r', roughness)
     unreal.MaterialEditingLibrary.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)
     material.set_editor_property('two_sided', True)
+    # Nanite is on project-wide, so the imported meshes are Nanite; -game cannot add the flag itself.
+    material.set_editor_property('used_with_nanite', True)
     unreal.MaterialEditingLibrary.recompile_material(material)
     editor_assets.save_loaded_asset(material, only_if_is_dirty=False)
     print(f'Created {name}')

@@ -12,6 +12,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
 #include "RiderCharacter.h"
 #include "UI/KiteSurfSettingsWidget.h"
@@ -1178,6 +1179,36 @@ bool FKiteSurfAssetsKiteAndRiderMeshes::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("The kite canopy texture loads"), LoadObject<UTexture2D>(nullptr, TEXT("/Game/Textures/T_KiteCanopy.T_KiteCanopy")));
 	const UMaterialInterface* Canopy = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_KiteCanopy.M_KiteCanopy"));
 	TestTrue(TEXT("The canopy material is two-sided, so the kite shows from both sides"), Canopy && Canopy->IsTwoSided());
+	return true;
+}
+
+// Nanite is on project-wide (r.Nanite.ProjectEnabled), so the imported meshes are Nanite. Outside the editor a
+// material cannot gain a usage flag, and one without bUsedWithNanite renders as the default material in -game
+// and packaged builds. Guards the material scripts in scripts/editor/ (import_spot_assets.py, create_materials.py, ...).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfAssetsNaniteMaterialUsage, "KiteSurf.Assets.NaniteMaterialUsage", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfAssetsNaniteMaterialUsage::RunTest(const FString& Parameters)
+{
+#if WITH_EDITORONLY_DATA
+	TArray<UObject*> Assets;
+	EngineUtils::FindOrLoadAssetsByPath(TEXT("/Game/Meshes"), Assets, EngineUtils::ATL_Regular);
+	int32 NaniteMeshes = 0;
+	for (const UObject* Asset : Assets)
+	{
+		const UStaticMesh* Mesh = Cast<UStaticMesh>(Asset);
+		if (!Mesh || !Mesh->IsNaniteEnabled())
+		{
+			continue;
+		}
+		++NaniteMeshes;
+		for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
+		{
+			TestTrue(FString::Printf(TEXT("%s slot %s: %s is used with Nanite"), *Mesh->GetName(), *Slot.MaterialSlotName.ToString(), *GetPathNameSafe(Slot.MaterialInterface)),
+				Slot.MaterialInterface && Slot.MaterialInterface->GetUsageByFlag(MATUSAGE_Nanite));
+		}
+	}
+	TestTrue(FString::Printf(TEXT("The scenery, kite and rider meshes are Nanite (%d found)"), NaniteMeshes), NaniteMeshes > 0);
+#endif
 	return true;
 }
 

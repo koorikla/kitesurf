@@ -36,6 +36,21 @@ public:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Menu")
 	TObjectPtr<class UKiteSurfGearWidget> ActiveGearWidget;
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Menu")
+	TObjectPtr<class UKiteSurfSchoolWidget> ActiveSchoolWidget;
+
+	/** Opens the kite school's lesson menu in place of the main menu. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OnSchoolClicked();
+
+	/** The lesson menu closed with BACK: the main menu comes back. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OnSchoolClosed();
+
+	/** A lesson was started from the lesson menu: its map is loading. */
+	UFUNCTION(BlueprintCallable, Category = "Menu")
+	void OnSchoolLessonStarted(FName LessonId);
+
 	/** Opens the gear screen; the ride starts when it is confirmed. */
 	UFUNCTION(BlueprintCallable, Category = "Menu")
 	void OnPlayClicked();
@@ -101,6 +116,7 @@ private:
 	FSlateBrush BackgroundBrush;
 
 	TSharedPtr<SButton> SlatePlayButton;
+	TSharedPtr<SButton> SlateSchoolButton;
 	TSharedPtr<SButton> SlateSettingsButton;
 	TSharedPtr<SButton> SlateQuitButton;
 };

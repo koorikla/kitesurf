@@ -69,6 +69,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnGearClosed();
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pause")
+	TObjectPtr<class UKiteSurfSchoolWidget> ActiveSchoolWidget;
+
+	/** SCHOOL (free ride) and LESSON MENU (in a lesson): the lesson menu over the paused ride. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSchoolClicked();
+
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSchoolClosed();
+
+	/** A lesson was started from the lesson menu: it runs in this ride, so the ride resumes. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnSchoolLessonStarted(FName LessonId);
+
+	/** RETRY LESSON: the running lesson starts again from its set-up (ALessonDirector::Retry), and the ride resumes. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnRetryLessonClicked();
+
+	/** FREE RIDE: the running lesson ends (ALessonDirector::ExitToFreeRide), and the ride resumes. */
+	UFUNCTION(BlueprintCallable, Category = "Pause")
+	void OnFreeRideClicked();
+
+	/** The lesson running in this ride, or null in free ride. */
+	class ALessonDirector* GetRunningLesson() const;
+
+	/** Whether the menu shows the lesson items (RETRY LESSON, LESSON MENU, FREE RIDE) instead of SCHOOL; set when the navigation is built. */
+	bool ShowsLessonItems() const { return bLessonItems; }
+
 	UFUNCTION(BlueprintCallable, Category = "Pause")
 	void OnMainMenuClicked();
 
@@ -95,6 +123,11 @@ private:
 	TSharedPtr<SButton> SlateSessionButton;
 	TSharedPtr<SButton> SlateRestartButton;
 	TSharedPtr<SButton> SlateGearButton;
+	TSharedPtr<SButton> SlateSchoolButton;
+	TSharedPtr<SButton> SlateRetryLessonButton;
+	TSharedPtr<SButton> SlateLessonMenuButton;
+	TSharedPtr<SButton> SlateFreeRideButton;
+	bool bLessonItems = false;
 	TSharedPtr<SButton> SlateSettingsButton;
 	TSharedPtr<SButton> SlateMainMenuButton;
 	TSharedPtr<SButton> SlateQuitButton;

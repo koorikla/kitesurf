@@ -4,6 +4,9 @@
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
+#include "UI/KiteSurfSchoolWidget.h"
+#include "School/LessonDirector.h"
+#include "EngineUtils.h"
 #include "Tricks/TrickSessionSubsystem.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
@@ -59,6 +62,28 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 	{
 		return Super::RebuildWidget();
 	}
+	bLessonItems = GetRunningLesson() != nullptr;
+
+	// A button shown only in a lesson (bLessonItem) or only in free ride.
+	auto MakeItemButton = [this](TSharedPtr<SButton>& OutButton, const TCHAR* Label, TFunction<void()> OnClicked, bool bLessonItem) -> TSharedRef<SWidget>
+	{
+		return SAssignNew(OutButton, SButton)
+			.IsFocusable(false)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			.Visibility_Lambda([this, bLessonItem]() { return bLessonItems == bLessonItem ? EVisibility::Visible : EVisibility::Collapsed; })
+			.OnClicked_Lambda([OnClicked]()
+			{
+				OnClicked();
+				return FReply::Handled();
+			})
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Label))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
+				.Margin(FMargin(10.0f, 8.0f))
+			];
+	};
 
 	// Fallback Slate UI
 	// A solid brush, tinted mostly opaque, so the paused game is dimmed behind the menu.
@@ -171,6 +196,31 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
 						.Margin(FMargin(10.0f, 8.0f))
 					]
+				]
+				// School (free ride), or the running lesson's items.
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					MakeItemButton(SlateSchoolButton, TEXT("SCHOOL"), [this]() { OnSchoolClicked(); }, false)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					MakeItemButton(SlateRetryLessonButton, TEXT("RETRY LESSON"), [this]() { OnRetryLessonClicked(); }, true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					MakeItemButton(SlateLessonMenuButton, TEXT("LESSON MENU"), [this]() { OnSchoolClicked(); }, true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					MakeItemButton(SlateFreeRideButton, TEXT("FREE RIDE"), [this]() { OnFreeRideClicked(); }, true)
 				]
 				// Settings Button
 				+ SVerticalBox::Slot()
@@ -367,6 +417,78 @@ void UKiteSurfPauseMenuWidget::OnGearClosed()
 	FocusFirst();
 }
 
+ALessonDirector* UKiteSurfPauseMenuWidget::GetRunningLesson() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	for (TActorIterator<ALessonDirector> It(World); It; ++It)
+	{
+		if (IsValid(*It) && It->IsRunning())
+		{
+			return *It;
+		}
+	}
+	return nullptr;
+}
+
+void UKiteSurfPauseMenuWidget::OnSchoolClicked()
+{
+	UWorld* World = GetWorld();
+	if (!World || ActiveSchoolWidget)
+	{
+		return;
+	}
+	ActiveSchoolWidget = CreateWidget<UKiteSurfSchoolWidget>(World, UKiteSurfSchoolWidget::StaticClass());
+	if (ActiveSchoolWidget)
+	{
+		ActiveSchoolWidget->bDuringRide = true;
+		ActiveSchoolWidget->OnClosedDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnSchoolClosed);
+		ActiveSchoolWidget->OnLessonStartedDelegate.AddDynamic(this, &UKiteSurfPauseMenuWidget::OnSchoolLessonStarted);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSchoolWidget->AddToViewport(110); // above the pause menu
+		}
+		ActiveSchoolWidget->FocusFirst();
+
+		// One screen at a time: the pause menu comes back when the lesson menu closes.
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UKiteSurfPauseMenuWidget::OnSchoolClosed()
+{
+	ActiveSchoolWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
+	FocusFirst();
+}
+
+void UKiteSurfPauseMenuWidget::OnSchoolLessonStarted(FName LessonId)
+{
+	ActiveSchoolWidget = nullptr;
+	OnResumeClicked();
+}
+
+void UKiteSurfPauseMenuWidget::OnRetryLessonClicked()
+{
+	if (ALessonDirector* Director = GetRunningLesson())
+	{
+		Director->Retry();
+	}
+	OnResumeClicked();
+}
+
+void UKiteSurfPauseMenuWidget::OnFreeRideClicked()
+{
+	if (ALessonDirector* Director = GetRunningLesson())
+	{
+		Director->ExitToFreeRide();
+	}
+	OnResumeClicked();
+}
+
 void UKiteSurfPauseMenuWidget::OnMainMenuClicked()
 {
 	if (UWorld* World = GetWorld())
@@ -418,6 +540,18 @@ void UKiteSurfPauseMenuWidget::BuildNavigation()
 	Navigator.AddButton(SlateRestartButton, [this]() { OnRestartClicked(); });
 	Navigator.AddButton(SlateGearButton, [this]() { OnGearClicked(); });
 	Navigator.AddButton(SlateSessionButton, [this]() { OnSessionClicked(); });
+	// After the session, so the items above keep their places: SCHOOL in free ride, the lesson's three in a lesson.
+	bLessonItems = GetRunningLesson() != nullptr;
+	if (bLessonItems)
+	{
+		Navigator.AddButton(SlateRetryLessonButton, [this]() { OnRetryLessonClicked(); });
+		Navigator.AddButton(SlateLessonMenuButton, [this]() { OnSchoolClicked(); });
+		Navigator.AddButton(SlateFreeRideButton, [this]() { OnFreeRideClicked(); });
+	}
+	else
+	{
+		Navigator.AddButton(SlateSchoolButton, [this]() { OnSchoolClicked(); });
+	}
 	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
 	Navigator.AddButton(SlateMainMenuButton, [this]() { OnMainMenuClicked(); });
 	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });

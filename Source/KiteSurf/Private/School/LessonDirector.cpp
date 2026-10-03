@@ -802,7 +802,7 @@ ULessonSubsystem* ALessonDirector::GetLessons() const
 	return GameInstance ? GameInstance->GetSubsystem<ULessonSubsystem>() : nullptr;
 }
 
-ALessonDirector* ALessonDirector::StartInWorld(UWorld* World, const FLessonDef& InLesson, APawn* Pawn)
+ALessonDirector* ALessonDirector::StartInWorld(UWorld* World, const FLessonDef& InLesson, APawn* Pawn, const FLessonRunOptions& Options)
 {
 	if (!World)
 	{
@@ -831,7 +831,7 @@ ALessonDirector* ALessonDirector::StartInWorld(UWorld* World, const FLessonDef& 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	ALessonDirector* Director = World->SpawnActor<ALessonDirector>(Params);
-	if (Director && !Director->BeginLesson(InLesson, Pawn))
+	if (Director && !Director->BeginLesson(InLesson, Pawn, Options))
 	{
 		Director->Destroy();
 		return nullptr;

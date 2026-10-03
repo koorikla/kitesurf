@@ -157,9 +157,14 @@ public:
 
 	/**
 	 * Spawns a director in World, ending any other there, and begins the lesson on Pawn (the player's
-	 * rider when null). Null when there is no rider or the lesson cannot begin.
+	 * rider when null) with the run's options (the lesson menu's wind and assists). Null when there is
+	 * no rider or the lesson cannot begin.
 	 */
-	static ALessonDirector* StartInWorld(UWorld* World, const FLessonDef& Lesson, APawn* Pawn = nullptr);
+	static ALessonDirector* StartInWorld(UWorld* World, const FLessonDef& Lesson, APawn* Pawn = nullptr,
+		const FLessonRunOptions& Options = FLessonRunOptions());
+
+	/** The run's options: the lesson menu's wind and assists, kept by Retry. */
+	const FLessonRunOptions& GetRunOptions() const { return RunOptions; }
 
 	// --- State for the HUD lesson layer (S4) and the menus (S5). ---
 

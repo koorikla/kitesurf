@@ -73,7 +73,7 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | In the air: roll / flip / spin. Towards the side of the screen your back is on is a back roll (a flat spin if you popped with no pre-wind); S / pulled back is a backflip | A / D, W / S | Left stick |
 | Hold jump in the air: tuck (spins faster) | Space | Bottom face button |
 | Reset | R | Right face button |
-| Pause menu (resume, restart, gear, settings, main menu, quit) | Esc or P | Start |
+| Pause menu (resume, restart, gear, session, school, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |
 
 **The spot.** The gear screen also switches what is in the water. Sandbars lie across your
@@ -156,6 +156,14 @@ light wind ride with it right in: the 12 m only planes in 12 kn that way.
 a repeat is paid less (75%, 50%, ...). A jump in the air at the horn still counts if it took off
 before it. The clock and the counting scores show at the top; at the end a results card shows the
 total, the three jumps and your local best for that length, which is saved with the settings.
+
+**Kite school.** SCHOOL in the main menu, or in the pause menu during a ride, opens the lesson
+menu: six chapters of lessons, each tile with its stars (0 to 3) and whether it is new, locked
+behind a lesson you have not passed, or coming soon (the feature it needs is not in the game yet).
+Pick a lesson to see what it teaches, what it needs, what passes it and your best result, then
+START it, with more wind or fewer assists on a rerun for more stars. CONTINUE starts the lesson
+the game recommends next. RESET PROGRESS forgets the lessons (it asks first, and keeps your trick
+book). During a lesson the pause menu offers RETRY LESSON, LESSON MENU and FREE RIDE.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:

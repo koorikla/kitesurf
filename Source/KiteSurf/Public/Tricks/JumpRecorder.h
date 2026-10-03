@@ -4,6 +4,7 @@
 #include "BoardMovementComponent.h"
 #include "Tricks/JumpRecord.h"
 #include "Tricks/KiteLoopRecord.h"
+#include "Tricks/RotationRecognizer.h"
 #include "Tricks/TrickRecognition.h"
 #include "Tricks/TrickScoring.h"
 #include "JumpRecorder.generated.h"
@@ -13,11 +14,10 @@
  * fills one per fixed step, after the board has stepped, by polling the board and the kite:
  * delegates are not bound in tests, so the recorder works from counters.
  *
- * Every field has a board or kite getter (T0.2 board events, T0.3 kite hookup); each comment
- * names it.
+ * Every field has a board, kite or rider attitude getter (T0.2 board events, T0.3 kite hookup,
+ * T1.2 attitude); each comment names it.
  *
- * Rider attitude (T1.2) and bar state (T3.4) are not in the snapshot: SignatureFromJump does not
- * read them yet. The live tracker (T1.6) adds them as their own group of fields when it does.
+ * Bar state (T3.4) is not in the snapshot yet.
  */
 struct FJumpRecorderInput
 {
@@ -80,6 +80,26 @@ struct FJumpRecorderInput
 
 	/** UBoardMovementComponent::WasLastLandingClean: false after a crash landing. */
 	bool bLastLandingClean = true;
+
+	/** Why the last landing was graded down: UBoardMovementComponent::GetLastLandingVerdict().Cause. */
+	ELandingCause LastLandingCause = ELandingCause::None;
+
+	/** The board's nose (world, unit): UBoardMovementComponent::GetBoardWorldQuat().GetAxisX(). Stands in for the travel direction at a take-off with no speed along the water. */
+	FVector BoardForward = FVector::ForwardVector;
+
+	// --- Rider attitude (T1.2; read by the rotation recogniser, T1.6) ---
+
+	/** The pawn has a rider attitude to read: the fields below mean something. */
+	bool bHasAttitude = false;
+
+	/** The attitude is simulated (in the air): URiderAttitudeComponent::IsSimulating. Only such steps are counted. */
+	bool bAttitudeActive = false;
+
+	/** Body orientation at the end of this step (world): URiderAttitudeComponent::GetBodyQuat. On the take-off step it is the riding pose. */
+	FQuat BodyQuat = FQuat::Identity;
+
+	/** Body angular velocity (rad/s, world): URiderAttitudeComponent::GetAngularVelocity. */
+	FVector AngularVelocityRadS = FVector::ZeroVector;
 
 	// --- Kite ---
 
@@ -144,13 +164,18 @@ struct FJumpRecorderSettings
  *   horizontal speed and tension. A jump still open is dropped first.
  * - Skip: a jump is open, the board is no longer airborne, not crashing, and JumpCount did not
  *   change: the board treated it as a skip off the surface, and it is dropped.
- * - While open: the peak tension, the lowest kite elevation and the highest board position.
+ * - While open: the peak tension, the lowest kite elevation and the highest board position, and
+ *   the rider's rotation: an FRotationRecognizer begun at the take-off (frame from the velocity,
+ *   the board's nose and the body) and stepped on every step with bAttitudeActive. The live
+ *   record carries the rotation credited so far (GetCurrent); the finalised record the result at
+ *   touchdown (Finish with that step's body), when at least one step was counted.
  * A crash in the air that is not a landing (TriggerCrash from the spot) keeps the jump open until
  * the crash recovery's reset drops it.
  *
- * A finalised record also gets its trick fields: the signature from
- * TrickRecognition::SignatureFromJump, TrickNaming::Name and FamilyKey, the grade, and the score
- * from TrickScoring::ScoreJump. RepeatFactor is left at 1; FJumpSession applies it.
+ * A finalised record also gets the landing verdict's cause (LastLandingCause) and its trick fields:
+ * the signature from TrickRecognition::SignatureFromJump (which reads the rotation fields),
+ * TrickNaming::Name and FamilyKey, the grade, and the score from TrickScoring::ScoreJump.
+ * RepeatFactor is left at 1; FJumpSession applies it.
  */
 class KITESURF_API FJumpRecorder
 {
@@ -170,6 +195,9 @@ public:
 	/** Records finalised so far; the next record's Index. */
 	int32 GetRecordedCount() const { return RecordedCount; }
 
+	/** The rotation recogniser of the jump in progress (or of the last jump). */
+	const FRotationRecognizer& GetRotation() const { return Rotation; }
+
 	/** Drops any open jump, forgets the board counters (the next step only reads them again) and restarts Index at 0. */
 	void Reset();
 
@@ -180,6 +208,8 @@ private:
 	void Accumulate(const FJumpRecorderInput& In);
 	void Finalise(const FJumpRecorderInput& In, FJumpRecord& OutRecord);
 	void CollectLoops(const FJumpRecorderInput& In, FJumpRecord& Record) const;
+	/** Copies a rotation result into a record's rotation fields. */
+	static void ApplyRotation(const FRotationResult& Rotation, FJumpRecord& Record);
 	FJumpLoop MakeJumpLoop(const FKiteLoopRecord& Loop, const FJumpRecord& Record) const;
 
 	bool bPrimed = false;
@@ -194,6 +224,12 @@ private:
 	/** Highest board Z seen in the air and the board time of that step, for the apex time when the board does not give it. */
 	float HighestZCm = 0.0f;
 	float HighestZTimeSeconds = 0.0f;
+
+	/** The rider's rotation in this jump, and whether any attitude step was counted. */
+	FRotationRecognizer Rotation;
+	bool bRotationStepped = false;
+	/** Board time of the last step seen while open (s), for the recogniser's step length. */
+	float LastStepTimeSeconds = 0.0f;
 
 	int32 RecordedCount = 0;
 };

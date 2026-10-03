@@ -370,7 +370,6 @@ namespace TrickRotationTest
 	};
 }
 
-using namespace TrickRotationTest;
 
 // A scripted back-roll pre-wind on the timed jump: one inversion, the chest to the tail first, upright
 // again before the water, and a landing the assist saves.
@@ -378,6 +377,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickBackRollFromPreWindOnRide, "KiteS
 
 bool FKiteSurfTrickBackRollFromPreWindOnRide::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const FTrickJumpResult R = RunTrickJump(FVector2D(1.0f, 0.0f));
 	AddInfo(FString::Printf(TEXT("Back roll on the timed jump: %s"), *Describe(R)));
 	TestTrue(TEXT("Ride fixture created"), R.bValid);
@@ -404,6 +404,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickNoInputNoRotationOnRide, "KiteSur
 
 bool FKiteSurfTrickNoInputNoRotationOnRide::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const FTrickJumpResult R = RunTrickJump(FVector2D::ZeroVector);
 	AddInfo(FString::Printf(TEXT("Timed jump, no rotation input: %s"), *Describe(R)));
 	TestTrue(TEXT("Ride fixture created"), R.bValid);
@@ -427,6 +428,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickUnderRotatedRollCrashesOnPawn, "K
 
 bool FKiteSurfTrickUnderRotatedRollCrashesOnPawn::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	struct FCase
 	{
 		const TCHAR* Name;
@@ -491,6 +493,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickSwitchLandingIsCleanOnBoard, "Kit
 
 bool FKiteSurfTrickSwitchLandingIsCleanOnBoard::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	for (const bool bWithAttitude : { false, true })
 	{
 		const TCHAR* Which = bWithAttitude ? TEXT("with the attitude") : TEXT("board alone");
@@ -529,6 +532,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickBoardLandingUsesEvaluator, "KiteS
 
 bool FKiteSurfTrickBoardLandingUsesEvaluator::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const float Speed = 600.0f;
 	// Yaw 50 deg off the course, board alone: Sketchy (it was a crash past 30 deg), 0.6 of the speed kept.
 	{
@@ -591,6 +595,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickBoardVisualFollowsAttitude, "Kite
 
 bool FKiteSurfTrickBoardVisualFollowsAttitude::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const FTrickJumpResult R = RunTrickJump(FVector2D(1.0f, 0.0f));
 	AddInfo(FString::Printf(TEXT("Back roll visuals: camera roll %.4f deg, pivot off %.2f cm, drawn board off the attitude %.2f deg, root tilt %.4f deg, feet off the straps %.3f cm (inverted %.3f cm), pelvis jump %.1f cm (take-off %.1f, landing %.1f)"),
 		R.MaxCameraRollDeg, R.MaxPivotErrorCm, R.MaxVisualOffAttitudeDeg, R.MaxRootTiltDeg, R.WorstFeetOffStrapsCm, R.WorstFeetOffStrapsInvertedCm,
@@ -618,6 +623,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickRotationStepRateIndependent, "Kit
 
 bool FKiteSurfTrickRotationStepRateIndependent::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const float FrameRates[3] = { 30.0f, 60.0f, 120.0f };
 	FTrickJumpResult Results[3];
 	for (int32 Index = 0; Index < 3; ++Index)
@@ -650,6 +656,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickTravelAlignKeepsBoardAlongFlight,
 
 bool FKiteSurfTrickTravelAlignKeepsBoardAlongFlight::RunTest(const FString& Parameters)
 {
+	using namespace TrickRotationTest;
 	const float Dt = 1.0f / 240.0f;
 	auto MakeAir = [](float BodyYawDeg)
 	{

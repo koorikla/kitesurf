@@ -161,8 +161,20 @@ public:
 	 * "<Name>  <GRADE>  <N> pts" and "<g> g landing", e.g. "Kiteloop  CLEAN  41 pts\n3.2 g landing".
 	 * The points are what the session paid (Score.Total x RepeatFactor), rounded; a repeat paid less
 	 * than in full adds "  (repeat NN%)" to the first line.
+	 * A bad landing (graded sketchy or a crash) whose verdict named a cause adds a third line, the
+	 * cause's LandingCauseLine (T2.6): "Back roll  CRASH  0 pts\n5.1 g landing\nUnder-rotated: commit the roll earlier".
 	 */
 	static FString FormatJumpCard(const FJumpRecord& Record);
+
+	/**
+	 * The one-line failure message for a landing cause (T2.6), e.g. "Under-rotated: commit the roll
+	 * earlier" or "Kite too low at touchdown"; empty for None.
+	 */
+	static FString LandingCauseLine(ELandingCause Cause);
+
+	/** The card's cause line (its third line), empty when the card has none or is not up. */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetJumpCardCauseText() const;
 
 	/** STOMPED, CLEAN, SKETCHY or CRASH. */
 	static FString GradeText(ELandingGrade Grade);
@@ -181,7 +193,10 @@ public:
 	/** Shows a record's card now (and clears the ticker). UpdateJumpCard calls it; tests can too. */
 	void ShowJumpCard(const FJumpRecord& Record);
 
-	/** Names a jump in progress for the ticker; empty while it has no element (loop, rotation, grab...). */
+	/**
+	 * Names a jump in progress for the ticker; empty while it has no element (loop, rotation, grab...).
+	 * Rotations appear as the recogniser credits them: "Back roll", then "Double back roll".
+	 */
 	static FString FormatTrickTicker(const FJumpRecord& LiveJump);
 
 	/** What the trick card shows now; empty when there is nothing to show. */

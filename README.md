@@ -92,10 +92,18 @@ back and load the edge: the board heels harder against the lines, the pull build
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
-5 m in 15 kn, 11 m in 30 kn and 15 m in 40 kn, and with the bar centred the kite flown overhead
-carries you down: nearly 5 s in the air at 30 kn. Steering the kite up without an edge just
-plucks you off the water. (Weight back on S still holds you down too, and adds to the pop.) A kite
-looped through the middle of the window pulls several times harder than a parked one.
+4.5 m in 15 kn, 11 m in 30 kn and 13 to 16 m in 40 kn, and with the bar centred the kite flown
+overhead carries you down: 5 s in the air at 30 kn. On the way down, hold the jump button again to
+crouch for the landing. Steering the kite up without an edge just plucks you off the water. (Weight
+back on S adds to the pop.) A kite looped through the middle of the window pulls several times
+harder than a parked one.
+
+**Landing.** A landing's load is shown in g as you touch down (LANDED 4.2 g), from how fast you
+were sinking and how far your legs and the board took it out over; crouched, that distance is
+twice as long. It says HOT if you came down fast (over 6 m/s) or with the kite low (under 45 degrees
+up), and past 8 g it is a crash, as is landing with the board across your course. The big 30 kn
+jump lands hot at about 7 g crouched and is a crash standing; the biggest 40 kn jumps crash either
+way.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
 motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full
@@ -116,9 +124,9 @@ landings, crashes, menu sounds) volume sliders. Everything is synthesised by scr
 `scripts/editor/`; see the Sound section of `docs/movement.md`.
 
 **Power.** The bar is the throttle, and it moves through its whole throw in under half a
-second. Right out, the kite flags and barely pulls (about 170 N on the 9 m in 20 kn, 9 kn of board
-speed); right in it pulls six or seven times as hard (1100 N, 22 kn). The ride starts with it 70%
-in.
+second. Right out, the kite flags and barely pulls (about 160 N on the 9 m in 20 kn, 6 kn of board
+speed); right in it pulls five times as hard (850 N, 21 kn). The ride starts with it 70% in. In
+light wind ride with it right in: the 12 m only planes in 12 kn that way.
 
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 40 kn), then rig for it:

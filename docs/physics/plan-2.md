@@ -20,6 +20,11 @@ points keep working; one concern per commit, built and tested before it.
 
 ## 1. Projected area, camber and trim: calibrate the kite's pull [research 1.2, 1.3, 1.7]
 
+**Status: done with deviations** (`e3e112b`). `ProjectedAreaRatio` is 0.69, not 0.72: at 0.72 the
+zenith is 1.12 kN. The bar-in row (1.0 to 1.4 body weights, 4 times bar out) did not hold with the
+zenith row at this item (0.79 and 3.6); it holds since item 3 (1.02 and 5.3). `ParkHoldGain` 2 ->
+2.5 to keep the parked kite on its clock. Trims +3.6 / -15.4 deg (throw 19 deg).
+
 **Problem.** `UKiteComponent` uses `AreaM2` (the flat area a kite is sold by) in every force.
 Lift and drag act on the projected area, 0.65 to 0.80 of flat (typical 0.72). The result is
 1.65 kN at the zenith for 9 m^2 in 30 kn against the research's 0.9 to 1.0 kN, and a jump that
@@ -58,6 +63,14 @@ values, re-base it and say so: it encodes a gameplay distinction, not a physical
 doing it first, so items 2 to 4 calibrate against the corrected pull.
 
 ## 2. The kite in the air: assist frame, overhead hold, the send does the climbing [research 1.1, 3.3]
+
+**Status: done with deviations** (`c4179bb`, `b0ac7e8`, `4d33f9e`). A4 was not needed (no stall on
+the way down) and `AirborneTrimEaseDeg` was not added. The timed jump is flown with the jump button's
+loaded pop: with a tap the send reached 7.4 to 8 m, under the 10 m. `KiteOverheadInTheAir` allows
+2.5 s, not 2 s, to get above 60 deg on 11 to 15 m jumps (the rider climbs faster than the kite can).
+`AirborneLoopYanks` is a known gap, pinned at 0.9 body weights against 3 to 5. The descent is a known
+gap found by item 4: the kite sinks from 84 to 55 deg in the last 1.75 s and the rider lands at
+8.2 m/s.
 
 **Problem** (from the phase 1 diagnosis, `CHANGELOG.md`). After take-off the kite sits low and
 to the side of the rider and lifts about 10% of their weight on the way down; `8h / t^2` is
@@ -118,6 +131,16 @@ kept as a tunable so the phase 1 feel is one value away.
 
 ## 3. Edging from a force balance, with the edge separated from heading [research 2.3, 3.1]
 
+**Status: done with deviations** (`041d1c6`, `6f411fd`, `a616c28`, and the follow-ups `ab294ac`
+carve lean, `517b4d0` floating drag, `be9e4b3` pressure drag). `FinAreaM2` 0.013 (not 0.04: the fins
+alone held a flat board) and `TailWeightRailScale` 4 (not 1.5: the edge through the send); the side
+force acts across the board's axis; the normal force's sideways part is scaled by how far the rider
+is up on the board. `LoadingBuildsTension`: the kite sits deeper while the tension builds, not
+towards the edge. The course limit is 30 deg above the beam reach in 15 kn (the research's 15 to 25
+is not met; `CourseTheorem` asks 25 to 40), with the pressure drag `N tan(trim)` and a trim of
+10 deg over the hump (the batch's 13 left a board stuck at the planing threshold); the carve loses 27%
+of its speed (target under 20%); light-wind planing is harder.
+
 **Problem.** Sideways grip is viscous (`F = c * v_lat`), forward drive is manufactured from it
 (`|F_lat| * edge * 0.35`), heel is cosmetic, and the carve input both turns the board and sets
 grip. Upwind ability comes from a coefficient with no physical meaning. Main's #41 added a load
@@ -177,6 +200,14 @@ before the tests are re-based.
 
 ## 4. Water contact, landing g and hot landings [research 3.4, 2.2]
 
+**Status: done with deviations** (`492bf40`, `afa95ab`, `7c2fc73`, `99de798`). The swell test came
+with the clamp's removal, not with the sampling (with the clamp it sat at 20 cm for 0.55 s). No
+extra planing lift was needed. The crouch builds in the air so that it can soften a landing. A loaded
+rider's legs hold the board on the water until lift-off and stop its rise 20 cm above it, as the
+clamp did (without it the late releases gained and the best jump in 15 kn crashed). Target not met:
+the timed jump with the kite overhead lands at 6.7 g crouched and hot (3 to 6 g asked), because the
+descent is 8.2 m/s; `GoodLandingIsThreeToSixG` pins it.
+
 **Problem.** The vertical axis is a kinematic 20 cm clamp with `Vz = 0`; one water sample under
 the pawn; wave orbital velocity discarded; "landing g" is `|Vz| / g`, a time.
 
@@ -210,6 +241,8 @@ the pawn; wave orbital velocity discarded; "landing g" is `|Vz| / g`, a time.
 the knobs.
 
 ## 5. Deferred again
+
+**Status: deferred.**
 
 - Compliant lines at the real stiffness (phase 1 item 11): `MaxLineTensionN` stands in.
 - World wind subsystem with water darkening (phase 1 item 13): visual.

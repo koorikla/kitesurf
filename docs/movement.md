@@ -104,6 +104,7 @@ Santa and the wetsuit rider are jointed figures: a torso and eight limb parts, p
 - **Feet** are in the straps, 30 cm either side of the middle of the board along its length, and go wherever the board goes, tilt included.
 - **Pelvis** is over the feet along the body's lean, 80 cm up standing and 40% lower in a full loaded crouch, and never further from a strap than the leg reaches.
 - **Knees and elbows** come from a two-bone solve (`SolveTwoBone`) that keeps each bone its length: knees forwards and a little apart, elbows down and out.
+- **Tricks:** the rig also takes a full body orientation (`FRiderRigInput::BodyQuat`, for rotations in the air). The torso, the pelvis line and the knee poles then come from the body itself, so an upside-down rider keeps the feet in the straps with the knees bending towards the chest. The pawn does not set it yet (the rider attitude will, in the air), so the pose is unchanged.
 - **Hands** are on the bar 14 cm either side of its middle, so the arms follow the bar as it is sheeted and steered. The bar is kept within the arms' reach of the shoulders, so leaning back brings it in towards the hook.
 - The parts' lengths and joint positions are shared with `generate_mesh_objs.py` (`RIDER_*`), which builds the meshes; `import_rider_parts.py` imports them.
 

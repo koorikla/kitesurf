@@ -93,7 +93,11 @@ def build_assets():
             (ia_sheet, 'Gamepad_RightY', True),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
             (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
-            # Turn the board (IA_Edge keeps its name; it has always driven the carve)
+            # Turn the board (IA_Edge keeps its name; it has always driven the carve).
+            # IA_Edge and IA_WeightShift are the rider's stick and are read by state in
+            # AKiteRiderPawn (docs/tricks/README.md decision 7, no IA_Rotate): the board on the
+            # water, the pre-wind while jump is held, the rotation in the air (X roll or spin,
+            # Y flip). Jump pressed and held in the air is the tuck.
             (ia_edge, 'D', False),
             (ia_edge, 'A', True),
             (ia_edge, 'Gamepad_LeftX', False),

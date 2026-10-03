@@ -57,7 +57,7 @@ you leave it, so no key needs to be held to keep riding; with the bar centred th
 climbs the edge of the window towards 12 o'clock, as a real one does. The same table is shown in
 the main menu and the pause menu.
 
-The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick.
+The bar (the kite) is on the arrow keys or the right stick; the board is on WASD or the left stick. The left stick and WASD are read by what the rider is doing: the board on the water, the pre-wind while the jump button is held, the rotation in the air. The motion bar and the mouse bar only fly the kite, so the stick's rotation works alongside them.
 
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
@@ -65,9 +65,12 @@ The bar (the kite) is on the arrow keys or the right stick; the board is on WASD
 | Bar in / out: power (the bar holds its position) | Down / Up | Right stick pulled back / pushed forward, triggers |
 | Loop the kite | Keep steering towards the kite's own side | Keep the stick towards the kite's own side |
 | Bar on the mouse | Hold right button: move to steer and sheet | |
-| Turn the board left / right; spin it in the air | A / D | Left stick left / right |
+| Turn the board left / right | A / D | Left stick left / right |
 | Weight on the nose / the tail of the board | W / S | Left stick up / down |
 | Hold to crouch and load the edge; let go to pop | Space | Bottom face button |
+| Pre-wind a rotation: hold a direction while loading | WASD while holding Space | Left stick while holding the bottom face button |
+| In the air: roll / flip / spin. Towards the side of the screen your back is on is a back roll (a flat spin if you popped with no pre-wind); S / pulled back is a backflip | A / D, W / S | Left stick |
+| Hold jump in the air: tuck (spins faster) | Space | Bottom face button |
 | Reset | R | Right face button |
 | Pause menu (resume, restart, gear, settings, main menu, quit) | Esc or P | Start |
 | In menus: move up and down, change a value, select | Up / Down, Left / Right, Enter or Space; Esc goes back | D-pad or left stick, bottom face button; right face button goes back |

@@ -67,7 +67,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Input"),
-			TEXT("Holds inputs on the player's rider. Usage: kitesurf.Input <Steer -1..1> <SheetRate -1..1> <Turn -1..1> <WeightShift -1..1> <RawSteer 0|1> [<AirRotX -1..1> <AirRotY -1..1> <Tuck 0..1>]. AirRotX +1 is a back roll, AirRotY -1 a backflip."),
+			TEXT("Holds inputs on the player's rider. Usage: kitesurf.Input <Steer -1..1> <SheetRate -1..1> <Turn -1..1> <WeightShift -1..1> <RawSteer 0|1> [<AirRotX -1..1> <AirRotY -1..1> <Tuck 0..1>]. AirRotX +1 is a back roll, AirRotY -1 a backflip; scripted, so with no screen-side mapping (kitesurf.Stick is the player's stick)."),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 			{
 				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
@@ -92,6 +92,50 @@ public:
 					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
 					{
 						It->SetPreWind(FVector2D(Arg(0), Arg(1)));
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Stick"),
+			TEXT("Holds the player's left stick (A/D, W/S) through the same handlers the keys and the stick use, so it is read by state: the board on the water, the pre-wind while the jump button is held, the rotation in the air (X towards the side of the screen the rider's back is on is a back roll). Usage: kitesurf.Stick <X -1..1: D +1> <Y -1..1: W +1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->OnEdgeTriggered(FInputActionValue(Arg(0)));
+						It->OnWeightShiftTriggered(FInputActionValue(Arg(1)));
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Stick %.2f %.2f: screen back sign %+.0f; board carve %.2f weight %.2f, pre-wind (%.2f, %.2f), air stick (%.2f, %.2f)"),
+							Arg(0), Arg(1), It->GetScreenBackSign(), It->GetBoardMovement() ? It->GetBoardMovement()->GetEdgeInput() : 0.0f,
+							It->GetBoardMovement() ? It->GetBoardMovement()->GetWeightShift() : 0.0f, It->GetPreWindStick().X, It->GetPreWindStick().Y,
+							It->GetAirRotationInput().X, It->GetAirRotationInput().Y);
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.JumpButton"),
+			TEXT("Presses (1) or lets go of (0) the player's jump button through the same handlers the key uses: held on the water loads, letting go pops; pressed and held in the air tucks. Usage: kitesurf.JumpButton <0|1>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const bool bPress = !Args.IsValidIndex(0) || FCString::Atoi(*Args[0]) != 0;
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						if (bPress)
+						{
+							It->OnJumpPressed(FInputActionValue(true));
+						}
+						else
+						{
+							It->OnJumpReleased(FInputActionValue(false));
+						}
 					}
 				}
 			}),
@@ -416,6 +460,8 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStop"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.PreWind"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Stick"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.JumpButton"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

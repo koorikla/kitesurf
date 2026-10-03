@@ -98,7 +98,8 @@ namespace RiderAxes
 	 *   takes HysteresisDeg more (bWasFlip).
 	 * - Otherwise a roll about BackRollAxisBody(Sigma, Tilt) times sign(X), with
 	 *   Tilt = DefaultTiltDeg - TiltRangeDeg * Y / |Stick|: down tilts towards inverted, up towards
-	 *   a flat spin. A tilt under SpinTiltMaxDeg counts as a spin for its rate.
+	 *   a flat spin. The tilt stops at 0 (flat); it does not go past flat towards the other side.
+	 *   A tilt under SpinTiltMaxDeg counts as a spin for its rate.
 	 */
 	inline FRotationAxisChoice ChooseAxisBody(const FVector2D& Stick, float Sigma, float DefaultTiltDeg,
 		float TiltRangeDeg, float FlipSectorDeg, float SpinTiltMaxDeg, float HysteresisDeg, bool bWasFlip)
@@ -121,7 +122,7 @@ namespace RiderAxes
 			return Choice;
 		}
 
-		Choice.TiltDeg = DefaultTiltDeg - TiltRangeDeg * (Stick.Y / Size);
+		Choice.TiltDeg = FMath::Clamp(DefaultTiltDeg - TiltRangeDeg * (Stick.Y / Size), 0.0f, 180.0f);
 		Choice.AxisBody = (Stick.X >= 0.0f ? 1.0f : -1.0f) * BackRollAxisBody(Sigma, Choice.TiltDeg);
 		Choice.Family = Choice.TiltDeg < SpinTiltMaxDeg ? ERotationFamily::Spin : ERotationFamily::Roll;
 		return Choice;

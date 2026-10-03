@@ -279,7 +279,10 @@ namespace TrickSessionTest
 	}
 }
 
-using namespace TrickSessionTest;
+// The tests sit inside the namespace rather than under a using-directive, which would leak into the
+// next file of a unity build.
+namespace TrickSessionTest
+{
 
 // The total is the best three paid scores, one per family key; repeats are paid by the session's own
 // repeat count and a repeat of the same quality never raises the total (backlog F5).
@@ -757,5 +760,7 @@ bool FKiteSurfTrickSessionOldSaveLoads::RunTest(const FString& Parameters)
 	FApp::SetVolumeMultiplier(VolumeBefore);
 	return true;
 }
+
+} // namespace TrickSessionTest
 
 #endif // WITH_DEV_AUTOMATION_TESTS

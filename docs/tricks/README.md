@@ -88,4 +88,4 @@ Updated as PRs merge.
 | T2.7 trick book in the save game | #67 | Merged |
 | T1.1a visual board split from the physics root, air camera | #68 | Merged |
 | T0.2/T0.3/T0.5 light wiring: `UTrickTrackerComponent` on the pawn, HUD trick card and ticker, `kitesurf.Jumps` | #69 | Merged. Polled public getters; take-off, popped, apex time, landing yaw and the loop turn were synthesised in the tracker |
-| T0.2 board events (`BeginAirborne(bool)`, `OnBoardTakeoff`, `OnBoardApex`, take-off and apex counters, landing angle), T0.3 kite hookup (`FKiteLoopTracker` stepped by the kite, `GetLoopRecords`), tracker fed from them | this PR | Open. The tracker derives nothing itself any more |
+| T0.2 board events (`BeginAirborne(bool)`, `OnBoardTakeoff`, `OnBoardApex`, take-off and apex counters, landing angle), T0.3 kite hookup (`FKiteLoopTracker` stepped by the kite, `GetLoopRecords`), tracker fed from them | #73 | Open. The tracker derives nothing itself any more |

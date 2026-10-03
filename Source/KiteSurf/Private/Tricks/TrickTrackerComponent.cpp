@@ -1,5 +1,5 @@
 #include "Tricks/TrickTrackerComponent.h"
-#include "Tricks/LandingMath.h"
+#include "KiteSurfUnits.h"
 #include "BoardMovementComponent.h"
 #include "KiteComponent.h"
 #include "UI/KiteSurfGameInstance.h"
@@ -114,20 +114,18 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 		// A pop leaves the water before the board's step and has this step's airtime already; a
 		// kite lift-off starts inside the step with none (see the class comment).
 		bLastTakeoffPopped = AirtimeSoFar > 0.5f * FMath::Max(StepSeconds, KINDA_SMALL_NUMBER);
-		LastAirborneSinkCmS = 0.0f;
 	}
 
-	// Landing or crash: the board has counted a jump. The sink is the last airborne step's.
+	// Landing or crash: the board has counted a jump and judged its touchdown. The sink and the
+	// landing g are the board's own (physics phase 2 item 4: the sink relative to the surface, taken
+	// out over the absorb distance the crouch lengthens), so the trick card and the board's landing
+	// card show the same number.
 	const int32 JumpCount = Board->GetJumpCount();
 	if (JumpCount != LastJumpCount)
 	{
-		LastSinkCmS = LastAirborneSinkCmS;
-		LastLandingG = LandingMath::ComputeLandingG(LastSinkCmS, LandingAbsorbDistanceCm);
+		LastSinkCmS = KiteUnits::MToCm(Board->GetLastLandingSinkMS());
+		LastLandingG = Board->GetLastLandingG();
 		LastJumpCount = JumpCount;
-	}
-	if (bAirborne)
-	{
-		LastAirborneSinkCmS = FMath::Max(-static_cast<float>(Board->Velocity.Z), 0.0f);
 	}
 	bWasAirborne = bAirborne;
 	bHasPrevious = true;

@@ -8,7 +8,7 @@
  * The landing evaluator (docs/tricks.md 6.7, docs/tricks/T1.md T1.5): grades a touchdown as
  * stomped, clean, sketchy or crash and names the cause. Pure functions over plain structs.
  *
- * Not yet called by the board: UBoardMovementComponent still uses its single angle test. The
+ * Not yet called by the board: UBoardMovementComponent still uses its own angle and landing g tests. The
  * wiring PR builds FLandingInputs with LandingEvaluator::ComputeGeometry plus the board's landing
  * g, sink and hot-landing flag (physics phase 2 item 4) and the kite's elevation.
  *
@@ -127,7 +127,7 @@ struct FLandingThresholds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
 	float SketchyMinLandingG = 8.0f;
 
-	/** Harder than this is a crash, cause TooHard (g). Phase 2 sets the board's CrashLandingG to 8 once its g is real. */
+	/** Harder than this is a crash, cause TooHard (g). The board's own CrashLandingG (physics phase 2) is 8. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
 	float CrashLandingG = 10.0f;
 

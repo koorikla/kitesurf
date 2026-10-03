@@ -7,8 +7,8 @@ ELandingGrade TrickScoring::GradeLanding(float YawDeg, float LandingG, float Kit
 {
 	// The record-only shortcut over LandingEvaluator::Evaluate: no tilt or rider state, and the
 	// board's crash decision stands. A landing the board rode away from is at worst sketchy here,
-	// even when the evaluator's table would call it a crash (today the board only crashes on yaw
-	// over 30 deg, and its landing g is not yet real).
+	// even when the evaluator's table would call it a crash (the board crashes on yaw over 30 deg
+	// and on a landing g over its CrashLandingG, 8 g).
 	if (bCrashed)
 	{
 		return ELandingGrade::Crash;

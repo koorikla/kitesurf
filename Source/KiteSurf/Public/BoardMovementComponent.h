@@ -37,18 +37,42 @@ enum class EJumpRejectReason : uint8
 /** What the water and the air did to the board in its last fixed step, for debug drawing and telemetry. Forces in N, world frame. */
 struct FBoardStepDebug
 {
-	/** Sideways force the fins and rail put on the board (what the grip took out of the sideways speed). */
-	FVector GripForceN = FVector::ZeroVector;
-	/** Forward drive the heeled rail made out of that grip. */
-	FVector DriveForceN = FVector::ZeroVector;
-	/** Forward drag of the hull (planing or displacement). */
+	/** Drag of the hull (planing or displacement), against the board's velocity over the water; on the plane it includes PressureDragN. */
 	FVector DragForceN = FVector::ZeroVector;
+	/** The water's normal force on the board (N): the weight it carries over the cosine of its heel, while the rider stands on it. */
+	float NormalForceN = 0.0f;
+	/** The planing pressure drag (N): the normal force tilted back by the trim, NormalForceN * tan(TrimDeg); only on the plane. */
+	float PressureDragN = 0.0f;
+	/** The planing trim the pressure drag used (deg), UBoardMovementComponent::GetPlaningTrimDeg at the board's speed; 0 off the plane. */
+	float TrimDeg = 0.0f;
 	/** Angle between the board's velocity over the water and its axis, either end first (deg); positive sliding to its right. */
 	float LeewayDeg = 0.0f;
+	/** Heel of the board (deg): positive heeled to hold a pull towards its right, as UBoardMovementComponent::GetHeelDeg. */
+	float HeelDeg = 0.0f;
+	/** Side force the fins and the immersed rail make from leeway, across the board's axis (normal to them). */
+	FVector SideForceN = FVector::ZeroVector;
+	/** Sideways part of the water's normal force on the heeled board, across its axis: N sin(heel). */
+	FVector NormalSideForceN = FVector::ZeroVector;
+	/** The horizontal line pull across the board's axis that the heel was set against (N, signed like HeelDeg). */
+	float PullAcrossN = 0.0f;
+	/** Weight the board carries: the rider's weight less the line's upward pull, never below zero (N). */
+	float CarriedN = 0.0f;
 	/** Air drag on the rider and board, along the wind they feel; only in the air. */
 	FVector AirDragN = FVector::ZeroVector;
+	/** Where the water was sampled under the board (world, cm, on the surface): centre, nose, tail, right rail, left rail. */
+	FVector WaterSamplesCm[5] = { FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector };
+	/** The plane fitted to the samples: its height under the board's centre (cm) and its normal. */
+	float WaterHeightCm = 0.0f;
+	FVector WaterNormal = FVector::UpVector;
+	/** How fast the surface under the board is rising (cm/s): its height change per step along the board's path. */
+	float SurfaceVerticalSpeedCmS = 0.0f;
+	/** The water's vertical force on the board (N): the buoyancy spring and the planing lift, or the touchdown absorber while it is taking a sink out. */
+	float WaterVerticalForceN = 0.0f;
+	/** True while the touchdown absorber is taking the board's sink out. */
+	bool bAbsorbing = false;
 };
 
+/** A clean landing, with its load in g: 1 + v^2 / (2 g s), v the sink into the water, s the absorb distance (UBoardMovementComponent::GetLastLandingG). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardLanding, float, LandingG);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBoardCrash, float, CrashIntensity);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBoardReset);
@@ -123,7 +147,8 @@ public:
 
 	/**
 	 * Holds the load: the rider crouches with their weight over the back of the board and drives
-	 * the edge in against the lines. Lateral grip rises by up to LoadGripBonus, the board is held
+	 * the edge in against the lines. The board heels up to LoadExtraHeelDeg past the balance, so the
+	 * water's normal force pushes it upwind of the pull and the lines pull harder; the board is held
 	 * down as with a full edge, and the pop that follows is up to LoadPopBonus stronger. How much
 	 * that raises the line tension depends on where the kite is: an edge resists a pull across
 	 * the board, not one along it.
@@ -145,10 +170,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float LoadReleaseRatePerSec;
 
-	/** Extra lateral grip at full load, as a fraction. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float LoadGripBonus;
-
 	/** Extra pop from a full load, as a fraction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float LoadPopBonus;
@@ -165,6 +186,43 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	bool WasLastLandingClean() const { return bLastLandingClean; }
+
+	/**
+	 * The last landing's load (g): 1 + v^2 / (2 g s), v the board's sink into the water as it touched
+	 * down and s the distance the legs and the board's immersion took it out over,
+	 * LandingAbsorbDistanceCm softened by the crouch (docs/physics/research.md 3.4). Set on every
+	 * landing from a jump, clean or not; 1 before the first.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingG() const { return LastLandingG; }
+
+	/** The last landing's sink into the water (m/s), relative to the surface. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingSinkMS() const { return LastLandingSinkMS; }
+
+	/** The distance the last landing's sink was taken out over (cm): LandingAbsorbDistanceCm times 1 + CrouchAbsorbBonus * the crouch. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	float GetLastLandingAbsorbCm() const { return LastLandingAbsorbCm; }
+
+	/**
+	 * True if the last landing was hot: the rider sank faster than HotLandingSinkMS or the kite was
+	 * under HotLandingKiteElevationDeg as they touched down (docs/research.md C7). Not a crash by
+	 * itself; a crash is CrashLandingG or MaxLandingAngle.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	bool WasLastLandingHot() const { return bLastLandingHot; }
+
+	/** The load of a landing at this sink into the water (m/s) taken out over this distance (cm), in g: 1 + v^2 / (2 g s). */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	static float LandingGForSink(float SinkMS, float AbsorbDistanceCm);
+
+	/** How many landings from a jump the board has made, clean or crashed (not the kite's skips): the same count as GetJumpCount. Polled by the HUD's landing card. */
+	UFUNCTION(BlueprintPure, Category = "Board|Jump")
+	int32 GetLandingCount() const { return JumpCount; }
+
+	/** True while the touchdown absorber is taking a sink into the water out (the legs and the board's immersion). */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	bool IsAbsorbingTouchdown() const { return bAbsorbing; }
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Jump")
 	bool IsCrashing() const { return bIsCrashing; }
@@ -234,13 +292,28 @@ public:
 	/** Samples water height and normal at the given world location */
 	void SampleWaterSurface(const FVector& Location, float& OutWaterHeight, FVector& OutWaterNormal) const;
 
+	/**
+	 * The water under the board as the last step saw it: a plane fitted to five samples (the centre, the
+	 * nose and tail at WaterSampleAlongFraction of the length, and both rails at WaterSampleAcrossCm),
+	 * its height under the board's centre (cm), its normal, and how fast it is rising under the board
+	 * (cm/s). Pitch and roll on the water follow the plane.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetWaterSurfaceHeightCm() const { return LastStepDebug.WaterHeightCm; }
+
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	FVector GetWaterSurfaceNormal() const { return LastStepDebug.WaterNormal; }
+
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetSurfaceVerticalSpeedCmS() const { return LastStepDebug.SurfaceVerticalSpeedCmS; }
+
 	/** Sets the water surface interface (used by tests or custom water providers) */
 	void SetWaterSurface(TSharedPtr<IKiteWaterSurface> InWaterSurface);
 
 	/** Gets the active water surface interface */
 	TSharedPtr<IKiteWaterSurface> GetWaterSurface() const;
 
-	/** The forces on the board in the last fixed step: the water's grip, drive, drag and leeway (zero in the air) and the air's drag (only in the air). */
+	/** The forces on the board in the last fixed step: the water's drag, side force and normal force, the heel and leeway (zero in the air but the heel), and the air's drag (only in the air). */
 	const FBoardStepDebug& GetLastStepDebug() const { return LastStepDebug; }
 
 	/** Time the board's simulation has advanced (s); the wind on the rider in the air is sampled at this time. */
@@ -258,6 +331,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BoardWidthCm;
 
+	/** The nose and tail water samples are this fraction of BoardLengthCm ahead of and behind the board's centre (docs/physics/plan-2.md item 4). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Water", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float WaterSampleAlongFraction;
+
+	/** The rail water samples are this far either side of the board's centre line (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Water", meta = (ClampMin = "0.0"))
+	float WaterSampleAcrossCm;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float BuoyancyN;
 
@@ -268,7 +349,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float DisplacementQuadraticDragKgPerCm;
 
-	/** Planing drag per speed (kg/s). */
+	/** Planing drag per speed (kg/s): with PlaningQuadraticDragKgPerCm, the drag that grows with speed, on top of the pressure drag of PlaningTrimDeg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningDragKgPerS;
 
@@ -276,10 +357,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningQuadraticDragKgPerCm;
 
-	/** Extra sideways grip at full carve input (kg/s): sideways force per cm/s of leeway. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgeGripKgPerS;
+	/**
+	 * Trim of the planing board at speed (deg), from PlaningTrimHumpSpeedCmS up. The water's normal
+	 * force on the planing surface leans back by the trim, so it drags the board by N tan(trim), N the
+	 * weight it carries over the cosine of its heel (Savitsky's pressure drag, docs/physics/research.md
+	 * 2.2: trim 6 to 10 deg). Carrying the edge therefore costs drag: the more the board heels, the
+	 * larger N. See GetPlaningTrimDeg.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+	float PlaningTrimDeg;
 
+	/**
+	 * Trim of the board just over the planing threshold (deg). A planing hull trims highest just past
+	 * the hump and flattens out as it speeds up (Savitsky), so a board slowed towards the threshold,
+	 * pointed high or loaded, pays more pressure drag for the weight it carries. The trim falls from
+	 * this at PlaningThresholdCmS to PlaningTrimDeg at PlaningTrimHumpSpeedCmS, linearly in speed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "30.0"))
+	float PlaningTrimHumpDeg;
+
+	/** Speed by which the planing trim has fallen from PlaningTrimHumpDeg to PlaningTrimDeg (cm/s); scaled with the planing threshold by SetBoardSize. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float PlaningTrimHumpSpeedCmS;
+
+	/** The planing board's trim at this speed over the water (deg): PlaningTrimHumpDeg at the planing threshold, falling to PlaningTrimDeg by PlaningTrimHumpSpeedCmS. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetPlaningTrimDeg(float SpeedCmS) const;
+
+	/** How far the full carve input turns the board's heading off its course (deg); also the default CarveHeelDeg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxEdgeAngleDeg;
 
@@ -289,14 +394,6 @@ public:
 	/** Displacement drag per speed (kg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float DisplacementDragKgPerS;
-
-	/** Share of the sideways grip force that a heeled rail turns into forward drive, at full carve input. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float EdgeDriveEfficiency;
-
-	/** Sideways grip with no carve input (kg/s): the fins and a neutral stance. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float BaseGripKgPerS;
 
 	/** How quickly the board bobs back to its ride height (Hz). Stiffness scales with the mass, so the feel does not change with the rider. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.01"))
@@ -325,6 +422,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float FloatResponse;
 
+	/**
+	 * Drag area of a rider floating in the water with the board sunk (m^2): a body sitting in the
+	 * water and a board under it are slow to pull through it in any direction. While floating the
+	 * water drags them with 0.5 rho_w A v^2 against the horizontal velocity, A this times how far past
+	 * half the floating depth they are (none at IsFloating's threshold, all of it fully sunk), fading
+	 * out by FloatingDragFadeSpeedCmS. Nothing on the plane (docs/physics/plan-2.md item 3d).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float FloatingDragAreaM2;
+
+	/**
+	 * Speed by which a floating rider pulled through the water has come up to plane on their back and
+	 * the board, and FloatingDragAreaM2 no longer acts (cm/s); it fades out from rest (smoothstep). The
+	 * float depth only starts to rise at FloatUntilSpeedFraction of planing speed, and a drag held at
+	 * full depth up to there would take more pull than a parked kite gives to get through: a
+	 * transition, a slow start or a water start would leave the rider stuck. 0 = no fade.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float FloatingDragFadeSpeedCmS;
+
 	/** Below this speed the board pivots to point along the kite's pull (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float LowSpeedPivotMaxSpeedCmS;
@@ -341,10 +458,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float CarveResponse;
 
-	/** Grip multiplier with the weight fully on the tail; fully on the nose gets the inverse. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float TailWeightGripScale;
-
 	/** Extra planing drag with the weight fully on the tail, as a fraction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float TailWeightDrag;
@@ -352,10 +465,6 @@ public:
 	/** Planing drag saved with the weight fully on the nose, as a fraction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float NoseWeightDragSaving;
-
-	/** Extra heel with the weight fully on the tail (deg). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float TailWeightHeelDeg;
 
 	/** Board pitch at full weight shift on the water (deg): nose down forward, nose up back. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
@@ -365,13 +474,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float AirWeightShiftPitchDeg;
 
-	/** The kite lifts the rider off the water when its upward pull exceeds this multiple of their weight. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
-	float LiftoffWeightFactor;
-
-	/** Added to LiftoffWeightFactor at full edge (turn input or weight on the tail): holding the edge holds the rider down. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
-	float EdgedLiftoffWeightBonus;
+	/**
+	 * How much more upward pull than their weight a loaded rider hangs on to, in body weights at full
+	 * load: the board leaves the water when the lines pull up harder than m g (1 + LoadHoldBonus *
+	 * load). Unloaded, any pull above the rider's weight lifts them. Research: take-off at 2.5 to 4
+	 * body weights of tension (docs/physics/research.md 3.3), so 1.5 to 3.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
+	float LoadHoldBonus;
 
 	/** Board spin rate in the air at full carve input (deg/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
@@ -385,13 +495,67 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float SwitchStanceSpeedCmS;
 
-	/** Heel angle away from the kite at full sideways load (deg). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float AutoHeelDeg;
+	/**
+	 * The rider heels the board to the balance angle without being asked, as a rider's body does:
+	 * tan(heel) = sideways pull / (weight - upward pull) (docs/physics/research.md 3.1). Off, the
+	 * board rides flat unless the load heels it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging")
+	bool bAutoEdge;
 
-	/** Sideways line force that gives the full AutoHeelDeg (N). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
-	float AutoHeelFullLoadN;
+	/** Most the board heels over (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0", ClampMax = "85.0"))
+	float MaxHeelDeg;
+
+	/** Heel added on top of the balance at full load (deg): loading is edging harder than the pull needs. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float LoadExtraHeelDeg;
+
+	/** How quickly the heel follows its target (1/s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float HeelResponse;
+
+	/**
+	 * Heel the full carve input adds towards the inside of the turn (deg), on top of the balance: the
+	 * rider leans into the carve, so the water's normal force on the board tilts into the turn and
+	 * pulls the velocity round after the heading (docs/physics/plan-2.md item 3c). Turning towards the
+	 * kite it takes the edge off and lets the pull across turn the board; turning away it digs the
+	 * rail in harder. The board is drawn at this heel too.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float CarveHeelDeg;
+
+	/**
+	 * Lateral area of the fins (m^2). Four fins 4 to 5 cm deep (research 2.3) on a 10 to 12 cm base
+	 * are 0.003 to 0.005 m^2 each. They are all a flat board has, and they cannot hold a riding pull
+	 * on their own: a board ridden flat slides downwind.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float FinAreaM2;
+
+	/** Lateral area of the immersed rail at full heel (m^2); at heel phi it is this times sin(phi), times the weight shift's TailWeightRailScale. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float RailAreaM2;
+
+	/** Side force coefficient per radian of leeway of the fins and rail (1/rad): 2 to 3 for these low aspect ratios (research 2.3). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float LateralLiftSlopePerRad;
+
+	/** Leeway past which the side force grows no more (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.1"))
+	float LeewayStallDeg;
+
+	/** Rail area multiplier with the weight fully on the tail, which sinks the tail and digs the rail in; fully on the nose gets the inverse. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.01"))
+	float TailWeightRailScale;
+
+	/** The board's heel (deg): positive when heeled to hold a pull towards the board's right, negative towards its left; it includes the lean into a carve (CarveHeelDeg). */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetHeelDeg() const { return HeelDeg; }
+
+	/** Angle between the board's velocity over the water and its axis, either end first (deg), as last stepped; positive sliding to its right. */
+	UFUNCTION(BlueprintPure, Category = "Board|Physics")
+	float GetLeewayDeg() const { return LastStepDebug.LeewayDeg; }
 
 	/**
 	 * Drag area (drag coefficient times frontal area, m^2) of the rider and board in the air. While
@@ -406,8 +570,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float PopImpulseKgCmPerS;
 
-	/** How long the kite's upward pull counts as an impulse when the edge is let go (s). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
+	/**
+	 * How long the kite's upward pull counts as an extra impulse when the edge is let go (s). 0 =
+	 * physics only: the pop is the legs alone, and the height comes from the lines' pull acting on
+	 * the rider as a force once they are off the water (docs/physics/plan-2.md item 2, A3). Phase 1
+	 * used 0.22, a pseudo-impulse that gave the timed jump at 30 kn 5.7 of its 10 m/s of take-off
+	 * speed; set it back to have that feel.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump", meta = (ClampMin = "0.0"))
 	float EdgeReleaseSeconds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
@@ -419,8 +589,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float MaxJumpHeight;
 
+	/** Most angle between the board's axis and its course over the water at touchdown for a clean landing (deg); past it the rider crashes. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float MaxLandingAngle;
+
+	/**
+	 * Distance over which a touchdown's sink into the water is taken out (cm): the legs bending and the
+	 * board's immersion. The water then decelerates the sink v at a constant v^2 / (2 s), and the
+	 * landing's load is 1 + v^2 / (2 g s) (docs/physics/research.md 3.4: 0.2 to 0.4 m; 4 m/s into 0.3 m
+	 * is 3.7 g, 7 m/s is 9 g).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "1.0"))
+	float LandingAbsorbDistanceCm;
+
+	/** How much longer a full crouch (GetLoadAmount 1, the jump button held) makes the absorb distance, as a fraction: 1 doubles it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0"))
+	float CrouchAbsorbBonus;
+
+	/** A landing harder than this (g) is a crash, however well the board is lined up. Research: measured landings 4.2 to 5.5 g. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "1.0"))
+	float CrashLandingG;
+
+	/** A landing sinking faster than this into the water (m/s) is hot (research: 3 to 6 m/s with the kite overhead, 8 to 12 with it low). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0"))
+	float HotLandingSinkMS;
+
+	/** A landing with the kite under this elevation above the rider (deg) is hot: the kite is not holding them up. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	float HotLandingKiteElevationDeg;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Jump")
 	float CleanLandingSpeedRetention;
@@ -461,9 +657,58 @@ private:
 	bool bLoadHeld = false;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
+	/** The board's heel (deg), signed as GetHeelDeg: BalanceHeelDeg less the lean into a carve. */
+	float HeelDeg = 0.0f;
+	/** The heel the rider holds against the pull (deg), the balance plus the load's extra, followed at HeelResponse. */
+	float BalanceHeelDeg = 0.0f;
+
+	/**
+	 * Moves the heel towards its target for this step and returns the sideways part of the water's
+	 * normal force on the heeled board (kg*cm/s^2), across its axis; the whole normal force (N) goes
+	 * in LastStepDebug.NormalForceN. PullN is the external force on the board this step (N); bOnWater
+	 * says the rider is standing on the board on the water.
+	 */
+	FVector UpdateHeelAndNormalSideForce(float DeltaTime, const FVector& PullN, const FVector& LevelRight, bool bOnWater);
+
+	/**
+	 * The hull's drag against the horizontal velocity and the fins' and rail's side force from leeway,
+	 * both integrated without overshoot over the step: the drag shortens the velocity (first the
+	 * constant pressure drag, DragDecelCmS2, then a + c v^2 exactly), and the side force, across the
+	 * board's axis, takes out the speed across it and so turns the velocity onto the axis.
+	 */
+	void ApplyWaterDragAndSideForce(float DeltaTime, float DragDecelCmS2, float DragRatePerS, float DragRatePerCm, const FVector& LevelForward);
 
 	/** Puts the board in the air and starts the jump telemetry. */
 	void BeginAirborne();
+
+	/**
+	 * Samples the water at the five points under a board at Location heading Yaw, fits a plane to them
+	 * and fills the water fields of LastStepDebug: the plane's height under the centre, its normal and
+	 * the surface's vertical speed under the board since the last step (DeltaTime s ago).
+	 */
+	void SampleWaterUnderBoard(const FVector& Location, float Yaw, float DeltaTime);
+
+	/** Where and how high the water under the board's centre was at the last step, for the surface's vertical speed. */
+	bool bHasWaterTrack = false;
+	FVector LastWaterTrackLocation = FVector::ZeroVector;
+	float LastWaterTrackHeightCm = 0.0f;
+
+	/**
+	 * Starts the touchdown absorber for a sink into the water of SinkCmS (relative to the surface): a
+	 * constant deceleration of SinkCmS^2 / (2 s) over s = LandingAbsorbDistanceCm softened by the
+	 * crouch, until the board moves with the surface. Returns s (cm).
+	 */
+	float BeginTouchdownAbsorb(float SinkCmS);
+
+	/** The touchdown absorber: on, its deceleration of the sink (cm/s^2), and whether the board was in contact with the water at the last step. */
+	bool bAbsorbing = false;
+	float AbsorbDecelCmS2 = 0.0f;
+	bool bWasInWaterContact = true;
+
+	float LastLandingG = 1.0f;
+	float LastLandingSinkMS = 0.0f;
+	float LastLandingAbsorbCm = 0.0f;
+	bool bLastLandingHot = false;
 
 	/** Speed after Seconds of linear plus quadratic drag, integrated exactly. */
 	static float DecayWithLinearAndQuadraticDrag(float Speed, float LinearRatePerS, float QuadraticRatePerCm, float Seconds);

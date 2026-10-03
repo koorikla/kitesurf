@@ -106,12 +106,12 @@ float AKiteSurfHUD::KnotsToCmPerSec(float Knots)
 
 FString AKiteSurfHUD::FormatJumpLive(float HeightCm, float DistanceCm, float AirSeconds)
 {
-	return FString::Printf(TEXT("%.1f m high   %.0f m far   %.1f s"), HeightCm / 100.0f, DistanceCm / 100.0f, AirSeconds);
+	return FString::Printf(TEXT("%.1f m high   %.0f m far   %.1f s"), KiteUnits::CmToM(HeightCm), KiteUnits::CmToM(DistanceCm), AirSeconds);
 }
 
 FString AKiteSurfHUD::FormatJumpResult(float ApexCm, float DistanceCm, float AirSeconds)
 {
-	return FString::Printf(TEXT("JUMP  %.1f m high   %.0f m far   %.1f s"), ApexCm / 100.0f, DistanceCm / 100.0f, AirSeconds);
+	return FString::Printf(TEXT("JUMP  %.1f m high   %.0f m far   %.1f s"), KiteUnits::CmToM(ApexCm), KiteUnits::CmToM(DistanceCm), AirSeconds);
 }
 
 void AKiteSurfHUD::UpdateJumpReadout(const UBoardMovementComponent* Board, float DeltaTime)
@@ -358,6 +358,51 @@ void AKiteSurfHUD::ShowJumpRejection(EJumpRejectReason Reason)
 	}
 }
 
+FString AKiteSurfHUD::FormatLandingCard(float LandingG, bool bHot, bool bClean)
+{
+	return FString::Printf(TEXT("%s %.1f g%s"), bClean ? TEXT("LANDED") : TEXT("CRASH"), LandingG, bHot ? TEXT("  HOT") : TEXT(""));
+}
+
+void AKiteSurfHUD::UpdateLandingCard(const UBoardMovementComponent* Board, float DeltaTime)
+{
+	LandingCardRemainingTime = FMath::Max(0.0f, LandingCardRemainingTime - FMath::Max(DeltaTime, 0.0f));
+	if (!Board)
+	{
+		return;
+	}
+	const int32 Count = Board->GetLandingCount();
+	// The first look only learns the count: a landing from before the HUD saw the board is not news.
+	if (SeenLandingCount >= 0 && Count != SeenLandingCount)
+	{
+		bLandingCardHot = Board->WasLastLandingHot();
+		bLandingCardClean = Board->WasLastLandingClean();
+		LandingCardText = FormatLandingCard(Board->GetLastLandingG(), bLandingCardHot, bLandingCardClean);
+		LandingCardRemainingTime = LandingCardSeconds;
+	}
+	SeenLandingCount = Count;
+}
+
+void AKiteSurfHUD::DrawLandingCard(float ScreenW, float ScreenH)
+{
+	if (LandingCardRemainingTime <= 0.0f || LandingCardText.IsEmpty())
+	{
+		return;
+	}
+	// Above the jump-rejection line, centred: green for a clean landing, red for a crash, and the
+	// whole card orange when it was hot. It fades over its last half second.
+	const float Alpha = FMath::Clamp(LandingCardRemainingTime / 0.5f, 0.0f, 1.0f);
+	const float Scale = 1.6f;
+	float TextW = 0.0f;
+	float TextH = 0.0f;
+	GetTextSize(LandingCardText, TextW, TextH, nullptr, Scale);
+	const float TextX = ScreenW * 0.5f - TextW * 0.5f;
+	const float TextY = (ScreenH - 50.0f) - 235.0f;
+	const FLinearColor Panel = bLandingCardHot ? FLinearColor(0.25f, 0.1f, 0.02f, 0.75f * Alpha) : FLinearColor(0.02f, 0.05f, 0.1f, 0.75f * Alpha);
+	const FLinearColor Ink = !bLandingCardClean ? FLinearColor(1.0f, 0.35f, 0.35f, Alpha) : (bLandingCardHot ? FLinearColor(1.0f, 0.6f, 0.2f, Alpha) : FLinearColor(0.5f, 1.0f, 0.6f, Alpha));
+	DrawRect(Panel, TextX - 16.0f, TextY - 6.0f, TextW + 32.0f, TextH + 12.0f);
+	DrawText(LandingCardText, Ink, TextX, TextY, nullptr, Scale);
+}
+
 void AKiteSurfHUD::ShowNotice(const FString& Text)
 {
 	JumpRejectionText = Text;
@@ -391,6 +436,8 @@ void AKiteSurfHUD::DrawHUD()
 		// Left of the power gauge: what the hands are doing to the bar.
 		DrawControlBar(RiderPawn, ScreenW - 500.0f, ScreenH - 280.0f, 230.0f, 245.0f);
 		UpdateOnboarding(DeltaTime, RiderPawn);
+		UpdateLandingCard(RiderPawn->GetBoardMovement(), DeltaTime);
+		DrawLandingCard(ScreenW, ScreenH);
 	}
 
 	if (bOnboardingActive)
@@ -545,10 +592,10 @@ void AKiteSurfHUD::DrawTelemetry(AKiteRiderPawn* RiderPawn)
 		DrawText(StateStr, FLinearColor(1.0f, 0.85f, 0.2f), 32.0f, 120.0f, nullptr, 1.1f);
 
 		FString JumpStr = FString::Printf(TEXT("JUMP: Best %.1f m high, %.0f m far | Last %.1f m, %.0f m"),
-			BoardMove->GetBestJumpHeight() / 100.0f,
-			BoardMove->GetBestJumpDistance() / 100.0f,
-			BoardMove->GetLastJumpApexHeight() / 100.0f,
-			BoardMove->GetLastJumpDistance() / 100.0f);
+			KiteUnits::CmToM(BoardMove->GetBestJumpHeight()),
+			KiteUnits::CmToM(BoardMove->GetBestJumpDistance()),
+			KiteUnits::CmToM(BoardMove->GetLastJumpApexHeight()),
+			KiteUnits::CmToM(BoardMove->GetLastJumpDistance()));
 		DrawText(JumpStr, FLinearColor(0.85f, 0.95f, 1.0f), 32.0f, 144.0f, nullptr, 1.1f);
 	}
 

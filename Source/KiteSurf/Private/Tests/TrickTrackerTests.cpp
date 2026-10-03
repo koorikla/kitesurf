@@ -16,8 +16,8 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 // Tests for the trick tracker wired into the pawn (docs/tricks/T0.md sections 4 and 6). The ride
-// fixture and the timed send-and-pop are copied from RideLoopTests.cpp, which physics phase 2 is
-// rewriting, so that file is not touched here.
+// fixture and the timed send-and-pop are copied from RideLoopTests.cpp's RunJump and fly the jump
+// the way it does since physics phase 2: the jump button held and let go, and a crouched landing.
 namespace TrickTrackerTestsLocal
 {
 	const float RideDeltaTime = 1.0f / 60.0f;
@@ -86,6 +86,9 @@ namespace TrickTrackerTestsLocal
 		float BoardLastAirtime = 0.0f;
 		float BoardLastApexCm = 0.0f;
 		float BoardLastDistanceCm = 0.0f;
+		/** The board's own judgement of the touchdown: its load (g) and the distance it was taken out over (cm). */
+		float BoardLastLandingG = 0.0f;
+		float BoardLastLandingAbsorbCm = 0.0f;
 		bool bBoardLandingClean = false;
 		int32 BoardJumpCount = 0;
 		int32 RecordCount = 0;
@@ -106,10 +109,19 @@ namespace TrickTrackerTestsLocal
 	};
 
 	/**
-	 * The timed send and pop of RideLoopTests' RunJump (30 kn, recommended kite, release 0.7 s
-	 * after the bar reaches the kite). With LoopSteer non-zero the bar is held over with the loop
-	 * forced through (SetLoopHeld) from take-off until touchdown. A HUD passed in is updated each
-	 * frame as DrawHUD would.
+	 * When the timed jump lets go of the jump button, after the send reaches the kite (s): RideLoopTests'
+	 * TimedReleaseSeconds. Since physics phase 2 the loaded rider hangs on until the lines pull up 2.5
+	 * body weights, so the 0.7 s of phase 1 is a frame too late (the kite plucks them off first).
+	 */
+	constexpr float TimedReleaseSeconds = 0.66f;
+
+	/**
+	 * The timed send and pop of RideLoopTests' RunJump (30 kn, recommended kite): the jump button held
+	 * (crouched, loading the edge) with the weight back, let go TimedReleaseSeconds after the bar reaches
+	 * the kite, and held again from the apex to crouch for the landing (physics phase 2: landed standing,
+	 * a jump this big is a crash). With LoopSteer non-zero the bar is held over with the loop forced
+	 * through (SetLoopHeld) from take-off until touchdown. A HUD passed in is updated each frame as
+	 * DrawHUD would.
 	 */
 	FTrackedJump RunTrackedJump(float LoopSteer = 0.0f, AKiteSurfHUD* HUD = nullptr, bool bSecondPop = false)
 	{
@@ -124,8 +136,9 @@ namespace TrickTrackerTestsLocal
 
 		Ride.Pawn->SteerKite(-1.0f);
 		const float SendDeadTimeSeconds = Ride.Kite->GetSteeringDeadTimeSeconds();
-		const float ReleaseSeconds = 0.7f;
+		const float ReleaseSeconds = TimedReleaseSeconds;
 		Ride.Board->SetWeightShift(-1.0f);
+		Ride.Pawn->SetLoadHeld(true);
 
 		bool bLeftWater = false;
 		bool bLooping = false;
@@ -139,13 +152,14 @@ namespace TrickTrackerTestsLocal
 				bLeftWater = true;
 				Out.bPulledOffEdge = true;
 				Ride.Board->SetWeightShift(0.0f);
+				Ride.Pawn->SetLoadHeld(false);
 				Ride.Pawn->SheetKite(1.0f);
 			}
 			if (!bLeftWater && Elapsed >= ReleaseSeconds + SendDeadTimeSeconds)
 			{
 				Ride.Board->SetWeightShift(-1.0f);
 				Ride.Pawn->SheetKite(1.0f);
-				Ride.Board->Jump();
+				Ride.Pawn->ReleaseLoadAndPop();
 				Ride.Board->SetWeightShift(0.0f);
 				bLeftWater = true;
 			}
@@ -158,6 +172,11 @@ namespace TrickTrackerTestsLocal
 			else if (!bLooping && Ride.Kite->GetClockDeg() < 0.0f)
 			{
 				Ride.Pawn->SteerKite(0.0f); // keep the kite overhead
+			}
+			if (bAir && Ride.Board->Velocity.Z < 0.0f)
+			{
+				// Coming down: crouch for the landing.
+				Ride.Pawn->SetLoadHeld(true);
 			}
 			if (bAir)
 			{
@@ -190,9 +209,12 @@ namespace TrickTrackerTestsLocal
 				break;
 			}
 		}
+		Ride.Pawn->SetLoadHeld(false); // landed: up out of the crouch (letting go of the button, no pop)
 		Ride.Kite->SetLoopHeld(false);
 		Ride.Pawn->SteerKite(0.0f);
 
+		Out.BoardLastLandingG = Ride.Board->GetLastLandingG();
+		Out.BoardLastLandingAbsorbCm = Ride.Board->GetLastLandingAbsorbCm();
 		Out.BoardLastAirtime = Ride.Board->GetLastJumpAirtime();
 		Out.BoardLastApexCm = Ride.Board->GetLastJumpApexHeight();
 		Out.BoardLastDistanceCm = Ride.Board->GetLastJumpDistance();
@@ -305,7 +327,9 @@ bool FKiteSurfTrickTrackerRecordsJump::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Take-off before the apex before the landing"), R.TakeoffTimeSeconds < R.ApexTimeSeconds && R.ApexTimeSeconds < R.LandingTimeSeconds);
 	TestNearlyEqual(TEXT("Landing minus take-off is the airtime (s)"), R.LandingTimeSeconds - R.TakeoffTimeSeconds, R.AirtimeSeconds, 0.01f);
 	TestTrue(FString::Printf(TEXT("The rider was coming down at touchdown (%.0f cm/s)"), R.SinkRateCmS), R.SinkRateCmS > 0.0f);
-	TestNearlyEqual(TEXT("The landing g is 1 + v^2/(2 g s) over 30 cm"), R.LandingG, LandingMath::ComputeLandingG(R.SinkRateCmS, 30.0f), 1e-3f);
+	TestNearlyEqual(TEXT("The landing g is the board's"), R.LandingG, Jump.BoardLastLandingG, 1e-4f);
+	TestNearlyEqual(FString::Printf(TEXT("1 + v^2/(2 g s) over the board's absorb distance (%.0f cm, crouched)"), Jump.BoardLastLandingAbsorbCm),
+		R.LandingG, LandingMath::ComputeLandingG(R.SinkRateCmS, Jump.BoardLastLandingAbsorbCm), 1e-3f);
 	TestTrue(TEXT("The lines pulled in the air"), R.PeakTensionN > 0.0f);
 	TestEqual(TEXT("Popped when the pop, not the kite, took the rider off"), R.bPopped, !Jump.bPulledOffEdge);
 	TestFalse(TEXT("The jump has a name"), R.TrickName.IsEmpty());

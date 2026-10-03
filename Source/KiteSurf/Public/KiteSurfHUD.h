@@ -64,6 +64,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	float GetJumpRejectionRemainingTime() const { return JumpRejectionRemainingTime; }
 
+	/**
+	 * The landing card's text for a landing of this load (g): "LANDED 4.2 g", with "HOT" after it for a
+	 * hot landing (the rider sank fast or the kite was low), and "CRASH" instead of "LANDED" for a crash.
+	 */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	static FString FormatLandingCard(float LandingG, bool bHot, bool bClean);
+
+	/**
+	 * Shows the landing card for LandingCardSeconds when the board has landed since the last call
+	 * (UBoardMovementComponent::GetLandingCount), and counts it down by DeltaTime. DrawHUD calls it with
+	 * the rider's board every frame.
+	 */
+	void UpdateLandingCard(const UBoardMovementComponent* Board, float DeltaTime);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetLandingCardText() const { return LandingCardRemainingTime > 0.0f ? LandingCardText : FString(); }
+
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	bool IsLandingCardHot() const { return LandingCardRemainingTime > 0.0f && bLandingCardHot; }
+
+	/** How long the landing card stays up after a landing (s). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Jump", meta = (ClampMin = "0.0"))
+	float LandingCardSeconds = 3.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UKiteSurfPauseMenuWidget> PauseMenuWidgetClass;
 
@@ -190,6 +214,19 @@ protected:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	float JumpRejectionRemainingTime = 0.0f;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
+	FString LandingCardText;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
+	float LandingCardRemainingTime = 0.0f;
+
+	bool bLandingCardHot = false;
+	bool bLandingCardClean = true;
+	/** The board's landing count when the card last looked; -1 before it has seen the board. */
+	int32 SeenLandingCount = -1;
+
+	void DrawLandingCard(float ScreenW, float ScreenH);
 
 	void DrawTelemetry(AKiteRiderPawn* RiderPawn);
 	void DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius);

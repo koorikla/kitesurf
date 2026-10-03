@@ -13,7 +13,8 @@ namespace LandingMath
 	 * Default vertical distance a landing is absorbed over: knees and the board into the water (cm).
 	 * An estimate. The board's tunable keeps the shared name LandingAbsorbDistanceCm and this value.
 	 */
-	constexpr float DefaultLandingAbsorbDistanceCm = 30.0f;
+	/** Standing: the legs' give, the board's immersion and the water's own give. A full crouch doubles it. */
+	constexpr float DefaultLandingAbsorbDistanceCm = 45.0f;
 
 	/**
 	 * Deceleration of a landing in g: 1 + v^2 / (2 g s), a constant deceleration that stops a sink

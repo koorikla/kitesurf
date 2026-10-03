@@ -1,5 +1,6 @@
 #include "Tricks/TrickBook.h"
 #include "Tricks/JumpRecord.h"
+#include "KiteSurfUnits.h"
 #include "Algo/StableSort.h"
 
 bool FTrickBook::RecordLanding(const FJumpRecord& Record, ETrickBoardCategory Board)
@@ -14,7 +15,7 @@ bool FTrickBook::RecordLanding(const FJumpRecord& Record, ETrickBoardCategory Bo
 		return false;
 	}
 
-	const float HeightM = FMath::Max(Record.ApexHeightCm, 0.0f) / 100.0f;
+	const float HeightM = KiteUnits::CmToM(FMath::Max(Record.ApexHeightCm, 0.0f));
 	const float Score = FMath::IsFinite(Record.Score.Total) ? Record.Score.Total : 0.0f;
 
 	const int32 ExistingIndex = IndexOf(Record.FamilyKey, Board);

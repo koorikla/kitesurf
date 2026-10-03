@@ -5,6 +5,7 @@
 #include "KiteComponent.h"
 #include "BoardMovementComponent.h"
 #include "KiteSurfGameMode.h"
+#include "KiteSurfUnits.h"
 #include "WindComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -21,7 +22,7 @@ namespace TrickCameraTest
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
 	constexpr float DeltaTime = 1.0f / 60.0f;
-	constexpr float KnotCmS = 51.44f;
+	constexpr float KnotCmS = KiteUnits::CmPerKnot;
 
 	/** A pawn riding in steady wind along +X, set up as the game mode starts a ride, with the boom's lag off so one boom tick puts the camera where it belongs. */
 	struct FCameraRide

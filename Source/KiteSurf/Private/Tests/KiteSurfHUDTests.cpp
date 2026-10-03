@@ -2,6 +2,10 @@
 #include "Misc/AutomationTest.h"
 #include "KiteSurfHUD.h"
 #include "KiteRiderPawn.h"
+#include "BoardMovementComponent.h"
+#include "KiteComponent.h"
+#include "WindComponent.h"
+#include "KiteSurfUnits.h"
 #include "KiteSurfGameMode.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -330,6 +334,75 @@ bool FKiteSurfHUDBarDisplay::RunTest(const FString& Parameters)
 	AKiteSurfHUD::GetBarEnds(3.0f, 2.0f, ThrowTop, ThrowLength, HalfWidth, MaxTiltDeg, Left, Right);
 	TestNearlyEqual(TEXT("Steer is clamped"), Right.Y - Left.Y, FullRightDrop, 0.01);
 	TestNearlyEqual(TEXT("Sheet is clamped to the throw"), (Left.Y + Right.Y) * 0.5, 180.0, 0.01);
+	return true;
+}
+
+// The landing card (docs/physics/plan-2.md item 4): after each landing from a jump the HUD shows its load
+// in g for a few seconds, "HOT" when the rider sank fast or the kite was low, and "CRASH" for a crash.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDLandingCard, "KiteSurf.HUD.LandingCard", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfHUDLandingCard::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("A clean landing reads its g"), AKiteSurfHUD::FormatLandingCard(4.2f, false, true), FString(TEXT("LANDED 4.2 g")));
+	TestEqual(TEXT("a hot one says so"), AKiteSurfHUD::FormatLandingCard(6.68f, true, true), FString(TEXT("LANDED 6.7 g  HOT")));
+	TestEqual(TEXT("and a crash is a crash"), AKiteSurfHUD::FormatLandingCard(9.24f, true, false), FString(TEXT("CRASH 9.2 g  HOT")));
+
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteSurfHUD* HUD = World ? World->SpawnActor<AKiteSurfHUD>() : nullptr;
+	AKiteRiderPawn* Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+	UBoardMovementComponent* Board = Pawn ? Pawn->GetBoardMovement() : nullptr;
+	TestTrue(TEXT("HUD, rider and board created"), HUD && Board);
+	if (!HUD || !Board)
+	{
+		if (World)
+		{
+			World->DestroyWorld(false);
+		}
+		return false;
+	}
+	Pawn->GetWind()->BaseWind = FVector::ZeroVector;
+	Pawn->GetKite()->SetElevationDeg(80.0f);
+	const float Frame = 1.0f / 60.0f;
+
+	// Drops the board onto flat water at this sink (m/s), lined up with its course, and lets the HUD
+	// look at it once the landing has happened.
+	auto LandAt = [&](float SinkMS, bool bCrouch)
+	{
+		Pawn->SetActorRotation(FRotator::ZeroRotator);
+		Pawn->SetActorLocation(FVector::ZeroVector);
+		Board->Velocity = FVector(800.0f, 0.0f, 0.0f);
+		Board->SetLoadHeld(bCrouch);
+		Board->Simulate(0.5f);
+		Pawn->SetActorLocation(FVector(0.0f, 0.0f, 10.0f));
+		Board->Velocity = FVector(800.0f, 0.0f, -KiteUnits::MToCm(SinkMS));
+		Board->SetBoardState(EBoardState::Airborne);
+		Board->SetCurrentJumpAirtime(1.0f);
+		Board->Simulate(Frame);
+		Board->SetLoadHeld(false);
+		HUD->UpdateLandingCard(Board, Frame);
+	};
+
+	HUD->UpdateLandingCard(Board, Frame);
+	TestTrue(TEXT("No card before a landing"), HUD->GetLandingCardText().IsEmpty());
+
+	LandAt(7.0f, true);
+	const FString HotCard = HUD->GetLandingCardText();
+	UE_LOG(LogTemp, Log, TEXT("LandingCard: crouched at 7 m/s the card reads '%s'; the board says %.2f g, hot %d, clean %d"), *HotCard, Board->GetLastLandingG(), Board->WasLastLandingHot(), Board->WasLastLandingClean());
+	TestEqual(TEXT("A crouched landing at 7 m/s shows its g and HOT"), HotCard, AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, true));
+	TestTrue(TEXT("and the card is hot"), HUD->IsLandingCardHot());
+	for (float Seconds = 0.0f; Seconds < HUD->LandingCardSeconds + 0.1f; Seconds += Frame)
+	{
+		HUD->UpdateLandingCard(Board, Frame);
+	}
+	TestTrue(TEXT("It is gone a few seconds later"), HUD->GetLandingCardText().IsEmpty());
+
+	// A harder landing standing (the crouch let go of on the water first): a crash.
+	LandAt(10.0f, false);
+	UE_LOG(LogTemp, Log, TEXT("LandingCard: standing at 10 m/s the card reads '%s'"), *HUD->GetLandingCardText());
+	TestEqual(TEXT("Standing, a 10 m/s landing is a crash"), HUD->GetLandingCardText(), AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, false));
+	TestTrue(FString::Printf(TEXT("over CrashLandingG (%.2f g)"), Board->GetLastLandingG()), Board->GetLastLandingG() > Board->CrashLandingG);
+
+	World->DestroyWorld(false);
 	return true;
 }
 

@@ -27,8 +27,9 @@ class UKiteComponent;
  *   take-off that already has airtime on its first step is taken as popped. An inference from
  *   GetCurrentJumpAirtime, to be replaced by the board's WasLastTakeoffPopped.
  * - Apex time: the step the board was seen highest (the recorder's fallback).
- * - Sink rate: -Vz of the last step still in the air; landing g from LandingMath::ComputeLandingG
- *   over LandingAbsorbDistanceCm (30 cm). The board's own landing g is replaced, not read.
+ * - Sink rate and landing g: the board's own, GetLastLandingSinkMS and GetLastLandingG (physics
+ *   phase 2 item 4: the sink relative to the water's surface, taken out over the board's absorb
+ *   distance, which the crouch lengthens), read when the board counts the jump.
  * - Landing yaw: 0 (the board keeps its landing angle private), so it never grades a landing down.
  * - Kite loops: the heading turn per step is the signed angle between successive GetKiteHeading
  *   values about the line (rider to kite), the axis the kite turns about. That also counts the small
@@ -90,10 +91,6 @@ public:
 	/** Take-offs seen so far: the board entering Airborne. */
 	int32 GetTakeoffCount() const { return TakeoffCount; }
 
-	/** Distance a landing is absorbed over for the landing g (cm). Same name and value as physics phase 2 item 4. Estimate. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks", meta = (ClampMin = "1"))
-	float LandingAbsorbDistanceCm = 30.0f;
-
 	/** A heading change larger than this in one step is a teleport (reset, relaunch), not a turn: the open loop run is dropped (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Tricks", meta = (ClampMin = "1"))
 	float MaxStepTurnDeg = 45.0f;
@@ -126,7 +123,6 @@ private:
 	float LastTakeoffTimeSeconds = 0.0f;
 	/** Kite clock at the last take-off (s), to place loops in the live jump. */
 	float TakeoffKiteTimeSeconds = 0.0f;
-	float LastAirborneSinkCmS = 0.0f;
 	float LastLandingG = 1.0f;
 	float LastSinkCmS = 0.0f;
 	int32 LastJumpCount = 0;

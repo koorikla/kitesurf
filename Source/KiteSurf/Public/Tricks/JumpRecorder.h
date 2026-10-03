@@ -14,8 +14,8 @@
  * delegates are not bound in tests, so the recorder works from counters.
  *
  * Fields marked "wiring PR" have no board or kite getter on main yet; the PR that steps the
- * recorder from the pawn adds them (T0.2 board events, physics phase 2 item 4 landing g, T0.3
- * kite hookup). Until then they keep their defaults here.
+ * recorder from the pawn adds them (T0.2 board events, T0.3 kite hookup). Until then they keep
+ * their defaults here.
  *
  * Rider attitude (T1.2) and bar state (T3.4) are not in the snapshot: SignatureFromJump does not
  * read them yet. The live tracker (T1.6) adds them as their own group of fields when it does.
@@ -70,10 +70,10 @@ struct FJumpRecorderInput
 	/** GetLastJumpDistance (cm). */
 	float LastDistanceCm = 0.0f;
 
-	/** Downward speed at the last contact (cm/s, positive). Wiring PR: GetLastLandingSinkRateCmS. */
+	/** Downward speed into the water at the last contact, relative to its surface (cm/s, positive): UBoardMovementComponent::GetLastLandingSinkMS. */
 	float LastSinkRateCmS = 0.0f;
 
-	/** Deceleration of the last landing (g). Wiring PR: GetLastLandingG, from LandingMath::ComputeLandingG with LandingAbsorbDistanceCm. */
+	/** Deceleration of the last landing (g): UBoardMovementComponent::GetLastLandingG, LandingMath::ComputeLandingG over the board's absorb distance. */
 	float LastLandingG = 1.0f;
 
 	/** Angle between the board and its velocity at the last contact (deg). Wiring PR: GetLastLandingAngleDeg. */

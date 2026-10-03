@@ -72,3 +72,25 @@ physical law):
   90 kn at least 20% above the one before.
 - Lines taut for at least 80% of the first two seconds of a 60 kn and a 90 kn jump.
 - The rider still comes down, the kite stays flying, and 30 kn stays at 10 to 20 m.
+
+## After phase 2
+
+Measured again on `physics/phase2` merged with `main` (the same fixture: recommended loop kite,
+kite sent, now with the jump button held and let go, and a crouched landing; release swept in
+0.05 s steps). Phase 2 put the kite overhead in the air (A2), took the 0.22 s pseudo-impulse out
+(A3), made the loaded rider hang on until the lines pull `1 + LoadHoldBonus` body weights, and
+made landings a real g with a crash over `CrashLandingG` (8 g).
+
+| Wind | Kite | Best release | Height | Distance | Airtime | Landing |
+| --- | --- | --- | --- | --- | --- | --- |
+| 30 kn | 6 m | 0.65 s | 10.3 m | 66 m | 5.0 s | 6.3 g, hot |
+| 40 kn | 5 m | 0.45 s | 15.9 m | 102 m | 5.9 s | 10.4 g, a crash (13.0 m at 0.35 s lands at 7.9 g) |
+| 60 kn | 3 m | 0.25 s | 23.9 m | 161 m | 6.8 s | 16.3 g, a crash (10.0 m at 0.10 s lands at 6.1 g) |
+| 75 kn | 2 m | 0.20 s | 23.5 m | 175 m | 6.8 s | 16.5 g, a crash (9.7 m at 0.05 s lands at 6.7 g) |
+| 90 kn | 2 m | 0.20 s | 22.4 m | 225 m | 7.4 s | 14.4 g, a crash; nothing over 2 m lands |
+
+Height still levels off above 60 kn, lower than before (27.6 and 30.2 m at 60 and 90 kn), and a
+release later than these is now pulled off the water by the kite first (from 0.25 s in 90 kn).
+The storm jumps come down sinking 12 to 13.5 m/s and crash even crouched: this is phase 2's
+descent gap (`CHANGELOG.md`, known gaps), the kite overhead not holding the rider up on the way
+down, at its largest. `KiteSurf.Wind.StormIsRideable` lets go at 0.2 s.

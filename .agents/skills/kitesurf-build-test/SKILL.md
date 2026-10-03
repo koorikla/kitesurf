@@ -81,6 +81,20 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
 
 ## Pitfalls
 
+- **One GPU, one run at a time.** Agents, worktrees and the CI runner share one 8 GB GPU,
+  and two Vulkan runs at once can crash with `VulkanMemory.cpp ... Out of memory`. The
+  GPU-using scripts therefore take a machine-wide lock
+  (`${XDG_RUNTIME_DIR:-/run/user/$UID}/kitesurf-gpu.lock`, via `with_gpu_lock` in
+  `scripts/common.sh`) and queue behind each other, printing
+  `=== Waiting for the GPU lock ..., held by: pid ... from <worktree> ...` while they wait.
+  Taking it: `smoke-test.sh`, `render-menu-video.sh` (per take), `run-editor.sh` with
+  `-RenderOffScreen`, `run-python.sh` with `-RenderOffScreen` or
+  `-AllowCommandletRendering`, and `run-tests.sh` without `-nullrhi`. Not taking it: a
+  windowed `run-editor.sh` (editor or `-game`), because someone is at the screen and it may
+  stay open for hours, blocking every queued run; close it before GPU runs if VRAM is tight.
+  Call the engine through these scripts, not directly, or the lock is bypassed.
+  `KITESURF_GPU_LOCK=0` skips the lock; `KITESURF_GPU_LOCK_FILE` points it elsewhere.
+  A wait is not a hang: check the holder's pid before killing anything.
 - **A green test run can be empty.** `scripts/run-tests.sh` only warns when the report is
   missing, and `scripts/parse_test_report.py` exits 0 if the report cannot be parsed. Always
   read the `Test Results:` line and check that `Total` is the number of tests you expect.

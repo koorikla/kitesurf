@@ -1291,6 +1291,74 @@ bool FKiteSurfPhysicsFloatingRiderIsSlowThroughTheWater::RunTest(const FString& 
 	return true;
 }
 
+// A crash does not save up the kite's pull (docs/physics/plan-3.md item 1). Through a crash the board's
+// scripted stop moves the rider, and until plan-3 the lines' pull in that time was never spent: 1.5 s of
+// a powered kite came out in the first step after the reset as one impulse. With the bar in and the kite
+// deep in the window in 25 kn that was 34 m/s in one step: the rider was thrown 30 m up and 80 m away. Now
+// the reset puts them back on the board at its 8 kn and they ride on from there.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfPhysicsCrashedRiderIsNotFlung, "KiteSurf.Physics.CrashedRiderIsNotFlung", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FKiteSurfPhysicsCrashedRiderIsNotFlung::RunTest(const FString& Parameters)
+{
+	const float WindKnots = 25.0f;
+	const float ResetKnots = 8.0f;                  // UBoardMovementComponent's crash recovery puts the rider back at this
+	const float MaxHeightAboveWaterCm = 50.0f;
+	const float ResetSpeedToleranceMS = 1.0f;
+	FRideFixture Ride(WindKnots);
+	TestTrue(TEXT("Ride fixture created"), Ride.IsValid());
+	if (!Ride.IsValid())
+	{
+		return false;
+	}
+	Ride.Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(WindKnots));
+	Ride.Simulate(6.0f);
+
+	// The bar in and the kite deep in the window as the rider goes down.
+	Ride.Pawn->SheetKite(1.0f);
+	Ride.Kite->SetWindowPosition(30.0f, 40.0f);
+	Ride.Simulate(0.2f);
+	Ride.Board->TriggerCrash(1.0f);
+	const int32 ResetsBefore = Ride.Board->GetResetCount();
+
+	float PeakTensionN = 0.0f;
+	float HighestCm = -BIG_NUMBER;
+	bool bAirborne = false;
+	float SpeedAfterResetMS = -1.0f;
+	float FastestAfterResetMS = 0.0f;
+	float SecondsAfterReset = -1.0f;
+	for (int32 Frame = 0, Frames = FMath::RoundToInt(3.0f / RideDeltaTime); Frame < Frames; ++Frame)
+	{
+		Ride.Simulate(RideDeltaTime);
+		PeakTensionN = FMath::Max(PeakTensionN, Ride.Kite->GetLineTensionN());
+		HighestCm = FMath::Max(HighestCm, static_cast<float>(Ride.Pawn->GetActorLocation().Z - Ride.Board->GetWaterSurfaceHeightCm()));
+		bAirborne |= Ride.Board->GetBoardState() == EBoardState::Airborne;
+		if (SecondsAfterReset < 0.0f && Ride.Board->GetResetCount() > ResetsBefore)
+		{
+			SecondsAfterReset = 0.0f;
+			SpeedAfterResetMS = KiteUnits::CmToM(Ride.Board->Velocity.Size());
+		}
+		else if (SecondsAfterReset >= 0.0f)
+		{
+			SecondsAfterReset += RideDeltaTime;
+			if (SecondsAfterReset <= 1.0f)
+			{
+				FastestAfterResetMS = FMath::Max(FastestAfterResetMS, static_cast<float>(KiteUnits::CmToM(Ride.Board->Velocity.Size())));
+			}
+		}
+	}
+	const float ResetSpeedMS = KiteUnits::CmToM(KiteUnits::KnotsToCmS(ResetKnots));
+	UE_LOG(LogKiteSurf, Log, TEXT("CrashedRiderIsNotFlung: crashed in %.0f kn with the kite pulling up to %.0f N; reset %d, at %.2f m/s in the frame after it (the reset's %.2f), fastest %.2f m/s in the second after; highest %.0f cm above the water, airborne %d"),
+		WindKnots, PeakTensionN, SecondsAfterReset >= 0.0f, SpeedAfterResetMS, ResetSpeedMS, FastestAfterResetMS, HighestCm, bAirborne);
+
+	TestTrue(FString::Printf(TEXT("The kite pulled hard through the crash (%.0f N)"), PeakTensionN), PeakTensionN > 1500.0f);
+	TestTrue(TEXT("The crash ended in a reset"), SecondsAfterReset >= 0.0f);
+	TestTrue(FString::Printf(TEXT("Straight after the reset the rider moves at the reset's speed (%.2f m/s against %.2f)"), SpeedAfterResetMS, ResetSpeedMS), FMath::Abs(SpeedAfterResetMS - ResetSpeedMS) < ResetSpeedToleranceMS);
+	TestTrue(FString::Printf(TEXT("and gathers speed on the board, not in one step (fastest %.2f m/s in the first second)"), FastestAfterResetMS), FastestAfterResetMS < 2.0f * ResetSpeedMS);
+	TestFalse(TEXT("The rider is never thrown into the air"), bAirborne);
+	TestTrue(FString::Printf(TEXT("and stays on the water (at most %.0f cm above it)"), HighestCm), HighestCm < MaxHeightAboveWaterCm);
+	return true;
+}
+
 // The HUD shows the steering that reaches the kite next to the rider's bar: the bar itself while
 // looping, the assist's correction otherwise, and nothing while the kite is in the water.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfKiteAppliedSteer, "KiteSurf.Kite.AppliedSteer", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

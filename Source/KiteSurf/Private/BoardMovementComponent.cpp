@@ -405,6 +405,12 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 	const float DeltaTime = StepSeconds;
 	SimTimeSeconds += FMath::Max(StepSeconds, 0.0f);
 	LastStepDebug = FBoardStepDebug();
+	// The force added for this step is spent in this step, whatever the board does with it. A crash's
+	// scripted stop owns the rider's motion, and before plan-3 item 1 it returned without spending the
+	// lines' pull: 1.5 s of a powered kite was saved up and came out in the first step after the reset,
+	// an impulse of 20 to 34 m/s that threw the rider 13 to 30 m up and 47 to 80 m away.
+	const FVector StepExternalForce = AccumulatedExternalForce;
+	AccumulatedExternalForce = FVector::ZeroVector;
 	if (!ShouldSkipUpdate(DeltaTime) && UpdatedComponent)
 	{
 		const FVector Location = UpdatedComponent->GetComponentLocation();
@@ -514,10 +520,9 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		}
 
 		// 2. Setup total forces
-		FVector TotalForce = AccumulatedExternalForce;
-		const FVector ExternalForceN = AccumulatedExternalForce / KiteUnits::UnrealForcePerN;
-		const FVector ExternalForce2D(AccumulatedExternalForce.X, AccumulatedExternalForce.Y, 0.0f);
-		AccumulatedExternalForce = FVector::ZeroVector;
+		FVector TotalForce = StepExternalForce;
+		const FVector ExternalForceN = StepExternalForce / KiteUnits::UnrealForcePerN;
+		const FVector ExternalForce2D(StepExternalForce.X, StepExternalForce.Y, 0.0f);
 
 		const float GravityZ = -KiteUnits::GravityCmS2; // the same g the kite uses, whatever the world settings say
 		const float GravityForceZ = MassKg * GravityZ; // negative in kg*cm/s^2

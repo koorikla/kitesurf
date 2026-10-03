@@ -10,6 +10,7 @@
 #include "InputMappingContext.h"
 #include "InputAction.h"
 #include "InputModifiers.h"
+#include "InputTriggers.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -72,7 +73,8 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 	}
 
 	// The trick buttons (held) and the hook and pass buttons (pressed): Boolean, each mapped once on the keyboard and once on the pad.
-	const TCHAR* TrickActionNames[] = { TEXT("IA_GrabFront"), TEXT("IA_GrabBack"), TEXT("IA_OneFoot"), TEXT("IA_Hook"), TEXT("IA_Pass") };
+	// IA_Rotate (batch A) is held too: a key (LeftShift) and the gamepad's left trigger.
+	const TCHAR* TrickActionNames[] = { TEXT("IA_GrabFront"), TEXT("IA_GrabBack"), TEXT("IA_OneFoot"), TEXT("IA_Hook"), TEXT("IA_Pass"), TEXT("IA_Rotate") };
 	TArray<UInputAction*> TrickActions;
 	for (const TCHAR* Name : TrickActionNames)
 	{
@@ -119,7 +121,9 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestEqual(FString::Printf(TEXT("%s has a key and a button"), *TrickAction->GetName()), Count, 2);
 		}
 
-		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_LeftTriggerAxis, EKeys::Gamepad_RightY };
+		// Gamepad_LeftTriggerAxis left this set in batch A: it is IA_Rotate's now (an InputTriggerDown,
+		// not a negate modifier), since LT no longer lets the bar out.
+		TSet<FKey> NegativeKeys = { EKeys::Left, EKeys::Up, EKeys::A, EKeys::S, EKeys::Gamepad_RightY };
 		TSet<FKey> FoundNegativeKeys;
 		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
 		{
@@ -139,7 +143,26 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 				TestTrue(FString::Printf(TEXT("Mapping for %s has InputModifierNegate"), *Mapping.Key.ToString()), bHasNegate);
 			}
 		}
-		TestEqual(TEXT("All 6 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+		TestEqual(TEXT("All 5 negative inputs are mapped in IMC_Default"), FoundNegativeKeys.Num(), NegativeKeys.Num());
+
+		// IA_Rotate's gamepad mapping is a digital press past half travel (InputTriggerDown), not a
+		// raw non-zero value: the default trigger-less behaviour the engine would otherwise fall back to.
+		for (const FEnhancedActionKeyMapping& Mapping : IMC->GetMappings())
+		{
+			if (Mapping.Key == EKeys::Gamepad_LeftTriggerAxis)
+			{
+				bool bHasDown = false;
+				for (const TObjectPtr<UInputTrigger>& Trigger : Mapping.Triggers)
+				{
+					if (Trigger && Trigger->IsA<UInputTriggerDown>())
+					{
+						bHasDown = true;
+						TestEqual(TEXT("Gamepad_LeftTriggerAxis's Down trigger fires past half travel"), Cast<UInputTriggerDown>(Trigger.Get())->ActuationThreshold, 0.5f);
+					}
+				}
+				TestTrue(TEXT("Gamepad_LeftTriggerAxis has a Down trigger"), bHasDown);
+			}
+		}
 
 		// Down pulls the bar in (power), so it is the positive direction of IA_Sheet. The right
 		// stick is negated above for the same reason: pulled back (its negative axis) is power.
@@ -167,7 +190,9 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			{ EKeys::C, TEXT("IA_OneFoot") }, { EKeys::Gamepad_LeftThumbstick, TEXT("IA_OneFoot") },
 			// Unhooked riding (T3.1; docs/tricks/T3.md 1.6).
 			{ EKeys::F, TEXT("IA_Hook") }, { EKeys::Gamepad_FaceButton_Top, TEXT("IA_Hook") },
-			{ EKeys::LeftShift, TEXT("IA_Pass") }, { EKeys::Gamepad_FaceButton_Left, TEXT("IA_Pass") },
+			{ EKeys::X, TEXT("IA_Pass") }, { EKeys::Gamepad_FaceButton_Left, TEXT("IA_Pass") },
+			// The rotation gate (batch A): LeftShift moved here from IA_Pass; LT is the gamepad's.
+			{ EKeys::LeftShift, TEXT("IA_Rotate") }, { EKeys::Gamepad_LeftTriggerAxis, TEXT("IA_Rotate") },
 		};
 		// Looping needs no key of its own: it is the bar held towards the kite's side. The shift keys and
 		// RB may be bound to tricks (RB is the back hand's grab, T2.1) but never to the steering
@@ -215,10 +240,15 @@ bool FKiteSurfInputAssetsValid::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("BP_KiteRider has OneFootAction"), CDO->GetOneFootAction());
 			TestNotNull(TEXT("BP_KiteRider has HookAction"), CDO->GetHookAction());
 			TestNotNull(TEXT("BP_KiteRider has PassAction"), CDO->GetPassAction());
+			TestNotNull(TEXT("BP_KiteRider has RotateAction"), CDO->GetRotateAction());
 			if (CDO->GetHookAction() && CDO->GetPassAction())
 			{
 				TestEqual(TEXT("BP_KiteRider's HookAction is IA_Hook"), CDO->GetHookAction()->GetName(), FString(TEXT("IA_Hook")));
 				TestEqual(TEXT("BP_KiteRider's PassAction is IA_Pass"), CDO->GetPassAction()->GetName(), FString(TEXT("IA_Pass")));
+			}
+			if (CDO->GetRotateAction())
+			{
+				TestEqual(TEXT("BP_KiteRider's RotateAction is IA_Rotate"), CDO->GetRotateAction()->GetName(), FString(TEXT("IA_Rotate")));
 			}
 			if (CDO->GetGrabBackAction())
 			{

@@ -582,6 +582,8 @@ void UKiteComponent::PlaceParked()
 	ResetSteerHistory(0.0f); // a kite put somewhere has been flown there with the bar centred
 	TurnDeg = 0.0f;
 	bLooping = false;
+	LoopTracker.CancelRun(); // placed, not turned: whatever run was open is not a loop
+	LastStepTurnDeg = 0.0f;
 	CentredBarSeconds = 0.0f;
 	bHasParkClock = false;
 	bPlacementPending = false;
@@ -777,6 +779,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 	FVector Offset = KiteWorldPosition - RiderPos;
 	const float DistanceCm = Offset.Size();
 	const FVector Dir = DistanceCm > KINDA_SMALL_NUMBER ? Offset / DistanceCm : FVector::UpVector;
+	LastStepTurnDeg = 0.0f;
 
 	const FVector Airflow = (Wind - KiteVelocity) / CmPerM; // air moving past the kite
 	const float FlowSpeed = Airflow.Size();
@@ -891,6 +894,7 @@ float UKiteComponent::StepFlight(float StepSeconds, float SteerInput, const FVec
 		TurnRateRadS = FMath::FInterpTo(TurnRateRadS, SteerRate + WeathercockRate + GravityRate, StepSeconds, TurnResponse);
 		const float TurnRad = TurnRateRadS * StepSeconds;
 		KiteHeading = Nose * FMath::Cos(TurnRad) + Right * FMath::Sin(TurnRad);
+		LastStepTurnDeg = FMath::RadiansToDegrees(TurnRad);
 		if (bLooping)
 		{
 			TurnDeg += FMath::RadiansToDegrees(TurnRad);
@@ -1068,6 +1072,7 @@ void UKiteComponent::StepKite(float StepSeconds)
 		AppliedSteer = 0.0f;
 		LastStepDebug = FKiteStepDebug();
 		UpdateAngles();
+		StepLoopTracker(RiderPos, RiderVelocity);
 
 		const float MinSecondsBeforeSteeredRelaunch = 1.0f;
 		const bool bSteeredUp = CrashedSeconds >= MinSecondsBeforeSteeredRelaunch && FMath::Abs(Steer) >= CentredBarThreshold;
@@ -1095,6 +1100,7 @@ void UKiteComponent::StepKite(float StepSeconds)
 	if (StepSeconds > 0.0f && KiteWorldPosition.Z <= CrashHeightCm)
 	{
 		Crash();
+		StepLoopTracker(RiderPos, RiderVelocity);
 		return;
 	}
 
@@ -1104,4 +1110,24 @@ void UKiteComponent::StepKite(float StepSeconds)
 	// kite.Physics.Debug or bDrawDebug.)
 	LineTensionN = FMath::Min(Tension, MaxLineTensionN);
 	LineForce = KiteDir * KiteUnits::NToUnrealForce(LineTensionN);
+	StepLoopTracker(RiderPos, RiderVelocity);
+}
+
+void UKiteComponent::StepLoopTracker(const FVector& RiderPos, const FVector& RiderVelocity)
+{
+	if (bCrashed)
+	{
+		LastStepTurnDeg = 0.0f; // on the water the nose is not turning: the crash ends any run
+	}
+	FKiteLoopSample Sample;
+	Sample.TimeSeconds = SimTimeSeconds;
+	Sample.TurnDeg = LastStepTurnDeg;
+	Sample.ElevationDeg = ElevationDeg;
+	Sample.TensionN = LineTensionN;
+	Sample.RiderZCm = static_cast<float>(RiderPos.Z);
+	Sample.RiderVelocity = RiderVelocity;
+	Sample.DownwindDir = GetDownwindDir();
+	Sample.bFlying = bLinesTaut;
+	Sample.bCrashed = bCrashed;
+	LoopTracker.Step(Sample);
 }

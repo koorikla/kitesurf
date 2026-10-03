@@ -43,6 +43,18 @@ public:
 			ECVF_Default
 		);
 
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Screenshot"),
+			TEXT("Saves Saved/Screenshots/<Platform>/<Name>.png of the next frame, HUD included (the engine's 'shot' is not reachable from kitesurf.After). Usage: kitesurf.Screenshot <Name>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				const FString Name = Args.IsValidIndex(0) ? Args[0] : FString(TEXT("shot"));
+				FScreenshotRequest::RequestScreenshot(Name, true, false);
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Screenshot %s requested"), *Name);
+			}),
+			ECVF_Default
+		);
+
 		// Scripting aids for headless smoke runs: they let a screenshot show a menu or a paused game.
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.After"),
@@ -458,6 +470,7 @@ public:
 	virtual void ShutdownModule() override
 	{
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.After"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Screenshot"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.TogglePause"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenSettings"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.OpenGear"));

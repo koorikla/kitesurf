@@ -18,6 +18,11 @@
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/WorldSettings.h"
 #include "GameFramework/PlayerState.h"
+#include "EngineUtils.h"
+#include "EnhancedInputComponent.h"
+#include "InputAction.h"
+#include "School/LessonDirector.h"
+#include "School/LessonSubsystem.h"
 
 AKiteSurfHUD::AKiteSurfHUD()
 	: CurrentOnboardingStep(0)
@@ -31,6 +36,12 @@ AKiteSurfHUD::AKiteSurfHUD()
 
 void AKiteSurfHUD::TogglePauseMenu()
 {
+	// On a lesson's result card the pause button is "Lesson menu": the School menu takes it when it is
+	// there (S5); otherwise the pause menu opens as usual.
+	if (!ActivePauseMenuWidget && HandleLessonAction(ELessonHUDAction::Menu))
+	{
+		return;
+	}
 	UWorld* World = GetWorld();
 	const bool bHasViewport = World && World->GetGameViewport() != nullptr;
 	if (ActivePauseMenuWidget && (!bHasViewport || ActivePauseMenuWidget->IsInViewport()))
@@ -459,10 +470,17 @@ void AKiteSurfHUD::DrawHUD()
 
 	DrawFPS(ScreenW - 130.0f, 25.0f);
 
+	// The kite school's lesson layer, while a lesson runs: it replaces the old onboarding prompt.
+	UpdateLessonLayer(DeltaTime);
+	const bool bLesson = LessonLayer.IsVisible();
+
 	AKiteRiderPawn* RiderPawn = Cast<AKiteRiderPawn>(GetOwningPawn());
 	if (RiderPawn)
 	{
+		BindLessonInput(RiderPawn);
 		DrawTelemetry(RiderPawn);
+		// Under the telemetry: the lesson's speed band, on a speed-band step.
+		LessonLayer.DrawSpeedBand(*this, 20.0f, 252.0f, 330.0f);
 		// Top right, under the frame rate: which way the wind blows across the view.
 		DrawWindFlag(RiderPawn, ScreenW - 170.0f, 64.0f, 150.0f);
 		// Bottom left: the rider is in the bottom centre of the view.
@@ -470,20 +488,36 @@ void AKiteSurfHUD::DrawHUD()
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
 		// Left of the power gauge: what the hands are doing to the bar.
 		DrawControlBar(RiderPawn, ScreenW - 500.0f, ScreenH - 280.0f, 230.0f, 245.0f);
-		UpdateOnboarding(DeltaTime, RiderPawn);
+		if (!bLesson)
+		{
+			UpdateOnboarding(DeltaTime, RiderPawn);
+		}
 		UpdateLandingCard(RiderPawn->GetBoardMovement(), DeltaTime);
 		DrawLandingCard(ScreenW, ScreenH);
 	}
 
-	if (bOnboardingActive)
+	const bool bOnboardingShown = bOnboardingActive && !bLesson;
+	if (bOnboardingShown)
 	{
 		DrawOnboardingPrompt(ScreenW, ScreenH);
+	}
+
+	// The lesson panel at the top centre; the jump readout and the trick card move down under it.
+	float ReadoutTop = 70.0f;
+	if (bLesson)
+	{
+		const float Margin = FMath::Max(16.0f, ScreenH * 0.02f);
+		const float PanelBottom = LessonLayer.DrawPanel(*this, ScreenW, ScreenH, Margin);
+		if (PanelBottom > Margin)
+		{
+			ReadoutTop = PanelBottom + 12.0f;
+		}
 	}
 
 	// Top centre: how high and how far the jump is going, then what it came to.
 	UpdateJumpReadout(RiderPawn ? RiderPawn->GetBoardMovement() : nullptr, DeltaTime);
 	UpdateJumpCard(RiderPawn ? RiderPawn->GetTrickTracker() : nullptr, DeltaTime);
-	float BelowReadoutY = 70.0f;
+	float BelowReadoutY = ReadoutTop;
 	if (!JumpReadoutText.IsEmpty())
 	{
 		const float Scale = bJumpReadoutLive ? 1.9f : 1.6f;
@@ -491,7 +525,7 @@ void AKiteSurfHUD::DrawHUD()
 		float TextH = 0.0f;
 		GetTextSize(JumpReadoutText, TextW, TextH, nullptr, Scale);
 		const float TextX = ScreenW * 0.5f - TextW * 0.5f;
-		const float TextY = 70.0f;
+		const float TextY = ReadoutTop;
 		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), TextX - 16.0f, TextY - 6.0f, TextW + 32.0f, TextH + 12.0f);
 		DrawText(JumpReadoutText, bJumpReadoutNewBest ? FLinearColor(1.0f, 0.85f, 0.2f) : FLinearColor::White, TextX, TextY, nullptr, Scale);
 		BelowReadoutY = TextY + TextH + 16.0f;
@@ -499,7 +533,7 @@ void AKiteSurfHUD::DrawHUD()
 
 	// Under the readout: the trick being flown while in the air, then the finished jump's card.
 	// Kept below the onboarding prompt while it is up (its box ends at 165), so the two do not overlap.
-	if (bOnboardingActive)
+	if (bOnboardingShown)
 	{
 		BelowReadoutY = FMath::Max(BelowReadoutY, 181.0f);
 	}
@@ -573,6 +607,9 @@ void AKiteSurfHUD::DrawHUD()
 
 	// The best-three session: its clock and counting jumps at the top, then its results card.
 	DrawSession(ScreenW, ScreenH);
+
+	// A lesson's result card: stars, the result, the best, and Next / Retry / Lesson menu.
+	LessonLayer.DrawResultCard(*this, ScreenW, ScreenH);
 
 	if (JumpRejectionRemainingTime > 0.0f)
 	{
@@ -828,6 +865,9 @@ void AKiteSurfHUD::DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, f
 	DrawLine(CenterX, CenterY, MarkerX, MarkerY, FLinearColor(1.0f, 0.5f, 0.1f, 0.6f), 1.5f);
 	DrawRect(FLinearColor(1.0f, 0.3f, 0.0f, 1.0f), MarkerX - 6.0f, MarkerY - 6.0f, 12.0f, 12.0f);
 	DrawRect(FLinearColor(1.0f, 0.9f, 0.2f, 1.0f), MarkerX - 3.0f, MarkerY - 3.0f, 6.0f, 6.0f);
+
+	// A lesson's cue on the arc: target zones, the ghost kite, the timing ring around the marker.
+	LessonLayer.DrawArcCue(*this, FVector2D(CenterX, CenterY), Radius);
 }
 
 void AKiteSurfHUD::DrawFPS(float ScreenX, float ScreenY)
@@ -1316,4 +1356,96 @@ void AKiteSurfHUD::DrawSession(float ScreenW, float ScreenH)
 		DrawText(Line.Text, Line.Ink, ScreenW * 0.5f - Line.W * 0.5f, Y, nullptr, Line.Scale);
 		Y += Line.H + Spacing;
 	}
+}
+
+ALessonDirector* AKiteSurfHUD::FindLessonDirector() const
+{
+	if (ALessonDirector* Cached = CachedLessonDirector.Get())
+	{
+		if (Cached->IsRunning())
+		{
+			return Cached;
+		}
+	}
+	CachedLessonDirector.Reset();
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	for (TActorIterator<ALessonDirector> It(World); It; ++It)
+	{
+		if (It->IsRunning())
+		{
+			CachedLessonDirector = *It;
+			return *It;
+		}
+	}
+	return nullptr;
+}
+
+void AKiteSurfHUD::UpdateLessonLayer(float DeltaTime)
+{
+	LessonLayer.Update(FindLessonDirector(), DeltaTime);
+}
+
+bool AKiteSurfHUD::HandleLessonAction(ELessonHUDAction Action)
+{
+	ALessonDirector* Director = FindLessonDirector();
+	if (!Director)
+	{
+		return false;
+	}
+	const bool bCard = Director->GetPhase() == ELessonPhase::Result
+		&& (Director->GetOutcome() == ELessonOutcome::Passed || Director->GetOutcome() == ELessonOutcome::Failed);
+	switch (Action)
+	{
+	case ELessonHUDAction::Confirm:
+		return bCard && Director->GetOutcome() == ELessonOutcome::Passed && Director->Next();
+	case ELessonHUDAction::Retry:
+		if (bCard)
+		{
+			return Director->Retry();
+		}
+		return Director->IsDropBackOffered() && Director->AcceptDropBack();
+	case ELessonHUDAction::Menu:
+		if (bCard)
+		{
+			ULessonSubsystem* Lessons = Director->GetLessonSubsystem();
+			return Lessons && Lessons->RequestLessonMenu();
+		}
+		return false;
+	default:
+		return false;
+	}
+}
+
+void AKiteSurfHUD::BindLessonInput(AKiteRiderPawn* RiderPawn)
+{
+	UEnhancedInputComponent* Input = RiderPawn ? Cast<UEnhancedInputComponent>(RiderPawn->InputComponent) : nullptr;
+	if (!Input || LessonInputComponent.Get() == Input)
+	{
+		return;
+	}
+	LessonInputComponent = Input;
+	// The rider's own actions: no new input assets. Its handlers still run; these only act while the
+	// result card or the drop-back offer is up.
+	if (UInputAction* Jump = RiderPawn->GetJumpAction())
+	{
+		Input->BindAction(Jump, ETriggerEvent::Started, this, &AKiteSurfHUD::OnLessonJumpInput);
+	}
+	if (UInputAction* Reset = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Reset.IA_Reset")))
+	{
+		Input->BindAction(Reset, ETriggerEvent::Started, this, &AKiteSurfHUD::OnLessonResetInput);
+	}
+}
+
+void AKiteSurfHUD::OnLessonJumpInput()
+{
+	HandleLessonAction(ELessonHUDAction::Confirm);
+}
+
+void AKiteSurfHUD::OnLessonResetInput()
+{
+	HandleLessonAction(ELessonHUDAction::Retry);
 }

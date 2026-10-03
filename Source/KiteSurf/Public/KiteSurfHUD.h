@@ -4,11 +4,14 @@
 #include "GameFramework/HUD.h"
 #include "BoardMovementComponent.h"
 #include "Tricks/TrickTypes.h"
+#include "School/LessonHUD.h"
 #include "KiteSurfHUD.generated.h"
 
 class AKiteRiderPawn;
 class UTrickTrackerComponent;
 class FBestThreeSession;
+class ALessonDirector;
+class UInputComponent;
 struct FJumpRecord;
 
 UCLASS()
@@ -245,7 +248,42 @@ public:
 	 */
 	TArray<FString> GetSessionLines() const;
 
+	// --- Kite school lesson layer (docs/tutorials.md S4). ---
+
+	/** The running lesson director in this HUD's world, or null. */
+	ALessonDirector* FindLessonDirector() const;
+
+	/**
+	 * Reads the running lesson's director into the lesson layer and moves its timers on. DrawHUD calls
+	 * it every frame; tests call it with no Canvas and read GetLessonView.
+	 */
+	void UpdateLessonLayer(float DeltaTime);
+
+	/** What the lesson layer shows now: the panel, the cue lines, the result card. Invisible with no lesson running. */
+	const FLessonHUDView& GetLessonView() const { return LessonLayer.GetView(); }
+
+	/** Whether a lesson is up (its layer replaces the old onboarding prompt while it is). */
+	bool IsLessonLayerVisible() const { return LessonLayer.IsVisible(); }
+
+	/**
+	 * The result card's and the drop-back offer's actions, from the existing inputs: the jump button
+	 * (Confirm) goes to the next lesson after a pass; the reset button (Retry) retries from the result
+	 * card or takes the drop-back offer; the pause button (Menu) on the result card asks
+	 * ULessonSubsystem::RequestLessonMenu, and opens the pause menu as usual when nothing answers.
+	 * True when the action did something.
+	 */
+	bool HandleLessonAction(ELessonHUDAction Action);
+
 protected:
+	FLessonHUDLayer LessonLayer;
+	mutable TWeakObjectPtr<ALessonDirector> CachedLessonDirector;
+	/** The rider's input component the lesson actions are bound on. */
+	TWeakObjectPtr<UInputComponent> LessonInputComponent;
+	/** Binds the lesson actions to the rider's existing jump and reset actions, beside the rider's own handlers. */
+	void BindLessonInput(AKiteRiderPawn* RiderPawn);
+	void OnLessonJumpInput();
+	void OnLessonResetInput();
+
 	/** Draws GetSessionLines: the panel as one row at the top centre, above the jump readout and trick card; the results card in the middle. */
 	void DrawSession(float ScreenW, float ScreenH);
 

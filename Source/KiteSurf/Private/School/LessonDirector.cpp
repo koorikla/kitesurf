@@ -159,6 +159,8 @@ bool ALessonDirector::BeginLesson(const FLessonDef& InLesson, APawn* Pawn, const
 	LastFaultId = NAME_None;
 	Outcome = ELessonOutcome::None;
 	StepIndex = 0;
+	TimingGrade = ELessonTimingGrade::None;
+	LastSheetGradeTime = -UE_BIG_NUMBER;
 
 	AddTickPrerequisiteActor(NewRider);
 	SetActorTickEnabled(true);
@@ -441,6 +443,7 @@ void ALessonDirector::UpdateLesson(float DeltaSeconds)
 	case ELessonPhase::Step:
 		if (bNewSample)
 		{
+			GradeSheetIn();
 			JudgeStep();
 		}
 		break;
@@ -524,6 +527,20 @@ void ALessonDirector::JudgeStep()
 		bHigherNow = Higher.bPassed;
 	}
 
+	// A timing-ring step grades the moment of each judged attempt (a sheet-in step grades it live instead).
+	if (StepProgress.Attempts != AttemptsBefore && Lesson.Steps.IsValidIndex(StepIndex))
+	{
+		const FLessonStep& Step = Lesson.Steps[StepIndex];
+		if (Step.Cue == ELessonCue::TimingRing && !LessonTiming::IsSheetInStep(Step))
+		{
+			const ELessonTimingGrade Grade = LessonTiming::GradeAttempt(Step, *Objective, Telemetry, Jump, Extras);
+			if (Grade != ELessonTimingGrade::None)
+			{
+				SetTimingGrade(Grade);
+			}
+		}
+	}
+
 	if (StepProgress.Count != CountBefore)
 	{
 		UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: counted %d of %d (value %.2f)"),
@@ -545,6 +562,33 @@ void ALessonDirector::JudgeStep()
 	else if (Result.bFailed)
 	{
 		OnAttemptFailed(LessonDirectorPrivate::NeedsJump(Objective->PrimaryMeasure()) ? Jump : nullptr, Extras);
+	}
+}
+
+void ALessonDirector::SetTimingGrade(ELessonTimingGrade Grade)
+{
+	TimingGrade = Grade;
+	++TimingSerial;
+	UE_LOG(LogKiteSchool, Display, TEXT("Lesson %s step %d: timing %s"), *Lesson.Id.ToString(), StepIndex + 1, *LessonTiming::GradeText(Grade));
+}
+
+void ALessonDirector::GradeSheetIn()
+{
+	if (!Lesson.Steps.IsValidIndex(StepIndex))
+	{
+		return;
+	}
+	const FLessonStep& Step = Lesson.Steps[StepIndex];
+	if (Step.Cue != ELessonCue::TimingRing || !LessonTiming::IsSheetInStep(Step) || Telemetry.IsEmpty())
+	{
+		return;
+	}
+	const float Now = Telemetry.LatestTime();
+	ELessonTimingGrade Grade = ELessonTimingGrade::None;
+	if (Now - LastSheetGradeTime >= LessonTiming::SheetRegradeSeconds && LessonTiming::DetectSheetIn(Telemetry, Grade))
+	{
+		LastSheetGradeTime = Now;
+		SetTimingGrade(Grade);
 	}
 }
 

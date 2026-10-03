@@ -5,6 +5,7 @@
 #include "KiteGear.h"
 #include "School/LessonEvaluator.h"
 #include "School/LessonTelemetry.h"
+#include "School/LessonTiming.h"
 #include "School/LessonTypes.h"
 #include "Tricks/JumpRecord.h"
 #include "LessonDirector.generated.h"
@@ -206,6 +207,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "School")
 	float GetObjectiveValue() const { return LastResult.Value; }
 
+	/**
+	 * Held objectives: the newest sample is inside the band (with every condition). Events: the newest
+	 * judged event qualified. The HUD's hint line (S4) shows when a held objective stays out of band.
+	 */
+	UFUNCTION(BlueprintPure, Category = "School")
+	bool IsObjectiveInBand() const { return LastResult.bQualifies; }
+
+	/**
+	 * The newest timing grade on a timing-ring step (LessonTiming): a sheet-in step is graded the moment
+	 * the bar comes in, the others when their attempt is judged. None until the first grade of a run.
+	 */
+	UFUNCTION(BlueprintPure, Category = "School")
+	ELessonTimingGrade GetTimingGrade() const { return TimingGrade; }
+
+	/** Goes up by one with every new timing grade, so the HUD can flash each one once. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	int32 GetTimingSerial() const { return TimingSerial; }
+
 	/** The one fault line of the last missed attempt; empty when none matched or nothing missed yet. */
 	UFUNCTION(BlueprintPure, Category = "School")
 	FText GetLastFaultLine() const { return LastFaultLine; }
@@ -251,6 +270,9 @@ public:
 	/** Where the set-up placed the rider: the lesson's start, or the nearest one the game supports (Standing floats, Airborne rides). */
 	UFUNCTION(BlueprintPure, Category = "School")
 	ELessonStart GetAppliedStart() const { return AppliedStart; }
+
+	/** Where results are recorded: the override, or the game instance's subsystem; null when neither exists. The HUD's result card reads the best result here. */
+	ULessonSubsystem* GetLessonSubsystem() const { return GetLessons(); }
 
 	AKiteRiderPawn* GetRider() const { return Rider.Get(); }
 
@@ -347,6 +369,13 @@ private:
 	FName LastFaultId;
 	int32 Stars = 0;
 	bool bPassedHigherBar = false;
+	ELessonTimingGrade TimingGrade = ELessonTimingGrade::None;
+	int32 TimingSerial = 0;
+	/** Board time of the last sheet-in grade, so one pull of the bar is graded once. */
+	float LastSheetGradeTime = -UE_BIG_NUMBER;
+	void SetTimingGrade(ELessonTimingGrade Grade);
+	/** On a sheet-in timing step: grades the bar coming in, if it just did. */
+	void GradeSheetIn();
 	/** The run's result is in the progress book. */
 	bool bRecorded = false;
 };

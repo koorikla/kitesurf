@@ -134,11 +134,12 @@ struct FLandingThresholds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
 	float HotLandingKiteElevationDeg = 45.0f;
 
-	/** Sinking faster than this is a hot landing: at best sketchy, cause TooHard (m/s; phase 2 HotLandingSinkMS). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
-	float HotLandingSinkMS = 6.0f;
-
-	/** Harder than this is at best sketchy, cause TooHard (g; T0's SketchyMinG). */
+	/**
+	 * Harder than this is too hard: at best sketchy, cause TooHard (g; T0's SketchyMinG). Batch C
+	 * (docs/tricks/review.md section 4): too hard is decided from the landing g alone, which already
+	 * includes the absorb distance and the crouch; a fast raw sink into a long absorb (a big air,
+	 * crouched) is not by itself too hard, only a sink that comes through as a hard g is.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Landing")
 	float SketchyMinLandingG = 8.0f;
 
@@ -215,9 +216,10 @@ namespace LandingEvaluator
 	 *   OverRotated; yaw (folded) over Sketchy.MaxYawDeg is a crash, Sideways;
 	 * - otherwise the grade is the best whose tilt and yaw limits both hold (inclusive). Stomped
 	 *   also needs the kite at StompedMinKiteElevationDeg or higher and g at StompedMaxLandingG
-	 *   or lower, else it is clean. A hot landing (kite under HotLandingKiteElevationDeg, sink over
-	 *   HotLandingSinkMS or bHotLanding) or g over SketchyMinLandingG is at best sketchy, with
-	 *   cause KiteTooLow (kite low or the board's hot flag alone) or TooHard (sink or g);
+	 *   or lower, else it is clean. A hot landing (kite under HotLandingKiteElevationDeg or
+	 *   bHotLanding) or g over SketchyMinLandingG is at best sketchy, with cause KiteTooLow (kite
+	 *   low or the board's hot flag alone) or TooHard (g alone; batch C, docs/tricks/review.md
+	 *   section 4: the raw sink rate on its own no longer grades a landing down);
 	 * - a board caught late (bBoardCaughtLate, T2.3) is at best sketchy, cause BoardCaughtLate; then
 	 *   a back foot still returning to its strap (BackFoot Returning) is at best sketchy, cause
 	 *   FootLate. Both are named before the kite and the g, the board first.

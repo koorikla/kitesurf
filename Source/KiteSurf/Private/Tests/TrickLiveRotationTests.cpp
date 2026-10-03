@@ -400,9 +400,11 @@ bool FKiteSurfTrickUnderRotatedCrashShowsCause::RunTest(const FString& Parameter
 }
 
 // Decision 6: the record's grade, and so the card's, is the board's landing verdict's. A soft 3 m
-// send at 20 kn (kite high) is graded stomped or clean by both; the timed 30 kn jump lands hot
-// (sinking over 6 m/s), which the verdict calls sketchy, too hard, and so do the record and the card
-// now (the record-only GradeLanding, which does not read the sink, called it clean).
+// send at 20 kn (kite high) is graded stomped or clean by both; the timed 30 kn jump, crouched,
+// lands at 4.8 g with the kite above 45 deg, which the verdict calls clean, and so do the record
+// and the card (batch C, docs/tricks/review.md section 4: before, the verdict called it sketchy,
+// too hard, from the raw sink alone, where the record-only GradeLanding, which never read the sink,
+// already called it clean).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickCardGradeMatchesVerdict, "KiteSurf.Trick.CardGradeMatchesVerdict", TrickLiveRotationTest::Flags)
 
 bool FKiteSurfTrickCardGradeMatchesVerdict::RunTest(const FString& Parameters)
@@ -449,10 +451,12 @@ bool FKiteSurfTrickCardGradeMatchesVerdict::RunTest(const FString& Parameters)
 	const FLiveJump Timed = RunLiveJump(FVector2D::ZeroVector);
 	if (Check(TEXT("Timed jump at 30 kn"), Timed))
 	{
-		TestEqual(TEXT("The timed jump lands hot: sketchy"), Timed.Verdict.Grade, ELandingGrade::Sketchy);
-		TestTrue(FString::Printf(TEXT("with a cause (%s)"), *UEnum::GetValueAsString(Timed.Verdict.Cause)), Timed.Verdict.Cause != ELandingCause::None);
-		TestTrue(FString::Printf(TEXT("The HUD card is up and says SKETCHY ('%s')"), *Timed.Card), Timed.Card.Contains(TEXT("  SKETCHY  ")));
-		TestFalse(TEXT("and has the cause line"), Timed.CardCause.IsEmpty());
+		// Batch C (docs/tricks/review.md section 4): too hard is read from the landing g alone, and
+		// the kite is above 45 deg, so the crouched landing is no longer graded down for its sink.
+		TestEqual(TEXT("The crouched landing is clean"), Timed.Verdict.Grade, ELandingGrade::Clean);
+		TestEqual(TEXT("with no cause"), Timed.Verdict.Cause, ELandingCause::None);
+		TestTrue(FString::Printf(TEXT("The HUD card is up and says CLEAN ('%s')"), *Timed.Card), Timed.Card.Contains(TEXT("  CLEAN  ")));
+		TestTrue(TEXT("and has no cause line"), Timed.CardCause.IsEmpty());
 	}
 	return true;
 }

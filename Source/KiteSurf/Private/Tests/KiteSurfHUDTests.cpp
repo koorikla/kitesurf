@@ -414,21 +414,26 @@ bool FKiteSurfHUDLandingCard::RunTest(const FString& Parameters)
 	HUD->UpdateLandingCard(Board, Frame);
 	TestTrue(TEXT("No card before a landing"), HUD->GetLandingCardText().IsEmpty());
 
+	// Batch C (docs/tricks/review.md section 4): with the kite kept overhead (80 deg, well above
+	// HotLandingKiteElevationDeg), a fast sink no longer makes a landing hot on its own; too hard is
+	// its own cause, read from the landing g alone, which here (a 90 cm crouched absorb) stays soft.
 	LandAt(7.0f, true);
-	const FString HotCard = HUD->GetLandingCardText();
-	UE_LOG(LogTemp, Log, TEXT("LandingCard: crouched at 7 m/s the card reads '%s'; the board says %.2f g, hot %d, clean %d"), *HotCard, Board->GetLastLandingG(), Board->WasLastLandingHot(), Board->WasLastLandingClean());
-	TestEqual(TEXT("A crouched landing at 7 m/s shows its g and HOT"), HotCard, AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, true));
-	TestTrue(TEXT("and the card is hot"), HUD->IsLandingCardHot());
+	const FString Card = HUD->GetLandingCardText();
+	UE_LOG(LogTemp, Log, TEXT("LandingCard: crouched at 7 m/s the card reads '%s'; the board says %.2f g, hot %d, clean %d"), *Card, Board->GetLastLandingG(), Board->WasLastLandingHot(), Board->WasLastLandingClean());
+	TestEqual(TEXT("A crouched landing at 7 m/s shows its g, not hot (kite overhead)"), Card, AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), Board->WasLastLandingHot(), true));
+	TestFalse(TEXT("and the card is not hot"), HUD->IsLandingCardHot());
 	for (float Seconds = 0.0f; Seconds < HUD->LandingCardSeconds + 0.1f; Seconds += Frame)
 	{
 		HUD->UpdateLandingCard(Board, Frame);
 	}
 	TestTrue(TEXT("It is gone a few seconds later"), HUD->GetLandingCardText().IsEmpty());
 
-	// A harder landing standing (the crouch let go of on the water first): a crash.
+	// A harder landing standing (the crouch let go of on the water first): a crash, still not hot,
+	// the kite overhead throughout.
 	LandAt(10.0f, false);
 	UE_LOG(LogTemp, Log, TEXT("LandingCard: standing at 10 m/s the card reads '%s'"), *HUD->GetLandingCardText());
-	TestEqual(TEXT("Standing, a 10 m/s landing is a crash"), HUD->GetLandingCardText(), AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), true, false));
+	TestEqual(TEXT("Standing, a 10 m/s landing is a crash"), HUD->GetLandingCardText(), AKiteSurfHUD::FormatLandingCard(Board->GetLastLandingG(), Board->WasLastLandingHot(), false));
+	TestFalse(TEXT("not hot, the kite overhead"), Board->WasLastLandingHot());
 	TestTrue(FString::Printf(TEXT("over CrashLandingG (%.2f g)"), Board->GetLastLandingG()), Board->GetLastLandingG() > Board->CrashLandingG);
 
 	World->DestroyWorld(false);

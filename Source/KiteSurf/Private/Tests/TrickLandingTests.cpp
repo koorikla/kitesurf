@@ -245,12 +245,14 @@ bool FKiteSurfTrickHotLandingIsSketchy::RunTest(const FString& Parameters)
 	In.KiteElevationDeg = -5.0f;
 	Expect(*this, TEXT("Kite in the water"), In, ELandingGrade::Sketchy, ELandingCause::KiteTooLow);
 
-	// Phase 2's other hot-landing input: the sink rate.
+	// Batch C (docs/tricks/review.md section 4): a raw sink rate, however fast, no longer grades a
+	// landing down on its own; a big air's long, crouched absorb already turns the sink into the
+	// landing g, which is what too hard reads instead (KiteSurf.Trick.SinkAloneDoesNotGrade).
 	In = Good(5.0f, 5.0f);
 	In.SinkMS = 6.0f;
 	Expect(*this, TEXT("Sink 6 m/s"), In, ELandingGrade::Stomped);
-	In.SinkMS = 6.01f;
-	Expect(*this, TEXT("Sink 6.01 m/s"), In, ELandingGrade::Sketchy, ELandingCause::TooHard);
+	In.SinkMS = 60.0f;
+	Expect(*this, TEXT("Sink 60 m/s, g still 3"), In, ELandingGrade::Stomped);
 
 	// The board's own hot flag.
 	In = Good(5.0f, 5.0f);
@@ -260,8 +262,8 @@ bool FKiteSurfTrickHotLandingIsSketchy::RunTest(const FString& Parameters)
 	// The kite is named when both apply.
 	In = Good(5.0f, 5.0f);
 	In.KiteElevationDeg = 30.0f;
-	In.SinkMS = 8.0f;
-	Expect(*this, TEXT("Kite low and sinking fast"), In, ELandingGrade::Sketchy, ELandingCause::KiteTooLow);
+	In.LandingG = 9.0f;
+	Expect(*this, TEXT("Kite low and landing hard"), In, ELandingGrade::Sketchy, ELandingCause::KiteTooLow);
 
 	// A hot landing that is already sketchy stays sketchy, and a hot crash stays a crash.
 	In = Good(40.0f, 5.0f);

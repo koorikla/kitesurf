@@ -104,6 +104,15 @@ def build_assets():
         ia_hook = trick_actions['IA_Hook']
         ia_pass = trick_actions['IA_Pass']
 
+        # 14. IA_Rotate (Digital bool, held): the rotation gate (batch A, docs/tricks/review.md
+        # section 4). Without it the left stick / WASD is always the board's carve and weight
+        # shift; held, it reaches the pre-wind while loading and the rotation stick in the air.
+        ia_rotate = get_or_create_asset('IA_Rotate', '/Game/Input', unreal.InputAction, None)
+        ia_rotate.set_editor_property('value_type', unreal.InputActionValueType.BOOLEAN)
+        editor_asset_lib.save_loaded_asset(ia_rotate)
+        editor_asset_lib.save_asset('/Game/Input/IA_Rotate', False)
+        print(f'IA_Rotate configured and saved: {ia_rotate}')
+
         # Assets from earlier control schemes
         for stale in ['/Game/Input/IA_EdgePressure', '/Game/Input/IA_Loop']:
             if editor_asset_lib.does_asset_exist(stale):
@@ -126,14 +135,15 @@ def build_assets():
             (ia_sheet, 'Up', True),
             # The stick is the bar in the rider's hands: pulled back towards them is power,
             # pushed forward lets the bar out. Stick forward is the positive axis, so negate.
+            # LT no longer sheets (batch A: it is IA_Rotate below); RT and the right stick do.
             (ia_sheet, 'Gamepad_RightY', True),
             (ia_sheet, 'Gamepad_RightTriggerAxis', False),
-            (ia_sheet, 'Gamepad_LeftTriggerAxis', True),
             # Turn the board (IA_Edge keeps its name; it has always driven the carve).
             # IA_Edge and IA_WeightShift are the rider's stick and are read by state in
-            # AKiteRiderPawn (docs/tricks/README.md decision 7, no IA_Rotate): the board on the
-            # water, the pre-wind while jump is held, the rotation in the air (X roll or spin,
-            # Y flip). Jump pressed and held in the air is the tuck.
+            # AKiteRiderPawn (docs/tricks/README.md decision 7, amended by batch A): the board on
+            # the water, the pre-wind while jump and IA_Rotate are both held, the rotation in the
+            # air while IA_Rotate is held (X roll or spin, Y flip). Jump pressed and held in the
+            # air is the tuck, whatever IA_Rotate is doing.
             (ia_edge, 'D', False),
             (ia_edge, 'A', True),
             (ia_edge, 'Gamepad_LeftX', False),
@@ -162,12 +172,17 @@ def build_assets():
             (ia_grab_back, 'Gamepad_RightShoulder', False),
             (ia_one_foot, 'C', False),
             (ia_one_foot, 'Gamepad_LeftThumbstick', False),
-            # Unhooked riding (T3.1): hook in or out on the water, and the handle pass. LeftShift
-            # may be bound to tricks but never to IA_Steer (docs/tricks/README.md decision 7).
+            # Unhooked riding (T3.1): hook in or out on the water, and the handle pass. X matches
+            # the pad's X (left face) for the same action; LeftShift is IA_Rotate's now (batch A),
+            # never bound to IA_Steer (docs/tricks/README.md decision 7).
             (ia_hook, 'F', False),
             (ia_hook, 'Gamepad_FaceButton_Top', False),
-            (ia_pass, 'LeftShift', False),
+            (ia_pass, 'X', False),
             (ia_pass, 'Gamepad_FaceButton_Left', False),
+            # The rotation gate (batch A): LeftShift on the keyboard, LT on the gamepad as a
+            # digital press past half travel (the default actuation threshold set below).
+            (ia_rotate, 'LeftShift', False),
+            (ia_rotate, 'Gamepad_LeftTriggerAxis', False),
         ]
 
         for action, key_str, _ in mappings_spec:
@@ -181,6 +196,13 @@ def build_assets():
             if negate:
                 neg = unreal.new_object(unreal.InputModifierNegate, outer=imc)
                 mappings[i].set_editor_property('modifiers', [neg])
+            if action == ia_rotate and key_str == 'Gamepad_LeftTriggerAxis':
+                # A digital press past half travel, not any non-zero value (the engine default
+                # with no trigger at all): InputTriggerDown's own actuation_threshold is already
+                # 0.5, set explicitly so a future engine default change cannot move it.
+                trigger_down = unreal.new_object(unreal.InputTriggerDown, outer=imc)
+                trigger_down.set_editor_property('actuation_threshold', 0.5)
+                mappings[i].set_editor_property('triggers', [trigger_down])
 
         dkm.set_editor_property('mappings', mappings)
         imc.set_editor_property('default_key_mappings', dkm)
@@ -210,6 +232,7 @@ def build_assets():
         cdo_rider.set_editor_property('one_foot_action', ia_one_foot)
         cdo_rider.set_editor_property('hook_action', ia_hook)
         cdo_rider.set_editor_property('pass_action', ia_pass)
+        cdo_rider.set_editor_property('rotate_action', ia_rotate)
 
         # Camera distance, pitch and field of view are tunables on AKiteRiderPawn (applied every
         # tick by UpdateCamera); the Blueprint only smooths the boom.

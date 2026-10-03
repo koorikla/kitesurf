@@ -78,15 +78,28 @@ AKiteRiderPawn::AKiteRiderPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// BoardMesh root
+	// BoardMesh root: the physics body. UBoardMovementComponent sweeps it, so it keeps the board's
+	// mesh for its collision, but it is not drawn: BoardVisual is.
 	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
 	RootComponent = BoardMesh;
+	BoardMesh->SetVisibility(false);
+	BoardMesh->SetHiddenInGame(true);
+
+	// BoardVisual: the board that is drawn. It sits on the root (relative identity) unless
+	// SetBoardVisualWorldRotation turns it, so the board can roll and flip in a trick while the
+	// physics body keeps its own orientation.
+	BoardVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardVisual"));
+	BoardVisual->SetupAttachment(RootComponent);
+	BoardVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoardVisual->SetGenerateOverlapEvents(false);
+	BoardVisual->SetCanEverAffectNavigation(false);
 
 	// Setup default meshes and materials if available
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> BoardMeshFinder(TEXT("/Game/Meshes/SM_KiteBoard"));
 	if (BoardMeshFinder.Succeeded())
 	{
 		BoardMesh->SetStaticMesh(BoardMeshFinder.Object);
+		BoardVisual->SetStaticMesh(BoardMeshFinder.Object);
 	}
 
 	// The jointed riders: a torso and eight limb parts placed in world space every frame by
@@ -144,10 +157,14 @@ AKiteRiderPawn::AKiteRiderPawn()
 	ControlBarMesh->SetUsingAbsoluteRotation(true);
 
 	// CameraBoom: pivots at chest height and is aimed in world space by UpdateCamera, so the
-	// horizon stays level while the board pitches with the swell and rolls with the edge.
+	// horizon stays level while the board pitches with the swell and rolls with the edge. In the
+	// air UpdateCamera also keeps the pivot straight above the board and looks along the flight.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	CameraPivotHeightCm = 120.0f;
+	CameraAirMinSpeedCmS = 200.0f;
+	CameraPivotLevelSeconds = 0.25f;
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, CameraPivotHeightCm));
 	CameraBoom->TargetArmLength = CameraArmLengthCm;
 	CameraBoom->SetRelativeRotation(FRotator(CameraBoomPitchDeg, 0.0f, 0.0f));
 	CameraBoom->bEnableCameraLag = true;
@@ -245,6 +262,9 @@ AKiteRiderPawn::AKiteRiderPawn()
 	SmoothedKiteOffset = FVector::ZeroVector;
 	CameraYawDeg = 0.0f;
 	CameraLookPitchDeg = 0.0f;
+	CameraHeadingYawDeg = 0.0f;
+	CameraPivotAirBlend = 0.0f;
+	bBoardVisualOverride = false;
 	RiderFacingYawDeg = 0.0f;
 	RiderStanceSide = 1.0f;
 	RiderTurnOffsetDeg = 0.0f;
@@ -1101,7 +1121,8 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	// The jointed rider: feet in the straps wherever the board goes, pelvis over them along the
 	// body's lean and lower in a crouch, knees bending to fit.
 	FRiderRigInput RigInput;
-	RigInput.Board = GetActorTransform();
+	// The feet are in the straps of the board that is drawn, which may be turned away from the root.
+	RigInput.Board = BoardVisual ? BoardVisual->GetComponentTransform() : GetActorTransform();
 	RigInput.Facing = Facing;
 	RigInput.BodyUp = BodyUp.GetSafeNormal();
 	RigInput.Crouch = Load;
@@ -1194,6 +1215,29 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	}
 }
 
+void AKiteRiderPawn::SetBoardVisualWorldRotation(const FQuat& WorldRotation)
+{
+	if (!BoardVisual)
+	{
+		return;
+	}
+	// The rotation is held in world space, so it stays put however the root turns; the location
+	// stays relative, so the board goes where the body goes.
+	bBoardVisualOverride = true;
+	BoardVisual->SetUsingAbsoluteRotation(true);
+	BoardVisual->SetWorldRotation(WorldRotation.GetNormalized());
+}
+
+void AKiteRiderPawn::ClearBoardVisualOverride()
+{
+	bBoardVisualOverride = false;
+	if (BoardVisual)
+	{
+		BoardVisual->SetUsingAbsoluteRotation(false);
+		BoardVisual->SetRelativeRotation(FQuat::Identity);
+	}
+}
+
 void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 {
 	if (!CameraBoom || !FollowCamera)
@@ -1201,7 +1245,44 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 		return;
 	}
 
-	const float HeadingYawDeg = GetActorRotation().Yaw;
+	const bool bAirborne = BoardMovement && BoardMovement->GetBoardState() == EBoardState::Airborne;
+
+	// The boom pivot. On the water it rides on the board, tilting with the swell and the edge as it
+	// always has. In the air it sits straight above the board, so a board pitched or rolled by a
+	// trick does not swing the camera about. Between the two it blends over CameraPivotLevelSeconds.
+	const float PivotBlendTarget = bAirborne ? 1.0f : 0.0f;
+	CameraPivotAirBlend = (bViewInitialized && CameraPivotLevelSeconds > 0.0f)
+		? FMath::FInterpConstantTo(CameraPivotAirBlend, PivotBlendTarget, DeltaTime, 1.0f / CameraPivotLevelSeconds)
+		: PivotBlendTarget;
+	const FVector PivotOffset(0.0f, 0.0f, CameraPivotHeightCm);
+	if (CameraPivotAirBlend <= 0.0f)
+	{
+		CameraBoom->SetRelativeLocation(PivotOffset);
+	}
+	else
+	{
+		const FTransform& RootTransform = GetActorTransform();
+		const FVector WorldOffset = FMath::Lerp(RootTransform.TransformVectorNoScale(PivotOffset), PivotOffset, CameraPivotAirBlend);
+		CameraBoom->SetRelativeLocation(RootTransform.InverseTransformVectorNoScale(WorldOffset));
+	}
+
+	// The heading the camera looks along. On the water it is the board's: switch stance keeps the
+	// nose forward, so that is the way the rider is going. In the air the board spins, so it is the
+	// flight's horizontal direction, held while that is too slow to mean anything.
+	float HeadingYawDeg = GetActorRotation().Yaw;
+	if (bAirborne)
+	{
+		const FVector Velocity = GetBoardVelocity();
+		if (Velocity.SizeSquared2D() > FMath::Square(CameraAirMinSpeedCmS))
+		{
+			HeadingYawDeg = FMath::RadiansToDegrees(FMath::Atan2(Velocity.Y, Velocity.X));
+		}
+		else if (bViewInitialized)
+		{
+			HeadingYawDeg = CameraHeadingYawDeg;
+		}
+	}
+	CameraHeadingYawDeg = HeadingYawDeg;
 	float TargetYawDeg = HeadingYawDeg;
 	float TargetLookPitchDeg = CameraMinLookPitchDeg;
 

@@ -150,6 +150,26 @@ public:
 	UWindComponent* GetWind() const { return Wind.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
+	/**
+	 * The board that is drawn. The root BoardMesh is the physics body (it sweeps and collides) and
+	 * is not rendered; this child shows the board and the rider's feet are in its straps. It follows
+	 * the root exactly unless SetBoardVisualWorldRotation has turned it.
+	 */
+	UStaticMeshComponent* GetBoardVisual() const { return BoardVisual.Get(); }
+
+	/**
+	 * Turns the drawn board to this world rotation, whatever the root does, until
+	 * ClearBoardVisualOverride. Its location still follows the root. For the rider attitude in the
+	 * air, and later a board held in the hand. The physics body is not turned.
+	 */
+	void SetBoardVisualWorldRotation(const FQuat& WorldRotation);
+
+	/** Puts the drawn board back on the root. */
+	void ClearBoardVisualOverride();
+
+	/** True while SetBoardVisualWorldRotation is turning the drawn board. */
+	bool HasBoardVisualOverride() const { return bBoardVisualOverride; }
+
 	/** World yaw the rider's body faces (deg). Always square across the board: the feet are in the straps. */
 	UFUNCTION(BlueprintCallable, Category = "Rider")
 	float GetRiderFacingYawDeg() const { return RiderFacingYawDeg; }
@@ -364,6 +384,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
 	float CameraTurnSpeed;
 
+	/** Height of the camera boom's pivot above the board (cm). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
+	float CameraPivotHeightCm;
+
+	/**
+	 * In the air the camera looks along the horizontal velocity, not the board, so spins do not
+	 * swing it. Slower than this (cm/s) the direction means little and the last heading is held.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraAirMinSpeedCmS;
+
+	/**
+	 * How long the boom pivot takes to go from riding on the board's tilt (on the water) to sitting
+	 * straight above the board whatever it does (in the air), and back (s).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraPivotLevelSeconds;
+
 	/** Lean away from the kite at full line load (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderMaxLeanDeg;
@@ -399,8 +437,13 @@ protected:
 	virtual void BeginPlay() override;
 
 	// Components
+	/** The root and the physics body: swept by UBoardMovementComponent and collides, but is not rendered (BoardVisual is). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UStaticMeshComponent> BoardMesh;
+
+	/** The board that is drawn: a child of BoardMesh with no collision. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UStaticMeshComponent> BoardVisual;
 
 	/** The jointed riders (Santa, wetsuit): a torso and eight limb parts, posed every frame by RiderRig. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -593,6 +636,11 @@ private:
 	FVector SmoothedKiteOffset;
 	float CameraYawDeg;
 	float CameraLookPitchDeg;
+	/** The direction the camera looks along before the kite clamp: the board on the water, the flight in the air (deg). */
+	float CameraHeadingYawDeg;
+	/** 0: the boom pivot rides on the board's pitch and roll, as on the water. 1: it sits straight above the board, as in the air. */
+	float CameraPivotAirBlend;
+	bool bBoardVisualOverride;
 	float RiderFacingYawDeg;
 	float RiderStanceSide;
 	/** Yaw still to come off while the rider slides round to face the kite (deg). */

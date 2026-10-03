@@ -101,12 +101,18 @@ The lean is away from the kite's pull. On the water that is leaning out against 
 
 ### Jointed body
 Santa and the wetsuit rider are jointed figures: a torso and eight limb parts, posed every frame by `RiderRig` (`RiderRig.h`). The robot is still the skeletal mannequin.
-- **Feet** are in the straps, 30 cm either side of the middle of the board along its length, and go wherever the board goes, tilt included.
+- **Feet** are in the straps, 30 cm either side of the middle of the board along its length, and go wherever the board goes, tilt included. That is the drawn board (`BoardVisual`), which can be turned away from the physics body (below).
 - **Pelvis** is over the feet along the body's lean, 80 cm up standing and 40% lower in a full loaded crouch, and never further from a strap than the leg reaches.
 - **Knees and elbows** come from a two-bone solve (`SolveTwoBone`) that keeps each bone its length: knees forwards and a little apart, elbows down and out.
 - **Tricks:** the rig also takes a full body orientation (`FRiderRigInput::BodyQuat`, for rotations in the air). The torso, the pelvis line and the knee poles then come from the body itself, so an upside-down rider keeps the feet in the straps with the knees bending towards the chest. The pawn does not set it yet (the rider attitude will, in the air), so the pose is unchanged.
 - **Hands** are on the bar 14 cm either side of its middle, so the arms follow the bar as it is sheeted and steered. The bar is kept within the arms' reach of the shoulders, so leaning back brings it in towards the hook.
 - The parts' lengths and joint positions are shared with `generate_mesh_objs.py` (`RIDER_*`), which builds the meshes; `import_rider_parts.py` imports them.
+
+### Drawn board and physics body
+The pawn's root, `BoardMesh`, is the physics body: `UBoardMovementComponent` sweeps it and it collides, but it is not rendered. The board you see is `BoardVisual`, a child of the root with no collision. It sits exactly on the root unless `SetBoardVisualWorldRotation` turns it, which holds a world rotation however the root turns; `ClearBoardVisualOverride` puts it back. Nothing turns it yet: the rider attitude will in the air, so the board can roll and flip in a trick while the physics body keeps its heading.
+
+### Camera
+The chase camera sits behind the rider on a boom (`CameraArmLengthCm`, `CameraBoomPitchDeg`) and looks along the rider's heading, turned towards the kite only as far as keeps it within `CameraMaxKiteYawOffsetDeg`, and tilted up for a high kite (`CameraKiteHeadroomDeg`). It never rolls. On the water the heading is the board's yaw (switch stance keeps the nose forward) and the boom pivot, `CameraPivotHeightCm` above the board, rides on its tilt. In the air the board spins, so the heading is the direction of the horizontal velocity instead, and the last heading is held when that is slower than `CameraAirMinSpeedCmS`; the pivot sits straight above the board, so a spin, roll or flip does not swing the view. The pivot blends between the two over `CameraPivotLevelSeconds` (`KiteSurf.Pawn.CameraStaysLevelThroughRoll`, `KiteSurf.Pawn.CameraIgnoresAirSpin`).
 
 ## Gear
 The gear screen (`UKiteSurfGearWidget`, opened by PLAY and by GEAR in the pause menu) sets the wind, the kite size and model, the board and the rider. The choices live in `UKiteSurfGameInstance`, are saved with the settings, and are applied when a ride starts (`AKiteSurfGameMode::InitializeRide`) or when the screen is confirmed during one.

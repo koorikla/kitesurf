@@ -410,15 +410,16 @@ assets test.
 | Action | Gamepad | Keyboard | Notes |
 | --- | --- | --- | --- |
 | Load and pop (exists) | A, hold and release | Space | |
-| Pre-wind | Left stick held while loading | A/D and W/S held while loading | Direction picks the rotation, the hold sets its size. It builds over about 0.5 s up to a cap |
-| Rotation in the air | Left stick | A/D, W/S | X alone: roll, back or front, with about 45° of inversion by default. X plus Y: Y tilts the axis, down towards inverted, up towards a flat spin. Y alone: flip (pull for a backflip, push for a front flip). Full flips are unhooked: hooked in, a Y pre-wind is scaled by `HookedFlipScale` (0.35, T3.3), and unhooked a pulled Y is the tantrum (the back hand comes off at take-off). Rider-relative, so the stick towards the tail on screen is a back roll |
-| Grab, front hand | LB | Q | While held, the left stick picks the zone: nose, toe edge, heel edge or tail. The rotation keeps its momentum |
+| Rotation modifier (batch A, `docs/tricks/review.md` section 4) | LT, digital past half travel | Left Shift | Held, the left stick reaches the pre-wind while loading and the rotation in the air; without it the stick is always the board's carve and weight shift, so a plain jump stays straight |
+| Pre-wind | Left stick held while loading, with the modifier | A/D and W/S held while loading, with Shift | Direction picks the rotation, the hold sets its size. It builds over about 0.5 s up to a cap |
+| Rotation in the air | Left stick, with the modifier | A/D, W/S, with Shift | X alone: a roll, back or front, at 65° of inversion (`DefaultRollAxisTiltDeg`, unified with the no-pre-wind default by batch A). X plus Y: Y tilts the axis, down towards more inverted, up towards a spin (`SpinAxisTiltMaxDeg`, 25°). Y alone: flip (pull for a backflip, push for a front flip). Full flips are unhooked: hooked in, a Y pre-wind is scaled by `HookedFlipScale` (0.35, T3.3), and unhooked a pulled Y is the tantrum (the back hand comes off at take-off). Rider-relative, so the stick towards the tail on screen is a back roll |
+| Grab, front hand | LB | Q | While held, the left stick picks the zone: nose, toe edge, heel edge or tail, whatever the modifier is doing. The rotation keeps its momentum |
 | Grab, back hand | RB | E | As above |
 | Board-off | LB + RB held | Q + E | Left stick picks the variant: plain, superman, tic tac. Letting go starts the re-catch, which takes about 0.3 s (**estimate**). Not caught by touchdown is a crash |
 | One-footer | Left stick click | C | Back foot out while held |
 | Unhook or hook in | Y | F | On the water only. Freestyle |
-| Handle pass | X | Left Shift | In the air, unhooked. FS or BS comes from the current spin sense |
-| Kite (exists) | Right stick, triggers | Arrows, right mouse | Loops stay on the bar; the gesture loop is backlog D3 |
+| Handle pass | X | X (moved off Left Shift in batch A, which is the rotation modifier now) | In the air, unhooked. FS or BS comes from the current spin sense |
+| Kite (exists) | Right stick, RT | Arrows, right mouse | Loops stay on the bar; the gesture loop is backlog D3. LT moved to the rotation modifier in batch A and no longer sheets |
 | Recentre the motion bar (exists) | Right stick click | Home | Only while the motion bar follows a controller, when the right stick is idle |
 
 The motion bar frees the right stick anyway, so none of the above conflicts with it.

@@ -8,6 +8,8 @@
 #include "KiteSurfSpot.h"
 #include "EngineUtils.h"
 #include "KiteSurfUnits.h"
+#include "School/LessonSubsystem.h"
+#include "GameFramework/PlayerController.h"
 
 AKiteSurfGameMode::AKiteSurfGameMode()
 	: InitialSpawnSpeedCmPerSec(KiteUnits::KnotsToCmS(12.0f))
@@ -111,5 +113,18 @@ void AKiteSurfGameMode::RestartPlayerAtTransform(AController* NewPlayer, const F
 	if (NewPlayer)
 	{
 		InitializeRide(Cast<AKiteRiderPawn>(NewPlayer->GetPawn()), InitialSpawnSpeedCmPerSec);
+	}
+}
+
+void AKiteSurfGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	// Here rather than in RestartPlayer: RestartPlayer runs InitializeRide more than once (through
+	// RestartPlayerAtPlayerStart), and the lesson's set-up has to come after the last of them.
+	const UGameInstance* GameInstance = GetGameInstance();
+	ULessonSubsystem* Lessons = GameInstance ? GameInstance->GetSubsystem<ULessonSubsystem>() : nullptr;
+	if (Lessons && NewPlayer && !Lessons->GetPendingLessonId().IsNone())
+	{
+		Lessons->StartPendingLesson(NewPlayer->GetPawn());
 	}
 }

@@ -588,10 +588,15 @@ bool FKiteSurfSchoolSubsystemOnGameInstance::RunTest(const FString& Parameters)
 		TestTrue(TEXT("A6: locked and unavailable"), A6 && A6->bLocked && !A6->bAvailable && !A6->bNew);
 		TestTrue(TEXT("B1: unlocked and new"), B1 && !B1->bLocked && B1->bNew);
 
-		// Starting is S3's job: the stub refuses, locked or not.
-		TestFalse(TEXT("StartLesson is a stub: false for an unlocked lesson"), Lessons->StartLesson(TEXT("B1")));
+		// Starting (S3): locked and unknown lessons are refused; an unlocked one becomes pending. Travel
+		// is off so this world (which has no rider) does not open the lesson's map.
+		Lessons->SetTravelEnabled(false);
 		TestFalse(TEXT("StartLesson: false for a locked lesson"), Lessons->StartLesson(TEXT("B2")));
 		TestFalse(TEXT("StartLesson: false for an unknown lesson"), Lessons->StartLesson(TEXT("Z9")));
+		TestEqual(TEXT("Nothing pending after refusals"), Lessons->GetPendingLessonId(), FName());
+		TestTrue(TEXT("StartLesson: true for an unlocked lesson"), Lessons->StartLesson(TEXT("B1")));
+		TestEqual(TEXT("The unlocked lesson is pending"), Lessons->GetPendingLessonId(), FName(TEXT("B1")));
+		Lessons->ClearPendingLesson();
 
 		// Round trip through the game instance's save path, minus the disk.
 		const FLessonProgressBook Before = Lessons->GetProgress();

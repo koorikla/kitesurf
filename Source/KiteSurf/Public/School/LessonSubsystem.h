@@ -6,6 +6,11 @@
 #include "LessonSubsystem.generated.h"
 
 class UKiteSurfSaveGame;
+class ALessonDirector;
+class APawn;
+
+/** The kite school's log: lesson starts, the director's state changes, results. */
+KITESURF_API DECLARE_LOG_CATEGORY_EXTERN(LogKiteSchool, Log, All);
 
 /** One lesson as the lesson menu (S5) shows it: a tile on the chapter map. */
 USTRUCT(BlueprintType)
@@ -48,8 +53,9 @@ struct KITESURF_API FLessonListItem
  * WriteToSaveGame, and RecordLessonResult and ResetProgress call SaveSettingsToDisk so a result is
  * on disk as soon as it is known. Exists only on a UKiteSurfGameInstance.
  *
- * Starting a lesson (opening the map with its set-up and running it) is S3's ALessonDirector;
- * StartLesson is a stub until then.
+ * StartLesson (S3) checks the unlock, keeps the lesson as pending and opens its map
+ * (L_FlatWater); AKiteSurfGameMode then spawns an ALessonDirector for it once the rider is in.
+ * Started during a ride, the director is spawned straight away in that ride.
  */
 UCLASS()
 class KITESURF_API ULessonSubsystem : public UGameInstanceSubsystem
@@ -94,11 +100,41 @@ public:
 	void ResetProgress();
 
 	/**
-	 * S3 stub: starting a lesson is the lesson director's job (S3). Until then this only checks
-	 * that the lesson exists and is unlocked, logs, and always returns false.
+	 * Starts a lesson (docs/tutorials.md 3.3). False, and nothing changes, when the lesson is unknown,
+	 * locked (a prerequisite without a star, or a feature not built). Otherwise the lesson becomes
+	 * pending and:
+	 * - during a ride (the game world has a kite rider for the player) an ALessonDirector is spawned
+	 *   there and begins it at once (the pending lesson is consumed);
+	 * - otherwise the lesson's map (L_FlatWater) is opened, and AKiteSurfGameMode starts the pending
+	 *   lesson when the rider spawns (StartPendingLesson);
+	 * - with no world to open a map in, or travel switched off, it stays pending.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "School")
 	bool StartLesson(FName LessonId);
+
+	/**
+	 * StartLesson without the prerequisite check, for the kitesurf.Lesson console command's "force"
+	 * (testing and -game checks). A lesson whose feature is not built still cannot start.
+	 */
+	bool StartLessonIgnoringPrerequisites(FName LessonId);
+
+	/** The lesson waiting for a ride level to start in; None when there is none. */
+	UFUNCTION(BlueprintPure, Category = "School")
+	FName GetPendingLessonId() const { return PendingLessonId; }
+
+	/** Forgets the pending lesson. */
+	UFUNCTION(BlueprintCallable, Category = "School")
+	void ClearPendingLesson() { PendingLessonId = NAME_None; }
+
+	/**
+	 * Starts the pending lesson on this rider (ALessonDirector::StartInWorld in the rider's world)
+	 * and consumes it. Called by AKiteSurfGameMode once the player's rider is set up. Null when
+	 * nothing is pending or it could not start.
+	 */
+	ALessonDirector* StartPendingLesson(APawn* Rider);
+
+	/** Whether StartLesson may open a map (on by default). Tests switch it off. */
+	void SetTravelEnabled(bool bEnabled) { bTravelEnabled = bEnabled; }
 
 	/** Takes the progress from a loaded save (called by UKiteSurfGameInstance::ApplySaveGame). */
 	void LoadFromSaveGame(const UKiteSurfSaveGame& SaveGame);
@@ -112,7 +148,10 @@ public:
 
 private:
 	void SaveProgress();
+	bool StartLessonChecked(FName LessonId, bool bCheckPrerequisites);
 
 	FLessonProgressBook Progress;
 	bool bWriteToDisk = true;
+	bool bTravelEnabled = true;
+	FName PendingLessonId;
 };

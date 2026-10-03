@@ -7,9 +7,9 @@
 /**
  * The kite school's telemetry (docs/tutorials.md 3.3 and 3.4): snapshots of the ride about 60
  * times a second, kept in a fixed-size ring buffer so lesson objectives and fault rules can look
- * at the last seconds of a ride. Pure data: nothing in the game fills it yet. The lesson director
- * (S3) is to poll the board's and the kite's public getters after the trick tracker and add one
- * FLessonSample every fourth 240 Hz fixed step.
+ * at the last seconds of a ride. The lesson director (ALessonDirector, S3) fills it from its own
+ * tick, after the pawn's: it polls the board's and the kite's public getters and adds one
+ * FLessonSample per four 240 Hz fixed steps of board time.
  *
  * Units are SI: metres, m/s, degrees, newtons, seconds of board simulation time.
  */

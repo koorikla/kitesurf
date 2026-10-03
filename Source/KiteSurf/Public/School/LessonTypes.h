@@ -11,7 +11,7 @@
  * three drill steps, a pass objective, an ordered list of fault rules with their feedback lines,
  * and star rules. LessonEval (LessonEvaluator.h) evaluates objectives and diagnoses faults;
  * LessonCatalog (LessonCatalog.h) holds the lessons; ULessonSubsystem (LessonSubsystem.h, S2)
- * holds the player's progress and the unlocks. Not yet run by the game: the director (S3) comes next.
+ * holds the player's progress and the unlocks; ALessonDirector (LessonDirector.h, S3) runs a lesson.
  *
  * Every threshold in the catalogue is an estimate (docs/tutorials.md section 2).
  */
@@ -26,7 +26,7 @@ enum class ELessonStart : uint8
 	Floating,
 	/** Already riding at FLessonSetup::StartSpeedKnots on FLessonSetup::StartTack. */
 	Riding,
-	/** In the air at FLessonSetup::StartHeightM, for landing drills. */
+	/** In the air at FLessonSetup::StartHeightM, for landing drills. Not supported yet: the director falls back to Riding (no catalogue lesson uses it). */
 	Airborne
 };
 

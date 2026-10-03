@@ -75,6 +75,9 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    ```
    Output is archived under `Build/`.
 7. **CI** runs steps 2 and 3 on a self-hosted runner, followed by a non-blocking `gpu-smoke` job (step 5) for every push and pull request to `main`.
+   CI builds are incremental: each job keeps `Binaries/`, `Intermediate/` and
+   `DerivedDataCache/` from the previous run in the runner's workspace and deletes every other
+   untracked file, so `gpu-smoke` reuses the editor that `build-and-test` just built.
 
 ## Pitfalls
 

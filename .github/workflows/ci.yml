@@ -16,6 +16,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: true
+          # The default clean wipes Binaries/ and Intermediate/, so every job rebuilt the
+          # module and its PCH from scratch. Keep them and let UBT rebuild what changed.
+          clean: false
+
+      - name: Remove untracked files except build outputs
+        # Saved/ goes too, so a stale test report or screenshot cannot pass for this run's.
+        run: git clean -ffdx -e /Binaries/ -e /Intermediate/ -e /DerivedDataCache/
 
       - name: Build KiteSurfEditor
         run: scripts/build.sh Development
@@ -33,6 +40,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           lfs: true
+          # The default clean wipes Binaries/ and Intermediate/, so every job rebuilt the
+          # module and its PCH from scratch. Keep them and let UBT rebuild what changed.
+          clean: false
+
+      - name: Remove untracked files except build outputs
+        # Saved/ goes too, so a stale test report or screenshot cannot pass for this run's.
+        run: git clean -ffdx -e /Binaries/ -e /Intermediate/ -e /DerivedDataCache/
 
       - name: Build KiteSurfEditor
         run: scripts/build.sh Development

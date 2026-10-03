@@ -32,7 +32,7 @@
 namespace TrickGrabTest
 {
 	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter;
-	constexpr float FrameSeconds = 1.0f / 60.0f;
+	constexpr float GrabFrameSeconds = 1.0f / 60.0f;
 
 	/** A rider on the water in steady wind along +X, started on a beam reach as the game mode does (TrickLiveRotationTests' fixture). */
 	struct FGrabRide
@@ -100,12 +100,12 @@ namespace TrickGrabTest
 
 		void Frame()
 		{
-			Pawn->Tick(FrameSeconds);
+			Pawn->Tick(GrabFrameSeconds);
 			if (Boom)
 			{
-				Boom->TickComponent(FrameSeconds, LEVELTICK_All, nullptr);
+				Boom->TickComponent(GrabFrameSeconds, LEVELTICK_All, nullptr);
 			}
-			HUD->UpdateJumpCard(Tracker, FrameSeconds);
+			HUD->UpdateJumpCard(Tracker, GrabFrameSeconds);
 		}
 
 		bool HasReached(float SimSeconds) const
@@ -157,31 +157,31 @@ namespace TrickGrabTest
 	};
 
 	/** The nose's side of the drawn rider (+1 right): the drawn board's +X against the torso's right, as the pawn works it out. */
-	float DrawnNoseSide(const AKiteRiderPawn* Pawn)
+	float GrabTestNoseSide(const AKiteRiderPawn* Pawn)
 	{
 		const FTransform BoardTransform = Pawn->GetBoardVisual()->GetComponentTransform();
 		return FVector::DotProduct(BoardTransform.GetUnitAxis(EAxis::X), Pawn->GetRiderRigPose().Torso.GetAxisY()) >= 0.0f ? 1.0f : -1.0f;
 	}
 
 	/** The rig side (0 left, 1 right) of a hand: the front hand is on the nose's side. */
-	int32 RigSide(ETrickHand Hand, float NoseSide)
+	int32 GrabTestRigSide(ETrickHand Hand, float NoseSide)
 	{
 		return (Hand == ETrickHand::Front) == (NoseSide > 0.0f) ? 1 : 0;
 	}
 
 	/** How far each ankle is from its strap on the drawn board (cm): [front foot, back foot]. */
-	void StrapErrors(const AKiteRiderPawn* Pawn, float& OutFront, float& OutBack)
+	void GrabTestStrapErrors(const AKiteRiderPawn* Pawn, float& OutFront, float& OutBack)
 	{
 		const FTransform BoardTransform = Pawn->GetBoardVisual()->GetComponentTransform();
-		const float NoseSide = DrawnNoseSide(Pawn);
-		const int32 FrontSide = RigSide(ETrickHand::Front, NoseSide);
+		const float NoseSide = GrabTestNoseSide(Pawn);
+		const int32 FrontSide = GrabTestRigSide(ETrickHand::Front, NoseSide);
 		const FRiderRigPose& Pose = Pawn->GetRiderRigPose();
 		OutFront = FVector::Dist(Pose.Legs[FrontSide].End, BoardTransform.TransformPosition(BoardGrabPoints::ToBoardLocal(BoardGrabPoints::FrontStrap, NoseSide)));
 		OutBack = FVector::Dist(Pose.Legs[1 - FrontSide].End, BoardTransform.TransformPosition(BoardGrabPoints::ToBoardLocal(BoardGrabPoints::BackStrap, NoseSide)));
 	}
 
 	/** A landed record for the pure scoring checks: a 5 m straight air, landed clean with the kite high. */
-	FJumpRecord MakeRecord()
+	FJumpRecord MakeGrabRecord()
 	{
 		FJumpRecord Record;
 		Record.Outcome = EJumpOutcome::Landed;
@@ -192,7 +192,7 @@ namespace TrickGrabTest
 	}
 
 	/** Steps a grab state at Hz in the air with the back button held for HeldSeconds (stick ZoneStick), then let go for a while. */
-	FGrabState HoldBack(float HeldSeconds, float Hz, const FVector2D& ZoneStick = FVector2D::ZeroVector)
+	FGrabState HoldBackGrab(float HeldSeconds, float Hz, const FVector2D& ZoneStick = FVector2D::ZeroVector)
 	{
 		FGrabState State;
 		const float Dt = 1.0f / Hz;
@@ -241,7 +241,7 @@ bool FKiteSurfTrickGrabNamesByHandAndZone::RunTest(const FString& Parameters)
 			TrickNaming::GrabName(Case.Hand, Case.Zone), FString(Case.Name));
 
 		// A record with that grab held 0.5 s is named after it, alone ("Indy", not "Straight air indy").
-		FJumpRecord Record = MakeRecord();
+		FJumpRecord Record = MakeGrabRecord();
 		FTrickGrab& Grab = Record.Grabs.AddDefaulted_GetRef();
 		Grab.Hand = Case.Hand;
 		Grab.Zone = Case.Zone;
@@ -309,7 +309,7 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 	{
 		for (const float Hz : { 240.0f, 60.0f })
 		{
-			const FGrabState State = HoldBack(Reach + Case.HoldSeconds, Hz, FVector2D(-1.0f, 0.0f));
+			const FGrabState State = HoldBackGrab(Reach + Case.HoldSeconds, Hz, FVector2D(-1.0f, 0.0f));
 			const FString What = FString::Printf(TEXT("Held %.1f s on the board at %.0f Hz"), Case.HoldSeconds, Hz);
 			if (!TestEqual(FString::Printf(TEXT("%s: one grab logged"), *What), State.GetGrabs().Num(), 1))
 			{
@@ -321,7 +321,7 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 			TestNearlyEqual(FString::Printf(TEXT("%s: the hold is counted from the reach (s)"), *What), Grab.HoldSeconds, Case.HoldSeconds, 1.01f / Hz);
 			TestFalse(FString::Printf(TEXT("%s: the hand is back on the bar after letting go"), *What), State.IsHandOffBar());
 
-			FJumpRecord Record = MakeRecord();
+			FJumpRecord Record = MakeGrabRecord();
 			Record.Grabs = State.GetGrabs();
 			const FTrickSignature Signature = TrickRecognition::SignatureFromJump(Record);
 			const FTrickScore Score = TrickScoring::ScoreJump(Record, Signature);
@@ -352,7 +352,7 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 
 	// Let go during the reach: logged with no hold, not named.
 	{
-		const FGrabState State = HoldBack(0.1f, 240.0f);
+		const FGrabState State = HoldBackGrab(0.1f, 240.0f);
 		TestEqual(TEXT("Let go while reaching: one grab logged"), State.GetGrabs().Num(), 1);
 		TestEqual(TEXT("with no hold"), State.GetGrabs().Num() == 1 ? State.GetGrabs()[0].HoldSeconds : -1.0f, 0.0f);
 	}
@@ -416,7 +416,7 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 
 	// The grab tucks the body: its zone's tuck once the hand is there, nothing on the bar.
 	{
-		FGrabState State = HoldBack(0.0f, 240.0f);
+		FGrabState State = HoldBackGrab(0.0f, 240.0f);
 		TestEqual(TEXT("No grab: no tuck"), State.GetTuckTarget(), 0.0f);
 		FGrabState Holding;
 		FGrabStateInput In;
@@ -485,7 +485,7 @@ bool FKiteSurfTrickGrabOnRide::RunTest(const FString& Parameters)
 			if (Ride.IsAirborne())
 			{
 				bTookOff = true;
-				Air += FrameSeconds;
+				Air += GrabFrameSeconds;
 				if (Ride.Board->Velocity.Z < 0.0f && bReleased)
 				{
 					Pawn->SetLoadHeld(true); // coming down: crouch for the landing
@@ -499,13 +499,13 @@ bool FKiteSurfTrickGrabOnRide::RunTest(const FString& Parameters)
 				if (Grabs.IsHolding() && Grabs.GetPrevReachWeight() >= 1.0f)
 				{
 					++HeldFrames;
-					const float NoseSide = DrawnNoseSide(Pawn);
-					const int32 Side = RigSide(ETrickHand::Back, NoseSide);
+					const float NoseSide = GrabTestNoseSide(Pawn);
+					const int32 Side = GrabTestRigSide(ETrickHand::Back, NoseSide);
 					const FVector Socket = BoardGrabPoints::SocketWorld(Pawn->GetBoardVisual()->GetComponentTransform(), ETrickGrabZone::ToeEdge, ETrickHand::Back, NoseSide);
 					WorstHandCm = FMath::Max(WorstHandCm, static_cast<float>(FVector::Dist(Pawn->GetRiderRigPose().Arms[Side].End, Socket)));
 					float FrontFoot = 0.0f;
 					float BackFoot = 0.0f;
-					StrapErrors(Pawn, FrontFoot, BackFoot);
+					GrabTestStrapErrors(Pawn, FrontFoot, BackFoot);
 					WorstFrontFootCm = FMath::Max(WorstFrontFootCm, FrontFoot);
 					WorstBackFootCm = FMath::Max(WorstBackFootCm, BackFoot);
 					MaxPullCm = FMath::Max(MaxPullCm, static_cast<float>(Pawn->GetGrabBoardPullCm().Size()));
@@ -580,7 +580,7 @@ bool FKiteSurfTrickGrabOnRide::RunTest(const FString& Parameters)
 		const float StartAt = Pawn->GetSimTimeSeconds();
 		while (!Ride.HasReached(StartAt + 15.0f))
 		{
-			if (WithGrab == 1 && bTookOff && Air >= 0.15f && Air < 0.15f + 0.5f * FrameSeconds)
+			if (WithGrab == 1 && bTookOff && Air >= 0.15f && Air < 0.15f + 0.5f * GrabFrameSeconds)
 			{
 				Pawn->SetTrickInput(false, true, false);
 			}
@@ -592,7 +592,7 @@ bool FKiteSurfTrickGrabOnRide::RunTest(const FString& Parameters)
 			if (Ride.IsAirborne())
 			{
 				bTookOff = true;
-				Air += FrameSeconds;
+				Air += GrabFrameSeconds;
 				if (Air >= 0.5f && Air < 1.0f)
 				{
 					MeanRate[WithGrab] += FMath::RadiansToDegrees(static_cast<float>(Ride.Attitude->GetAngularVelocity().Size()));
@@ -737,14 +737,14 @@ bool FKiteSurfTrickOneFooterFootReturns::RunTest(const FString& Parameters)
 			if (Ride.IsAirborne())
 			{
 				bTookOff = true;
-				Air += FrameSeconds;
+				Air += GrabFrameSeconds;
 				if (Ride.Board->Velocity.Z < 0.0f)
 				{
 					Pawn->SetLoadHeld(true);
 				}
 				float FrontFoot = 0.0f;
 				float BackFoot = 0.0f;
-				StrapErrors(Pawn, FrontFoot, BackFoot);
+				GrabTestStrapErrors(Pawn, FrontFoot, BackFoot);
 				if (Pawn->GetGrabState().GetFootOut() >= 1.0f && Pawn->GetGrabState().GetPrevFootOut() >= 1.0f)
 				{
 					MinBackFootOutCm = FMath::Min(MinBackFootOutCm, BackFoot);

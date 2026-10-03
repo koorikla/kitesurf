@@ -1231,7 +1231,30 @@ ALessonDirector* AKiteSurfHUD::FindLessonDirector() const
 
 void AKiteSurfHUD::UpdateLessonLayer(float DeltaTime)
 {
-	LessonLayer.Update(FindLessonDirector(), DeltaTime);
+	// The world's time dilation (a lesson's slow motion) scaled DeltaTime; the drop-back hold is
+	// timed in real seconds.
+	float Dilation = 1.0f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AWorldSettings* Settings = World->GetWorldSettings())
+		{
+			Dilation = Settings->GetEffectiveTimeDilation();
+		}
+	}
+	const float RealDeltaTime = Dilation > KINDA_SMALL_NUMBER ? DeltaTime / Dilation : DeltaTime;
+	ALessonDirector* Director = FindLessonDirector();
+	LessonLayer.Update(Director, DeltaTime, RealDeltaTime);
+	if (Director && LessonLayer.ConsumeDropBackHold() && Director->IsDropBackOffered())
+	{
+		UE_LOG(LogKiteSchool, Display, TEXT("HUD: reset held %.1f s on the drop-back offer: dropping back"), LessonHUD::DropBackHoldSeconds);
+		Director->AcceptDropBack();
+		LessonLayer.Update(FindLessonDirector(), 0.0f, 0.0f);
+	}
+}
+
+void AKiteSurfHUD::SetLessonResetHeld(bool bHeld)
+{
+	LessonLayer.SetResetHeld(bHeld);
 }
 
 bool AKiteSurfHUD::HandleLessonAction(ELessonHUDAction Action)
@@ -1248,11 +1271,8 @@ bool AKiteSurfHUD::HandleLessonAction(ELessonHUDAction Action)
 	case ELessonHUDAction::Confirm:
 		return bCard && Director->GetOutcome() == ELessonOutcome::Passed && Director->Next();
 	case ELessonHUDAction::Retry:
-		if (bCard)
-		{
-			return Director->Retry();
-		}
-		return Director->IsDropBackOffered() && Director->AcceptDropBack();
+		// Off the card a press is the rider's reset; the drop-back offer needs it held (SetLessonResetHeld).
+		return bCard && Director->Retry();
 	case ELessonHUDAction::Menu:
 		if (bCard)
 		{
@@ -1282,6 +1302,9 @@ void AKiteSurfHUD::BindLessonInput(AKiteRiderPawn* RiderPawn)
 	if (UInputAction* Reset = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/IA_Reset.IA_Reset")))
 	{
 		Input->BindAction(Reset, ETriggerEvent::Started, this, &AKiteSurfHUD::OnLessonResetInput);
+		// IA_Reset has no triggers: Completed when let go (Canceled for safety).
+		Input->BindAction(Reset, ETriggerEvent::Completed, this, &AKiteSurfHUD::OnLessonResetReleased);
+		Input->BindAction(Reset, ETriggerEvent::Canceled, this, &AKiteSurfHUD::OnLessonResetReleased);
 	}
 }
 
@@ -1292,5 +1315,14 @@ void AKiteSurfHUD::OnLessonJumpInput()
 
 void AKiteSurfHUD::OnLessonResetInput()
 {
-	HandleLessonAction(ELessonHUDAction::Retry);
+	// The result card's Retry on a press; otherwise the start of a possible hold on the drop-back offer.
+	if (!HandleLessonAction(ELessonHUDAction::Retry))
+	{
+		SetLessonResetHeld(true);
+	}
+}
+
+void AKiteSurfHUD::OnLessonResetReleased()
+{
+	SetLessonResetHeld(false);
 }

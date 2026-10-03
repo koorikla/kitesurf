@@ -274,7 +274,9 @@ struct FLessonDef {
   - evaluates objectives by polling, as the trick tracker does;
   - drives the HUD cues;
   - on failure, picks a fault line;
-  - offers to drop back a step after three failures (the channel's own advice);
+  - offers to drop back a step after three failures (the channel's own advice); the player takes
+    the offer by holding reset (R or B) for 1 s, with a fill on the offer line, since a tap of the
+    same button resets the rider after a crash;
   - all of it runs without a renderer, so lessons are testable under `-nullrhi`.
 - **Data sources already on `main`:**
   - `UTrickTrackerComponent` and `FJumpRecord`: height, airtime, landing grade and cause, loops,
@@ -302,8 +304,12 @@ struct FLessonDef {
   - the stomp against peak edge load;
   - the back-hand steer at about 4 m and the front-hand dive at 1 to 2 m;
   - the loop start against the apex.
-- **Slow motion.** Only at the lesson's one decision point (the kite crossing 12, the 4 m landing
-  cue), with one prompt. It switches off after three Clean attempts.
+- **Slow motion.** Only at the step's one decision point (the kite at the top of a send, the 4 m landing
+  cue), with one prompt. It switches off after three Clean attempts. Built in S8 (#PR): the step's
+  `SlowMoCue` and the slow-motion assist; 0.6x for about 0.6 s, eased in and out over real time
+  (estimates). The kite counts as at the top at 80 deg, or within 10 deg of it once it stops climbing:
+  loaded for the pop on B2's 14 kn set-up it tops out near 74 deg. The simulation keeps its fixed
+  240 Hz steps, so the ride in sim time is the same with or without it.
 - **Diagnosis rules.** Each common mistake is a test on the jump record or the last seconds of
   telemetry:
   - dived early: kite under 45° at touchdown;
@@ -354,7 +360,7 @@ Each task ships with `KiteSurf.School.*` automation tests and follows the merge-
 | S5 | **Done** (#96). School menu from the main and pause menus: chapter map, tiles with stars and lock state, detail panel with best result and attempts, Start, Watch demo, wind and assists for reruns, Continue, overall progress, reset with confirm, Retry, Next and Lesson menu on the result card | Menu navigation tests like the gear screen's; a locked lesson cannot start; rerunning a passed lesson keeps the best stars; seen in a `-game` run | M | S2 |
 | S6 | Chapters A and B as data (A6 waits for toeside riding, B4 for grabs), text prompts only | A scripted ride passes each lesson's test | M | S3, S4 |
 | S7 | **Done** (#100). Replace today's four-step onboarding with A1 to A3 and a guided first jump; keep the skip option (`School/SchoolOnboarding.h`: PLAY on a first run starts A1, SKIP TUTORIAL in the pause menu, passing A3 completes it and points to B2 or the School menu; `KiteSurf.School.Onboarding*` tests) | First run starts lesson A1; "skip" goes to free ride | S | S6 |
-| S8 | Slow motion at decision points | Time dilation on and off around the cue; the simulation stays deterministic in fixed steps | S | S3 |
+| S8 | **Done** (#101). Slow motion at decision points (`FLessonSlowMoCue` per step, B2 and B3, `KiteSurf.School.SlowMo*` tests); the drop-back offer now needs reset held for 1 s | Time dilation on and off around the cue; the simulation stays deterministic in fixed steps | S | S3 |
 | S9 | Chapters C to F as data, as their trick features land | Per lesson, as S6 | M each | Tricks T1, T2.1, T3; phase 3 redirect; kickers |
 | S10 | Replay of the last attempt with event markers | Needs the backlog G2 recorder | L | G2 |
 | S11 | Bot demonstration: before a lesson, a bot rider performs the skill from a scripted input track, filmed with the cinematic cameras (`AKiteSurfCinematicCamera`, as the menu video does), then hands over to the player at the same spot | Each lesson's demonstration track passes its own pass test in a scripted run; seen in a `-game` run | L | S6 |

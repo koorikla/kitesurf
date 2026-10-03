@@ -1,6 +1,7 @@
 #include "School/LessonCatalog.h"
 
 #include "School/LessonEvaluator.h"
+#include "School/LessonTiming.h"
 
 #define LOCTEXT_NAMESPACE "LessonCatalog"
 
@@ -133,6 +134,9 @@ namespace LessonCatalogPrivate
 	/** Taking off faster than this is "too fast" for a pop or a jump transition (m/s, about 19 kn). */
 	constexpr float TooFastTakeoffMS = 10.0f;
 
+	/** B3's slow motion: the rider passing this height on the way down (m above the water). */
+	constexpr float B3DiveCueHeightM = 4.0f;
+
 	FLessonObjective Objective(EM Metric, float Min, float Max = UE_BIG_NUMBER, int32 Count = 1)
 	{
 		FLessonObjective O;
@@ -158,6 +162,16 @@ namespace LessonCatalogPrivate
 		S.Cue = Cue;
 		S.Objective = O;
 		return S;
+	}
+
+	/** A slow-motion cue (S8): the step's one decision point and its one prompt. */
+	FLessonSlowMoCue SlowMo(ELessonSlowMoTrigger Trigger, float Threshold, const FText& Prompt)
+	{
+		FLessonSlowMoCue Cue;
+		Cue.Trigger = Trigger;
+		Cue.Threshold = Threshold;
+		Cue.Prompt = Prompt;
+		return Cue;
 	}
 
 	FLessonDef Lesson(const TCHAR* Id, const TCHAR* Chapter, const FText& Title, const FText& Summary, TArray<FName> Requires)
@@ -374,12 +388,15 @@ namespace LessonCatalogPrivate
 			FLessonDef L = Lesson(TEXT("B2"), TEXT("B"), LOCTEXT("B2.Title", "Small jump"),
 				LOCTEXT("B2.Summary", "Send the kite slowly, sheet in at 12, land with control."), { TEXT("B1") });
 			L.Setup = JumpSetup();
+			// Slow motion as the kite reaches the top, the moment to sheet in (S8).
+			L.Setup.Assists.bSlowMotion = true;
 			L.Steps.Add(Step(LOCTEXT("B2.Step1", "Send the kite slowly to 12"), TEXT("IA_Steer"), ELessonCue::GhostKite,
 				[] { FLessonObjective O = Objective(EM::Channel, 80.0f); O.Channel = EC::KiteElevation; return O; }()));
 			FLessonObjective Jump1 = Objective(EM::JumpHeight, 1.0f, 2.0f, 5);
 			Jump1.bInARow = true;
 			Jump1.Conditions.Add(Clean);
 			L.Steps.Add(Step(LOCTEXT("B2.Step2", "Bar in at 12"), TEXT("IA_Sheet"), ELessonCue::TimingRing, Jump1));
+			L.Steps.Last().SlowMo = SlowMo(ELessonSlowMoTrigger::KiteAtTop, LessonTiming::SheetPerfectMinDeg, LOCTEXT("B2.SlowMo", "Bar in now"));
 			L.Pass = Jump1;
 			L.Faults.Add(SheetedInWhileClimbing(3, LOCTEXT("B2.Fault.Sheeted", "Bar out while it climbs, in at 12")));
 			L.Faults.Add(EdgeLostBeforeTakeoff(2, LOCTEXT("B2.Fault.Edge", "Hold the edge until take-off")));
@@ -396,11 +413,16 @@ namespace LessonCatalogPrivate
 			L.Setup.Assists.bSlowMotion = true;
 			FLessonObjective Dive = Objective(EM::DiveBeforeTouchdown, 0.15f, 1.0f);
 			Dive.Conditions.Add(Condition(Jump(EM::JumpHeight), 1.0f));
+			// Slow motion on the way down at about 4 m, the moment to dive (S8): the back-hand steer cue
+			// of docs/tutorials.md 3.4. Lower jumps get it just after their apex.
+			const FLessonSlowMoCue DiveCue = SlowMo(ELessonSlowMoTrigger::RiderDescending, B3DiveCueHeightM, LOCTEXT("B3.SlowMo", "Dive the kite now"));
 			L.Steps.Add(Step(LOCTEXT("B3.Step1", "Dive the kite now"), TEXT("IA_Steer"), ELessonCue::TimingRing, Dive));
+			L.Steps.Last().SlowMo = DiveCue;
 			FLessonObjective Land = Objective(EM::JumpHeight, 3.0f, 5.0f);
 			Land.Conditions.Add(Clean);
 			Land.Conditions.Add(Condition(Jump(EM::DiveBeforeTouchdown), 0.15f, 1.0f));
 			L.Steps.Add(Step(LOCTEXT("B3.Step2", "Jump 3 m and dive to land"), TEXT("IA_Jump"), ELessonCue::None, Land));
+			L.Steps.Last().SlowMo = DiveCue;
 			L.Pass = Land;
 			const FText Early = LOCTEXT("B3.Fault.Early", "Dived early: the kite was too low to catch you");
 			L.Faults.Add(FrontStall(4, LOCTEXT("B3.Fault.FrontStall", "The kite overflew")));

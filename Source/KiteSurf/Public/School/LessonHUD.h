@@ -24,7 +24,11 @@ enum class ELessonHUDAction : uint8
 {
 	/** The jump button: Next lesson on a pass. */
 	Confirm,
-	/** The reset button: Retry on the result card; takes the drop-back offer while it shows. */
+	/**
+	 * The reset button: Retry on the result card. On the drop-back offer a tap only resets the rider
+	 * (the rider's own handler); holding it for LessonHUD::DropBackHoldSeconds takes the offer
+	 * (FLessonHUDLayer::SetResetHeld).
+	 */
 	Retry,
 	/** The pause button on the result card: the lesson menu (ULessonSubsystem::RequestLessonMenu). */
 	Menu
@@ -87,6 +91,9 @@ struct KITESURF_API FLessonHUDInput
 	float IntroSeconds = 3.0f;
 	ELessonTimingGrade TimingGrade = ELessonTimingGrade::None;
 	int32 TimingSerial = 0;
+	/** A slow motion runs at the step's decision point (S8), with its one prompt. */
+	bool bSlowMotion = false;
+	FText SlowMotionPrompt;
 
 	/** The progress book's record of this lesson. */
 	bool bHasRecord = false;
@@ -118,6 +125,8 @@ struct FLessonHUDTimers
 	bool bShowTiming = false;
 	/** Seconds since the timing grade came in (for its pop). */
 	float TimingAge = 0.0f;
+	/** 0..1: how far the reset button has been held towards taking the drop-back offer. */
+	float DropBackHold = 0.0f;
 };
 
 /** The text the layer draws. Empty strings are not drawn. */
@@ -136,7 +145,12 @@ struct KITESURF_API FLessonHUDView
 	float ProgressFraction = 0.0f;
 	FString Fault;
 	FString Hint;
+	/** "Too hard? Hold [R | B] to drop back to A2  [####------]": the offer with its hold fill. */
 	FString DropBack;
+	/** 0..1, the hold fill of the drop-back line (drawn as a bar behind it too). */
+	float DropBackFill = 0.0f;
+	/** A slow motion runs: Prompt is its one prompt (drawn larger). */
+	bool bSlowMotion = false;
 	FString Timing;
 	ELessonTimingGrade TimingGrade = ELessonTimingGrade::None;
 	float TimingAge = 0.0f;
@@ -176,6 +190,10 @@ namespace LessonHUD
 	inline constexpr float FaultLineSeconds = 2.5f;
 	/** A held objective out of band this long brings up the hint (s). */
 	inline constexpr float HintAfterSeconds = 2.0f;
+	/** How long the reset button is held to take the drop-back offer (real s); a tap only resets the rider. */
+	inline constexpr float DropBackHoldSeconds = 1.0f;
+	/** Cells of the text fill on the drop-back line. */
+	inline constexpr int32 DropBackFillCells = 10;
 	/** How long a timing grade flashes (s). */
 	inline constexpr float TimingFlashSeconds = 1.2f;
 	/** The landing sweet spot: this far in front of 12 on the travel side (deg of clock). */
@@ -202,8 +220,15 @@ namespace LessonHUD
 	/** "LESSON B2  Small jump" (intro), "B2  Small jump   STEP 2/3" (step), "B2  Small jump" otherwise. */
 	KITESURF_API FString FormatHeader(const FLessonHUDInput& In);
 
-	/** The drop-back offer with its key, or empty when nothing is offered or there is nowhere to go. */
-	KITESURF_API FString FormatDropBack(const FLessonHUDInput& In);
+	/**
+	 * The drop-back offer with its key and a fill for the hold, HoldFraction 0..1:
+	 * "Too hard? Hold [R | B] to drop back to step 1  [##########]" or "... to drop back to A2  [----------]".
+	 * Empty when nothing is offered or there is nowhere to go.
+	 */
+	KITESURF_API FString FormatDropBack(const FLessonHUDInput& In, float HoldFraction = 0.0f);
+
+	/** A text fill: "[####------]" for 0.4 over ten cells. */
+	KITESURF_API FString FillText(float Fraction, int32 Cells = DropBackFillCells);
 
 	/** What the next star asks for; empty at three stars or before a pass. */
 	KITESURF_API FString FormatNextStar(int32 Stars, bool bPassedHigherBar, const FText& HigherBarText, int32 AssistsOn);
@@ -262,11 +287,28 @@ namespace LessonHUD
 class KITESURF_API FLessonHUDLayer
 {
 public:
-	/** Reads the director (null or idle hides the layer) and moves the timers on by DeltaSeconds. */
-	void Update(const ALessonDirector* Director, float DeltaSeconds);
+	/**
+	 * Reads the director (null or idle hides the layer) and moves the timers on by DeltaSeconds (game
+	 * time). The drop-back hold runs on RealDeltaSeconds (real time, so a slow motion does not stretch
+	 * it); below 0 it is DeltaSeconds.
+	 */
+	void Update(const ALessonDirector* Director, float DeltaSeconds, float RealDeltaSeconds = -1.0f);
 
 	/** The same with an input built by hand (tests). */
-	void UpdateFromInput(const FLessonHUDInput& In, float DeltaSeconds);
+	void UpdateFromInput(const FLessonHUDInput& In, float DeltaSeconds, float RealDeltaSeconds = -1.0f);
+
+	/**
+	 * The reset button went down (true) or up (false). A press that starts while the drop-back offer
+	 * shows, held for LessonHUD::DropBackHoldSeconds, takes it (ConsumeDropBackHold); a tap does
+	 * nothing here (the rider's own handler resets the rider).
+	 */
+	void SetResetHeld(bool bHeld);
+
+	/** True once, when the hold has filled: the caller takes the offer. The press must be let go and pressed again for another. */
+	bool ConsumeDropBackHold();
+
+	/** 0..1 towards taking the offer. */
+	float GetDropBackHoldFraction() const;
 
 	const FLessonHUDInput& GetInput() const { return Input; }
 	const FLessonHUDView& GetView() const { return View; }
@@ -291,6 +333,11 @@ private:
 	float FaultRemaining = 0.0f;
 	float TimingAge = UE_BIG_NUMBER;
 	int32 SeenTimingSerial = 0;
+	/** The reset button is down, the press started while the offer showed, and how long it has been held (real s). */
+	bool bResetHeld = false;
+	bool bResetHoldEligible = false;
+	float ResetHoldSeconds = 0.0f;
+	bool bDropBackHoldDone = false;
 	ELessonPhase LastPhase = ELessonPhase::Idle;
 	ELessonOutcome LastOutcome = ELessonOutcome::None;
 	FName LastLessonId;

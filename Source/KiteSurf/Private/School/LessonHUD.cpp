@@ -183,6 +183,8 @@ FLessonHUDInput FLessonHUDInput::FromDirector(const ALessonDirector& Director)
 	In.IntroSeconds = Director.IntroSeconds;
 	In.TimingGrade = Director.GetTimingGrade();
 	In.TimingSerial = Director.GetTimingSerial();
+	In.bSlowMotion = Director.IsSlowMotionActive();
+	In.SlowMotionPrompt = Director.GetSlowMotionPrompt();
 
 	if (const ULessonSubsystem* Lessons = Director.GetLessonSubsystem())
 	{
@@ -393,22 +395,34 @@ FString LessonHUD::FormatHeader(const FLessonHUDInput& In)
 	}
 }
 
-FString LessonHUD::FormatDropBack(const FLessonHUDInput& In)
+FString LessonHUD::FillText(float Fraction, int32 Cells)
+{
+	Cells = FMath::Max(Cells, 1);
+	const int32 Filled = FMath::Clamp(FMath::FloorToInt(FMath::Clamp(Fraction, 0.0f, 1.0f) * Cells + 1e-4f), 0, Cells);
+	return FString::Printf(TEXT("[%s%s]"), *FString::ChrN(Filled, TCHAR('#')), *FString::ChrN(Cells - Filled, TCHAR('-')));
+}
+
+FString LessonHUD::FormatDropBack(const FLessonHUDInput& In, float HoldFraction)
 {
 	if (!In.bDropBackOffered)
 	{
 		return FString();
 	}
-	const FString Key = GlyphText(TEXT("IA_Reset"));
+	FString Where;
 	if (In.StepIndex > 0)
 	{
-		return FString::Printf(TEXT("Too hard? Drop back to step %d  %s"), In.StepIndex, *Key);
+		Where = FString::Printf(TEXT("step %d"), In.StepIndex);
 	}
-	if (!In.DropBackLessonId.IsNone())
+	else if (!In.DropBackLessonId.IsNone())
 	{
-		return FString::Printf(TEXT("Too hard? Drop back to lesson %s  %s"), *In.DropBackLessonId.ToString(), *Key);
+		Where = In.DropBackLessonId.ToString();
 	}
-	return FString();
+	else
+	{
+		return FString();
+	}
+	// Held, not tapped: the same button resets the rider after a crash.
+	return FString::Printf(TEXT("Too hard? Hold %s to drop back to %s  %s"), *GlyphText(TEXT("IA_Reset")), *Where, *FillText(HoldFraction));
 }
 
 FString LessonHUD::FormatNextStar(int32 Stars, bool bPassedHigherBar, const FText& HigherBarText, int32 AssistsOn)
@@ -572,7 +586,15 @@ FLessonHUDView LessonHUD::BuildView(const FLessonHUDInput& In, const FLessonHUDT
 	{
 		V.Hint = In.HeldHint;
 	}
-	V.DropBack = FormatDropBack(In);
+	if (In.bSlowMotion && !In.SlowMotionPrompt.IsEmpty())
+	{
+		// The decision point: one prompt, in place of the step's, and nothing else to read.
+		V.bSlowMotion = true;
+		V.Prompt = In.SlowMotionPrompt.ToString();
+		V.Hint.Reset();
+	}
+	V.DropBack = FormatDropBack(In, Timers.DropBackHold);
+	V.DropBackFill = V.DropBack.IsEmpty() ? 0.0f : FMath::Clamp(Timers.DropBackHold, 0.0f, 1.0f);
 	if (Timers.bShowTiming && In.TimingGrade != ELessonTimingGrade::None)
 	{
 		V.Timing = LessonTiming::GradeText(In.TimingGrade);
@@ -720,14 +742,62 @@ float LessonHUD::ZoneAlpha(int32 BestStars)
 // Layer
 // ---------------------------------------------------------------------------------------------
 
-void FLessonHUDLayer::Update(const ALessonDirector* Director, float DeltaSeconds)
+void FLessonHUDLayer::Update(const ALessonDirector* Director, float DeltaSeconds, float RealDeltaSeconds)
 {
-	UpdateFromInput(Director ? FLessonHUDInput::FromDirector(*Director) : FLessonHUDInput(), DeltaSeconds);
+	UpdateFromInput(Director ? FLessonHUDInput::FromDirector(*Director) : FLessonHUDInput(), DeltaSeconds, RealDeltaSeconds);
 }
 
-void FLessonHUDLayer::UpdateFromInput(const FLessonHUDInput& In, float DeltaSeconds)
+void FLessonHUDLayer::SetResetHeld(bool bHeld)
+{
+	if (bHeld && !bResetHeld)
+	{
+		// Only a press that starts with the offer on screen can take it: a reset pressed after a crash,
+		// before the offer came up, stays a reset.
+		bResetHoldEligible = Input.bDropBackOffered && !Input.IsResultCardUp();
+		ResetHoldSeconds = 0.0f;
+		bDropBackHoldDone = false;
+	}
+	else if (!bHeld)
+	{
+		bResetHoldEligible = false;
+		ResetHoldSeconds = 0.0f;
+	}
+	bResetHeld = bHeld;
+}
+
+bool FLessonHUDLayer::ConsumeDropBackHold()
+{
+	if (!bResetHoldEligible || bDropBackHoldDone || ResetHoldSeconds < LessonHUD::DropBackHoldSeconds)
+	{
+		return false;
+	}
+	bDropBackHoldDone = true;
+	bResetHoldEligible = false;
+	ResetHoldSeconds = 0.0f;
+	return true;
+}
+
+float FLessonHUDLayer::GetDropBackHoldFraction() const
+{
+	return bResetHoldEligible ? FMath::Clamp(ResetHoldSeconds / FMath::Max(LessonHUD::DropBackHoldSeconds, KINDA_SMALL_NUMBER), 0.0f, 1.0f) : 0.0f;
+}
+
+void FLessonHUDLayer::UpdateFromInput(const FLessonHUDInput& In, float DeltaSeconds, float RealDeltaSeconds)
 {
 	const float Dt = FMath::Max(DeltaSeconds, 0.0f);
+	const float RealDt = RealDeltaSeconds >= 0.0f ? RealDeltaSeconds : Dt;
+
+	// The drop-back hold: real time, while the offer shows and the press that started on it is held.
+	if (bResetHeld && bResetHoldEligible && In.bDropBackOffered && !In.IsResultCardUp())
+	{
+		ResetHoldSeconds += RealDt;
+	}
+	else if (bResetHoldEligible)
+	{
+		// The offer went away under the press (the step moved on): nothing to take.
+		bResetHoldEligible = false;
+		ResetHoldSeconds = 0.0f;
+	}
 	const bool bNewLesson = In.LessonId != LastLessonId || In.StepIndex != LastStepIndex || (In.Phase == ELessonPhase::Intro && LastPhase != ELessonPhase::Intro);
 	if (bNewLesson)
 	{
@@ -777,6 +847,7 @@ void FLessonHUDLayer::UpdateFromInput(const FLessonHUDInput& In, float DeltaSeco
 	Timers.bShowHint = bShowHint;
 	Timers.bShowTiming = TimingAge < LessonHUD::TimingFlashSeconds;
 	Timers.TimingAge = TimingAge;
+	Timers.DropBackHold = GetDropBackHoldFraction();
 
 	Input = In;
 	View = LessonHUD::BuildView(In, Timers);
@@ -825,12 +896,21 @@ float FLessonHUDLayer::DrawPanel(AHUD& HUD, float ScreenW, float ScreenH, float 
 	const bool bFault = !View.Fault.IsEmpty();
 	const FLinearColor Accent = bFault ? FLinearColor(1.0f, 0.35f, 0.35f) : (View.Glyph.IsEmpty() ? FLinearColor(1.0f, 0.85f, 0.2f) : FLinearColor(0.2f, 0.85f, 1.0f));
 	Add(View.Header, Accent, 0.95f);
-	Add(View.Prompt, bFault ? FLinearColor(0.75f, 0.8f, 0.85f) : FLinearColor::White, 1.4f);
+	if (View.bSlowMotion)
+	{
+		// The decision point's one prompt, large and gold while time is slowed.
+		Add(View.Prompt, FLinearColor(1.0f, 0.82f, 0.2f), 2.0f);
+	}
+	else
+	{
+		Add(View.Prompt, bFault ? FLinearColor(0.75f, 0.8f, 0.85f) : FLinearColor::White, 1.4f);
+	}
 	Add(View.Glyph, FLinearColor(1.0f, 0.85f, 0.2f), 1.05f);
 	Add(View.Fault, FLinearColor(1.0f, 0.45f, 0.35f), 1.3f);
 	const int32 BarIndex = Lines.Num();
 	Add(View.Progress, FLinearColor(0.8f, 0.9f, 1.0f), 0.95f);
 	Add(View.Hint, FLinearColor(1.0f, 0.7f, 0.25f), 1.1f);
+	const int32 DropBackIndex = View.DropBack.IsEmpty() ? INDEX_NONE : Lines.Num();
 	Add(View.DropBack, FLinearColor(0.55f, 0.9f, 1.0f), 1.05f);
 
 	const float Spacing = 6.0f * Ui;
@@ -856,6 +936,11 @@ float FLessonHUDLayer::DrawPanel(AHUD& HUD, float ScreenW, float ScreenH, float 
 			Y += BarH + Spacing;
 		}
 		const FLine& L = Lines[I];
+		if (I == DropBackIndex && View.DropBackFill > 0.0f)
+		{
+			// The hold fills the line from the left.
+			HUD.DrawRect(FLinearColor(0.2f, 0.6f, 0.9f, 0.45f), BoxX + Pad - 4.0f * Ui, Y - 1.0f * Ui, (L.W + 8.0f * Ui) * View.DropBackFill, L.H + 2.0f * Ui);
+		}
 		HUD.DrawText(L.Text, L.Ink, BoxX + Pad, Y, nullptr, L.Scale);
 		Y += L.H + Spacing;
 	}

@@ -168,3 +168,79 @@ ELessonTimingGrade LessonTiming::GradeAttempt(const FLessonStep& Step, const FLe
 	}
 	return ELessonTimingGrade::None;
 }
+
+float LessonTiming::SlowMoTotalSeconds()
+{
+	return SlowMoRampInSeconds + SlowMoHoldSeconds + SlowMoRampOutSeconds;
+}
+
+float LessonTiming::SlowMoReleaseSeconds()
+{
+	return SlowMoRampInSeconds + SlowMoHoldSeconds;
+}
+
+float LessonTiming::SlowMoDilationAt(float RealSeconds)
+{
+	if (!(RealSeconds > 0.0f) || RealSeconds >= SlowMoTotalSeconds())
+	{
+		return 1.0f;
+	}
+	auto Smooth = [](float X) { X = FMath::Clamp(X, 0.0f, 1.0f); return X * X * (3.0f - 2.0f * X); };
+	float Depth = 1.0f; // 0 at real time, 1 at SlowMoDilation
+	if (RealSeconds < SlowMoRampInSeconds)
+	{
+		Depth = Smooth(RealSeconds / FMath::Max(SlowMoRampInSeconds, KINDA_SMALL_NUMBER));
+	}
+	else if (RealSeconds > SlowMoReleaseSeconds())
+	{
+		Depth = 1.0f - Smooth((RealSeconds - SlowMoReleaseSeconds()) / FMath::Max(SlowMoRampOutSeconds, KINDA_SMALL_NUMBER));
+	}
+	return FMath::Lerp(1.0f, SlowMoDilation, Depth);
+}
+
+bool LessonTiming::DetectSlowMoCue(const FLessonSlowMoCue& Cue, const FLessonSample& Sample, FSlowMoArm& Arm)
+{
+	switch (Cue.Trigger)
+	{
+	case ELessonSlowMoTrigger::KiteAtTop:
+	{
+		const float Elevation = Sample.KiteElevationDeg;
+		const float Dt = Sample.TimeSeconds - Arm.LastTime;
+		const bool bStopped = Arm.bHasLast && Dt > KINDA_SMALL_NUMBER && (Elevation - Arm.LastKiteDeg) / Dt <= SlowMoTopRateDegS;
+		Arm.bHasLast = true;
+		Arm.LastKiteDeg = Elevation;
+		Arm.LastTime = Sample.TimeSeconds;
+		if (Elevation < Cue.Threshold - SlowMoRearmDeg)
+		{
+			Arm.bArmed = true;
+		}
+		const bool bOnWater = Sample.BoardState != EBoardState::Airborne;
+		const bool bAtTop = Elevation >= Cue.Threshold || (bStopped && Elevation >= Cue.Threshold - SlowMoTopBandDeg);
+		if (Arm.bArmed && bOnWater && !Sample.bFallen && bAtTop && Sample.BarPosition < SheetInBar)
+		{
+			Arm.bArmed = false;
+			return true;
+		}
+		return false;
+	}
+	case ELessonSlowMoTrigger::RiderDescending:
+	{
+		if (Sample.BoardState != EBoardState::Airborne)
+		{
+			// Back on the water: the next jump may fire it again.
+			Arm.bArmed = true;
+			Arm.JumpPeakM = 0.0f;
+			return false;
+		}
+		Arm.JumpPeakM = FMath::Max(Arm.JumpPeakM, Sample.HeightM);
+		if (Arm.bArmed && !Sample.bFallen && Sample.VerticalSpeedMS < 0.0f && Sample.HeightM <= Cue.Threshold && Arm.JumpPeakM >= SlowMoMinJumpM)
+		{
+			Arm.bArmed = false;
+			return true;
+		}
+		return false;
+	}
+	default:
+		return false;
+	}
+}

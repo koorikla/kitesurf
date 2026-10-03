@@ -223,10 +223,19 @@ public:
 	ALessonDirector* FindLessonDirector() const;
 
 	/**
-	 * Reads the running lesson's director into the lesson layer and moves its timers on. DrawHUD calls
-	 * it every frame; tests call it with no Canvas and read GetLessonView.
+	 * Reads the running lesson's director into the lesson layer and moves its timers on (DeltaTime is
+	 * game time; the drop-back hold runs in real time, undoing the world's time dilation), and takes
+	 * the drop-back offer once the reset button has been held for LessonHUD::DropBackHoldSeconds.
+	 * DrawHUD calls it every frame; tests call it with no Canvas and read GetLessonView.
 	 */
 	void UpdateLessonLayer(float DeltaTime);
+
+	/**
+	 * The reset button went down or up (the HUD's own IA_Reset Started and Completed bindings; tests
+	 * call it). Held from while the drop-back offer shows, it takes the offer after
+	 * LessonHUD::DropBackHoldSeconds; a tap only resets the rider, as the rider's own handler does.
+	 */
+	void SetLessonResetHeld(bool bHeld);
 
 	/** What the lesson layer shows now: the panel, the cue lines, the result card. Invisible with no lesson running. */
 	const FLessonHUDView& GetLessonView() const { return LessonLayer.GetView(); }
@@ -247,9 +256,9 @@ public:
 	const TArray<FString>& GetTutorialHintLines() const { return TutorialHintLines; }
 
 	/**
-	 * The result card's and the drop-back offer's actions, from the existing inputs: the jump button
-	 * (Confirm) goes to the next lesson after a pass; the reset button (Retry) retries from the result
-	 * card or takes the drop-back offer; the pause button (Menu) on the result card asks
+	 * The result card's actions, from the existing inputs: the jump button (Confirm) goes to the next
+	 * lesson after a pass; the reset button (Retry) retries from the result card (the drop-back offer
+	 * needs the button held: SetLessonResetHeld); the pause button (Menu) on the result card asks
 	 * ULessonSubsystem::RequestLessonMenu, and opens the pause menu as usual when nothing answers.
 	 * True when the action did something.
 	 */
@@ -264,6 +273,7 @@ protected:
 	void BindLessonInput(AKiteRiderPawn* RiderPawn);
 	void OnLessonJumpInput();
 	void OnLessonResetInput();
+	void OnLessonResetReleased();
 
 	/** Draws GetSessionLines: the panel as one row at the top centre, above the jump readout and trick card; the results card in the middle. */
 	void DrawSession(float ScreenW, float ScreenH);

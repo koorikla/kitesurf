@@ -392,7 +392,7 @@ struct FLessonAssists
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
 	bool bLoopCatch = false;
 
-	/** Slow motion at the lesson's decision point (S8). */
+	/** Slow motion at each step's decision point (FLessonStep::SlowMo, S8). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
 	bool bSlowMotion = false;
 
@@ -445,6 +445,51 @@ struct FLessonSetup
 	FLessonAssists Assists;
 };
 
+/** What marks a step's decision point for slow motion (docs/tutorials.md 3.4, S8). */
+UENUM(BlueprintType)
+enum class ELessonSlowMoTrigger : uint8
+{
+	None,
+	/**
+	 * The kite at the top with the rider on the water and the bar not in yet: the sheet-in moment of
+	 * a send. "At the top" is at or over Threshold (deg of elevation), or within
+	 * LessonTiming::SlowMoTopBandDeg under it once the kite has stopped climbing. Armed at the step
+	 * start and again once the kite has dropped LessonTiming::SlowMoRearmDeg below Threshold.
+	 */
+	KiteAtTop,
+	/**
+	 * The rider in the air on the way down, at or under Threshold (m above the water): the landing
+	 * dive. A jump that never reaches Threshold triggers just after its apex. Once per jump, and only
+	 * on a jump that has climbed LessonTiming::SlowMoMinJumpM.
+	 */
+	RiderDescending
+};
+
+/**
+ * Slow motion at a step's one decision point (docs/tutorials.md 3.4, S8): game time slows briefly
+ * (LessonTiming::SlowMoDilation and its schedule) with one prompt. Runs only while the lesson rides
+ * with the slow-motion assist (FLessonAssists::bSlowMotion), and stops for the step after
+ * LessonTiming::SlowMoOffAfterCleanAttempts Clean (or better) attempts.
+ */
+USTRUCT(BlueprintType)
+struct FLessonSlowMoCue
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
+	ELessonSlowMoTrigger Trigger = ELessonSlowMoTrigger::None;
+
+	/** KiteAtTop: kite elevation (deg). RiderDescending: height above the water (m). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
+	float Threshold = 0.0f;
+
+	/** The one prompt shown while time is slowed, e.g. "Bar in now". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
+	FText Prompt;
+
+	bool IsSet() const { return Trigger != ELessonSlowMoTrigger::None; }
+};
+
 /** One drill: a few words plus an input glyph, a cue, and what it asks for. */
 USTRUCT(BlueprintType)
 struct FLessonStep
@@ -463,6 +508,10 @@ struct FLessonStep
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
 	FLessonObjective Objective;
+
+	/** The step's decision point for slow motion; unset for none (S8). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "School")
+	FLessonSlowMoCue SlowMo;
 };
 
 /**

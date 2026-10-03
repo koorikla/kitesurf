@@ -60,6 +60,60 @@ namespace LessonTiming
 	inline constexpr float LoopPerfectSeconds = 0.15f;
 	inline constexpr float LoopGoodSeconds = 0.4f;
 
+	// --- Slow motion at a step's decision point (docs/tutorials.md 3.4, S8). Estimates. ---
+	// The schedule runs in real seconds, not game seconds: the player feels it in real time, and a
+	// game-time schedule would stretch itself by the slow motion it makes.
+
+	/** Game time against real time at the bottom of the slow motion. */
+	inline constexpr float SlowMoDilation = 0.6f;
+	/** Real seconds easing from 1 down to SlowMoDilation. */
+	inline constexpr float SlowMoRampInSeconds = 0.1f;
+	/** Real seconds held at SlowMoDilation. */
+	inline constexpr float SlowMoHoldSeconds = 0.5f;
+	/** Real seconds easing back up to 1. */
+	inline constexpr float SlowMoRampOutSeconds = 0.2f;
+	/** Clean (or better) attempts on one step after which that step's slow motion stops. */
+	inline constexpr int32 SlowMoOffAfterCleanAttempts = 3;
+	/** KiteAtTop arms again once the kite is this far below its threshold (deg). */
+	inline constexpr float SlowMoRearmDeg = 15.0f;
+	/**
+	 * KiteAtTop also fires within this much under its threshold once the kite stops climbing (deg): a
+	 * loaded send tops out lower than an unloaded one (about 74 deg on B2's 14 kn set-up), and the top
+	 * of the climb is the moment to sheet in.
+	 */
+	inline constexpr float SlowMoTopBandDeg = 10.0f;
+	/** "Stopped climbing": the elevation rises slower than this between samples (deg/s). */
+	inline constexpr float SlowMoTopRateDegS = 2.0f;
+	/** RiderDescending fires only on a jump that climbed at least this high (m above the water). */
+	inline constexpr float SlowMoMinJumpM = 0.5f;
+
+	/** The whole slow motion, ramps included (real s). */
+	KITESURF_API float SlowMoTotalSeconds();
+
+	/** Real seconds into a slow motion where its ramp out starts. */
+	KITESURF_API float SlowMoReleaseSeconds();
+
+	/** The time dilation RealSeconds into a slow motion: 1 before and after, eased (smoothstep) down to SlowMoDilation, held, and eased back. */
+	KITESURF_API float SlowMoDilationAt(float RealSeconds);
+
+	/** Whether a slow-motion cue may fire again, and the height of the jump so far (RiderDescending). */
+	struct FSlowMoArm
+	{
+		bool bArmed = true;
+		float JumpPeakM = 0.0f;
+		/** The previous sample's kite elevation and time (KiteAtTop's climb rate). */
+		bool bHasLast = false;
+		float LastKiteDeg = 0.0f;
+		float LastTime = 0.0f;
+	};
+
+	/**
+	 * One telemetry sample against a slow-motion cue (ELessonSlowMoTrigger): true when the decision
+	 * point is reached with this sample. Firing disarms the cue until it arms again (the kite drops
+	 * back, the rider is back on the water). Nothing fires with the rider fallen.
+	 */
+	KITESURF_API bool DetectSlowMoCue(const FLessonSlowMoCue& Cue, const FLessonSample& Sample, FSlowMoArm& Arm);
+
 	/** "EARLY", "GOOD", "PERFECT", "LATE"; empty for None. */
 	KITESURF_API FString GradeText(ELessonTimingGrade Grade);
 

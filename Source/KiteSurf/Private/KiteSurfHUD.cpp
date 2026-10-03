@@ -276,12 +276,38 @@ FString AKiteSurfHUD::FormatTrickTicker(const FJumpRecord& LiveJump)
 	return HasTrickElement(Signature) ? TrickNaming::Name(Signature) : FString();
 }
 
+float AKiteSurfHUD::GetLiveRotationDegrees(const UTrickTrackerComponent* Tracker)
+{
+	if (!Tracker || !Tracker->IsJumpInProgress())
+	{
+		return 0.0f;
+	}
+	const FRotationRecognizer& Rotation = Tracker->GetJumpSession().GetRecorder().GetRotation();
+	if (!Rotation.HasBegun())
+	{
+		return 0.0f;
+	}
+	return FMath::RadiansToDegrees(Rotation.GetBodyAxisRad().Size());
+}
+
+FString AKiteSurfHUD::FormatTickerDegrees(float DegreesTurned)
+{
+	// Below this the rider has barely left upright: not worth a number yet.
+	const float MinDegreesShown = 10.0f;
+	if (DegreesTurned < MinDegreesShown)
+	{
+		return FString();
+	}
+	return FString::Printf(TEXT("%.0f°"), DegreesTurned);
+}
+
 void AKiteSurfHUD::ShowJumpCard(const FJumpRecord& Record, bool bIsNewTrick)
 {
 	JumpCardText = FormatJumpCard(Record);
 	JumpCardGrade = Record.Grade;
 	JumpCardRemainingTime = 4.0f;
 	TickerText.Reset();
+	TickerDegreesText.Reset();
 	bJumpCardIsNewTrick = bIsNewTrick;
 	NewTrickRecordName = Record.TrickName;
 }
@@ -294,6 +320,7 @@ void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float D
 	{
 		JumpCardText.Reset();
 		TickerText.Reset();
+		TickerDegreesText.Reset();
 		JumpCardRemainingTime = 0.0f;
 		bJumpCardIsNewTrick = false;
 		return;
@@ -313,10 +340,15 @@ void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float D
 	if (Tracker->IsJumpInProgress())
 	{
 		TickerText = FormatTrickTicker(Tracker->GetLiveJump());
+		// The degrees line rides beside the name, e.g. "Back roll" + "240°" (review batch E); never
+		// shown with no name, so a grab or loop never picks up a stray number from drift in the
+		// body-axis integral.
+		TickerDegreesText = TickerText.IsEmpty() ? FString() : FormatTickerDegrees(GetLiveRotationDegrees(Tracker));
 	}
 	else
 	{
 		TickerText.Reset();
+		TickerDegreesText.Reset();
 	}
 
 	if (JumpCardRemainingTime > 0.0f)
@@ -398,6 +430,50 @@ void AKiteSurfHUD::DrawLandingCard(float ScreenW, float ScreenH)
 	DrawText(LandingCardText, Ink, TextX, TextY, nullptr, Scale);
 }
 
+FString AKiteSurfHUD::FormatRotateCue(bool bRotateHeld)
+{
+	return bRotateHeld ? FString(TEXT("ROTATE")) : FString();
+}
+
+float AKiteSurfHUD::ComputePreWindMeterFraction(float PreWindAmount, bool bLoading, bool bRotateHeld)
+{
+	if (!bLoading || !bRotateHeld)
+	{
+		return 0.0f;
+	}
+	return FMath::Clamp(PreWindAmount, 0.0f, 1.0f);
+}
+
+void AKiteSurfHUD::UpdateRotateHUD(const AKiteRiderPawn* RiderPawn)
+{
+	if (!RiderPawn)
+	{
+		RotateCueText.Reset();
+		PreWindMeterFraction = 0.0f;
+		return;
+	}
+	const UBoardMovementComponent* Board = RiderPawn->GetBoardMovement();
+	const bool bRotateHeld = RiderPawn->IsRotateHeld();
+	RotateCueText = FormatRotateCue(bRotateHeld);
+	PreWindMeterFraction = ComputePreWindMeterFraction(RiderPawn->GetPreWindAmount(), Board && Board->IsLoadHeld(), bRotateHeld);
+}
+
+void AKiteSurfHUD::DrawRotateCue(float ScreenX, float ScreenY)
+{
+	if (!RotateCueText.IsEmpty())
+	{
+		DrawText(RotateCueText, FLinearColor(0.55f, 0.9f, 1.0f), ScreenX, ScreenY, nullptr, 1.1f);
+	}
+	if (PreWindMeterFraction > 0.0f)
+	{
+		const float MeterW = 160.0f;
+		const float MeterH = 10.0f;
+		const float MeterY = ScreenY + 20.0f;
+		DrawRect(FLinearColor(0.08f, 0.1f, 0.12f, 0.6f), ScreenX, MeterY, MeterW, MeterH);
+		DrawRect(FLinearColor(0.55f, 0.9f, 1.0f, 0.9f), ScreenX, MeterY, MeterW * PreWindMeterFraction, MeterH);
+	}
+}
+
 void AKiteSurfHUD::ShowNotice(const FString& Text)
 {
 	JumpRejectionText = Text;
@@ -439,6 +515,10 @@ void AKiteSurfHUD::DrawHUD()
 		DrawPowerGauge(RiderPawn, ScreenW - 200.0f, ScreenH - 250.0f, 40.0f, 200.0f);
 		// Left of the power gauge: what the hands are doing to the bar.
 		DrawControlBar(RiderPawn, ScreenW - 500.0f, ScreenH - 280.0f, 230.0f, 245.0f);
+		// Above the control bar: the rotate modifier cue and, during a modified load, its pre-wind meter
+		// (review batch E, "show and teach the rotation").
+		UpdateRotateHUD(RiderPawn);
+		DrawRotateCue(ScreenW - 500.0f, ScreenH - 312.0f);
 		UpdateLandingCard(RiderPawn->GetBoardMovement(), DeltaTime);
 		DrawLandingCard(ScreenW, ScreenH);
 	}
@@ -475,15 +555,17 @@ void AKiteSurfHUD::DrawHUD()
 		BelowReadoutY = TextY + TextH + 16.0f;
 	}
 
-	// Under the readout: the trick being flown while in the air, then the finished jump's card.
+	// Under the readout: the trick being flown while in the air, then the finished jump's card. The
+	// degrees turned so far ride beside the name (review batch E), e.g. "Back roll 240°".
 	if (!TickerText.IsEmpty())
 	{
+		const FString TickerLine = TickerDegreesText.IsEmpty() ? TickerText : FString::Printf(TEXT("%s  %s"), *TickerText, *TickerDegreesText);
 		float TextW = 0.0f;
 		float TextH = 0.0f;
-		GetTextSize(TickerText, TextW, TextH, nullptr, 1.5f);
+		GetTextSize(TickerLine, TextW, TextH, nullptr, 1.5f);
 		const float TextX = ScreenW * 0.5f - TextW * 0.5f;
 		DrawRect(FLinearColor(0.02f, 0.05f, 0.1f, 0.7f), TextX - 14.0f, BelowReadoutY - 5.0f, TextW + 28.0f, TextH + 10.0f);
-		DrawText(TickerText, FLinearColor(0.55f, 0.9f, 1.0f), TextX, BelowReadoutY, nullptr, 1.5f);
+		DrawText(TickerLine, FLinearColor(0.55f, 0.9f, 1.0f), TextX, BelowReadoutY, nullptr, 1.5f);
 		BelowReadoutY += TextH + 18.0f;
 	}
 	else if (!JumpCardText.IsEmpty())

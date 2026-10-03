@@ -76,6 +76,35 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	bool IsLandingCardHot() const { return LandingCardRemainingTime > 0.0f && bLandingCardHot; }
 
+	/**
+	 * "ROTATE" while the rider's IA_Rotate modifier (batch A) is held, so the gate problem 1 added is
+	 * visible rather than something only the README explains; empty otherwise. Pure, for review
+	 * batch E's HUDShowsRotateCue.
+	 */
+	static FString FormatRotateCue(bool bRotateHeld);
+
+	/**
+	 * The pre-wind meter's fill, 0 to 1 (review batch E): the rider's pre-wind amount while a
+	 * modified load is building (the jump button and IA_Rotate both held on the water), 0 (so the
+	 * meter is hidden) the moment either one is not, even if the pre-wind itself has not decayed yet
+	 * (AKiteRiderPawn::RotateReleaseGraceSeconds). PreWindAmount is already clamped 0 to 1; clamped
+	 * again here for a caller that is not.
+	 */
+	static float ComputePreWindMeterFraction(float PreWindAmount, bool bLoading, bool bRotateHeld);
+
+	/**
+	 * Reads the rider's rotate modifier and pre-wind amount for the ROTATE cue and the pre-wind meter
+	 * (review batch E). DrawHUD calls it every frame the pawn is known; tests can call it directly.
+	 * With no pawn, both read as hidden.
+	 */
+	void UpdateRotateHUD(const AKiteRiderPawn* RiderPawn);
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	FString GetRotateCueText() const { return RotateCueText; }
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	float GetPreWindMeterFraction() const { return PreWindMeterFraction; }
+
 	/** How long the landing card stays up after a landing (s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI|Jump", meta = (ClampMin = "0.0"))
 	float LandingCardSeconds = 3.0f;
@@ -202,6 +231,21 @@ public:
 	 */
 	static FString FormatTrickTicker(const FJumpRecord& LiveJump);
 
+	/**
+	 * The degrees turned so far in the live jump's rotation (review batch E, "show and teach the
+	 * rotation"): the magnitude of the rider's accumulated body rotation since take-off
+	 * (FRotationRecognizer::GetBodyAxisRad, which tracks a committed axis exactly since posture
+	 * damping is off while it is held). 0 with no jump in progress, no rotation tracked, or the
+	 * attitude never simulated.
+	 */
+	static float GetLiveRotationDegrees(const UTrickTrackerComponent* Tracker);
+
+	/**
+	 * "<n>°" for the ticker's degrees line, e.g. "240°"; empty below 10 deg, so a grab or loop with
+	 * no rotation (or a roll just starting) never shows a stray number next to its name.
+	 */
+	static FString FormatTickerDegrees(float DegreesTurned);
+
 	/** What the trick card shows now; empty when there is nothing to show. */
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetJumpCardText() const { return JumpCardText; }
@@ -213,6 +257,15 @@ public:
 	/** The live trick name while in the air; empty when there is nothing to name. */
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetTrickTickerText() const { return TickerText; }
+
+	/**
+	 * The ticker's degrees line, drawn after the name ("Back roll" + "240°"), kept separate from
+	 * GetTrickTickerText so the existing exact-match tests on the name (the moment a roll is first
+	 * credited, grabs, loops, board-offs) are unaffected by this batch's addition. Empty whenever
+	 * GetTrickTickerText is, or the live jump has turned less than FormatTickerDegrees's threshold.
+	 */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetTrickTickerDegreesText() const { return TickerDegreesText; }
 
 	/**
 	 * "NEW TRICK: <name>" while the jump card now showing is the first landing of its trick this
@@ -370,6 +423,8 @@ protected:
 
 	FString JumpCardText;
 	FString TickerText;
+	/** The ticker's degrees line, alongside TickerText (review batch E); see GetTrickTickerDegreesText. */
+	FString TickerDegreesText;
 	ELandingGrade JumpCardGrade = ELandingGrade::Clean;
 	float JumpCardRemainingTime = 0.0f;
 	int32 SeenRecordCount = 0;
@@ -391,7 +446,15 @@ protected:
 	/** The board's landing count when the card last looked; -1 before it has seen the board. */
 	int32 SeenLandingCount = -1;
 
+	/** "ROTATE" while the modifier is held; see GetRotateCueText. */
+	FString RotateCueText;
+	/** The pre-wind meter's fill, 0 to 1; see GetPreWindMeterFraction. */
+	float PreWindMeterFraction = 0.0f;
+
 	void DrawLandingCard(float ScreenW, float ScreenH);
+
+	/** Draws the ROTATE cue and, under it, the pre-wind meter when it has a fill (review batch E). */
+	void DrawRotateCue(float ScreenX, float ScreenY);
 
 	void DrawTelemetry(AKiteRiderPawn* RiderPawn);
 	void DrawWindWindowArc(AKiteRiderPawn* RiderPawn, float CenterX, float CenterY, float Radius);

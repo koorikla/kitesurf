@@ -50,6 +50,8 @@ namespace
 	constexpr float DebugKiteTextHeightCm = 150.0f;
 	constexpr float DebugRiderTextHeightCm = 300.0f;
 	constexpr float DebugBoardForceHeightCm = 20.0f;
+	// The board's normal, tilted by its heel, drawn this long from the board.
+	constexpr float DebugHeelNormalLengthCm = 150.0f;
 
 	const TCHAR* BoardStateName(EBoardState State)
 	{
@@ -801,7 +803,7 @@ void AKiteRiderPawn::LogPhysicsTelemetry()
 	}
 	if (!bLoggedTelemetryHeader)
 	{
-		UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust"));
+		UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,t_s,rider_x,rider_y,rider_z,rider_vx,rider_vy,rider_vz,kite_x,kite_y,kite_z,kite_vx,kite_vy,kite_vz,tension_n,alpha_deg,cl,board_state,gust,heel_deg,leeway_deg,side_n,normal_side_n,board_drag_n"));
 		bLoggedTelemetryHeader = true;
 	}
 	// Positions in cm and velocities in cm/s, as the engine has them.
@@ -810,11 +812,16 @@ void AKiteRiderPawn::LogPhysicsTelemetry()
 	const FVector KitePos = Kite->GetKiteWorldPosition();
 	const FVector KiteVel = Kite->GetKiteVelocity();
 	const FKiteStepDebug& KiteStep = Kite->GetLastStepDebug();
+	const FBoardStepDebug& BoardStep = BoardMovement->GetLastStepDebug();
 	const float Gust = Wind ? Wind->GetGustFactorAtTime(RiderPos, Kite->GetSimTimeSeconds()) : 1.0f;
-	UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,%.4f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%.3f,%d,%.3f"),
+	// The board's heel and leeway (deg), and the water's side force from leeway, the sideways part of
+	// its normal force and its drag (N), signed across the board (positive to its right) or along it.
+	const FVector BoardRight = FVector::CrossProduct(FVector::UpVector, FRotator(0.0f, SimRotation.Rotator().Yaw, 0.0f).Vector());
+	UE_LOG(LogKiteSurf, Log, TEXT("kitecsv,%.4f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.2f,%.3f,%d,%.3f,%.2f,%.2f,%.1f,%.1f,%.1f"),
 		SimTimeSeconds, RiderPos.X, RiderPos.Y, RiderPos.Z, RiderVel.X, RiderVel.Y, RiderVel.Z,
 		KitePos.X, KitePos.Y, KitePos.Z, KiteVel.X, KiteVel.Y, KiteVel.Z,
-		Kite->GetLineTensionN(), KiteStep.AlphaDeg, KiteStep.LiftCoefficient, static_cast<int32>(BoardMovement->GetBoardState()), Gust);
+		Kite->GetLineTensionN(), KiteStep.AlphaDeg, KiteStep.LiftCoefficient, static_cast<int32>(BoardMovement->GetBoardState()), Gust,
+		BoardStep.HeelDeg, BoardStep.LeewayDeg, FVector::DotProduct(BoardStep.SideForceN, BoardRight), FVector::DotProduct(BoardStep.NormalSideForceN, BoardRight), BoardStep.DragForceN.Size());
 #endif
 }
 
@@ -855,18 +862,25 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 	DrawDebugVector(World, Chest, RiderWind / KiteUnits::CmPerM, DebugCmPerMS, FColor::Blue);
 	DrawDebugVector(World, Chest, (RiderWind - BoardVelocityNow) / KiteUnits::CmPerM, DebugCmPerMS, FColor::Cyan);
 	DrawDebugVector(World, LineStart, Kite->GetLineForce() / KiteUnits::UnrealForcePerN, DebugCmPerN, FColor::Yellow);
+	// The board: the side force the fins and rail make from leeway (orange), the sideways part of the
+	// water's normal force on the heeled board (green), the hull's drag (red), and the board's normal
+	// tilted by its heel (purple).
 	const FBoardStepDebug& BoardStep = BoardMovement->GetLastStepDebug();
 	const FVector BoardAt = RiderAt + FVector(0.0f, 0.0f, DebugBoardForceHeightCm);
 	DrawDebugVector(World, BoardAt, BoardStep.SideForceN, DebugCmPerN, FColor::Orange);
 	DrawDebugVector(World, BoardAt, BoardStep.NormalSideForceN, DebugCmPerN, FColor::Green);
 	DrawDebugVector(World, BoardAt, BoardStep.DragForceN, DebugCmPerN, FColor::Red);
+	const FVector BoardRight = FVector::CrossProduct(FVector::UpVector, FRotator(0.0f, GetActorRotation().Yaw, 0.0f).Vector());
+	const float HeelRad = FMath::DegreesToRadians(BoardStep.HeelDeg);
+	const FVector BoardNormal = FVector::UpVector * FMath::Cos(HeelRad) - BoardRight * FMath::Sin(HeelRad);
+	DrawDebugVector(World, BoardAt, BoardNormal, DebugHeelNormalLengthCm, FColor::Purple);
 	DrawDebugVector(World, Chest, BoardStep.AirDragN, DebugCmPerN, FColor::Silver); // in the air only
 
 	float HeadingDeg = FRotator::NormalizeAxis(GetActorRotation().Yaw);
 	HeadingDeg = HeadingDeg < 0.0f ? HeadingDeg + 360.0f : HeadingDeg;
 	const float Gust = Wind ? Wind->GetGustFactorAtTime(RiderAt, SimTime) : 1.0f;
-	const FString RiderText = FString::Printf(TEXT("%.1f kn  heading %.0f\nleeway %.1f deg  edge %.1f deg\n%s%s\ngust %.2f"),
-		KiteUnits::CmSToKnots(BoardVelocityNow.Size2D()), HeadingDeg, BoardStep.LeewayDeg, GetActorRotation().Roll,
+	const FString RiderText = FString::Printf(TEXT("%.1f kn  heading %.0f\nleeway %.1f deg  heel %.1f deg\nside %.0f N  normal %.0f N\n%s%s\ngust %.2f"),
+		KiteUnits::CmSToKnots(BoardVelocityNow.Size2D()), HeadingDeg, BoardStep.LeewayDeg, BoardStep.HeelDeg, BoardStep.SideForceN.Size(), BoardStep.NormalSideForceN.Size(),
 		BoardStateName(BoardMovement->GetBoardState()), BoardMovement->IsFloating() ? TEXT(", floating") : TEXT(""), Gust);
 	DrawDebugString(World, RiderAt + FVector(0.0f, 0.0f, DebugRiderTextHeightCm), RiderText, nullptr, FColor::White, 0.0f, true);
 

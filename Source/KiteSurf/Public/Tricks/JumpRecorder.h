@@ -13,9 +13,8 @@
  * fills one per fixed step, after the board has stepped, by polling the board and the kite:
  * delegates are not bound in tests, so the recorder works from counters.
  *
- * Fields marked "wiring PR" have no board or kite getter on main yet; the PR that steps the
- * recorder from the pawn adds them (T0.2 board events, T0.3 kite hookup). Until then they keep
- * their defaults here.
+ * Every field has a board or kite getter (T0.2 board events, T0.3 kite hookup); each comment
+ * names it.
  *
  * Rider attitude (T1.2) and bar state (T3.4) are not in the snapshot: SignatureFromJump does not
  * read them yet. The live tracker (T1.6) adds them as their own group of fields when it does.
@@ -33,7 +32,7 @@ struct FJumpRecorderInput
 	/** UBoardMovementComponent::IsCrashing. */
 	bool bCrashing = false;
 
-	/** Take-offs so far, popped or lifted off by the kite. Wiring PR: GetTakeoffCount, counted in BeginAirborne. */
+	/** Take-offs so far, popped or lifted off by the kite: UBoardMovementComponent::GetTakeoffCount, counted in BeginAirborne. */
 	int32 TakeoffCount = 0;
 
 	/** Jumps ended so far, landed or crashed (not skips): UBoardMovementComponent::GetJumpCount. */
@@ -42,10 +41,10 @@ struct FJumpRecorderInput
 	/** UBoardMovementComponent::GetResetCount. */
 	int32 ResetCount = 0;
 
-	/** The last take-off was a pop rather than a kite lift-off. Wiring PR: WasLastTakeoffPopped. */
+	/** The last take-off was a pop rather than a kite lift-off: UBoardMovementComponent::WasLastTakeoffPopped. */
 	bool bLastTakeoffPopped = false;
 
-	/** Board time of the last take-off (s). Wiring PR: GetLastTakeoffTimeSeconds. */
+	/** Board time of the last take-off (s): UBoardMovementComponent::GetLastTakeoffTimeSeconds. */
 	float LastTakeoffTimeSeconds = 0.0f;
 
 	/** Board position (cm, world): the updated component's location. */
@@ -58,8 +57,8 @@ struct FJumpRecorderInput
 	float LastApexCm = 0.0f;
 
 	/**
-	 * Board time of the last finished jump's apex (s). Wiring PR: the time the board saw
-	 * CurrentJumpApexHeight rise (GetLastJumpApexTimeSeconds). Negative when not supplied: the
+	 * Board time of the last finished jump's apex (s): UBoardMovementComponent::GetCurrentJumpApexTimeSeconds,
+	 * which holds the last jump's apex time until the next take-off. Negative when not supplied: the
 	 * recorder then uses the step at which it saw the board highest.
 	 */
 	float LastApexTimeSeconds = -1.0f;
@@ -76,7 +75,7 @@ struct FJumpRecorderInput
 	/** Deceleration of the last landing (g): UBoardMovementComponent::GetLastLandingG, LandingMath::ComputeLandingG over the board's absorb distance. */
 	float LastLandingG = 1.0f;
 
-	/** Angle between the board and its velocity at the last contact (deg). Wiring PR: GetLastLandingAngleDeg. */
+	/** Angle between the board and its velocity at the last contact (deg): UBoardMovementComponent::GetLastLandingAngleDeg. */
 	float LastLandingAngleDeg = 0.0f;
 
 	/** UBoardMovementComponent::WasLastLandingClean: false after a crash landing. */
@@ -96,12 +95,12 @@ struct FJumpRecorderInput
 	 */
 	float KiteTimeSeconds = 0.0f;
 
-	// --- Kite loops (wiring PR: the kite's FKiteLoopTracker, T0.3 hookup) ---
+	// --- Kite loops (the kite's FKiteLoopTracker, T0.3 hookup) ---
 
-	/** The kite's kept loop records, oldest first: GetLoopRecords. Null when the kite has none. Read during Step only. */
+	/** The kite's kept loop records, oldest first: UKiteComponent::GetLoopRecords. Null when there is no kite. Read during Step only. */
 	const TArray<FKiteLoopRecord>* KiteLoops = nullptr;
 
-	/** A loop run is open on the kite: GetOpenLoop returned true. */
+	/** A loop run is open on the kite: UKiteComponent::GetOpenLoop returned true. */
 	bool bHasOpenLoop = false;
 
 	/** The open run as a provisional record (turn since its last whole loop). Used only with bHasOpenLoop. */
@@ -130,8 +129,8 @@ struct FJumpRecorderSettings
 
 /**
  * Turns per-step board and kite snapshots into one FJumpRecord per jump (T0.2, the pure part).
- * Pure: no UObject, no world. Not yet stepped by the pawn; UTrickTrackerComponent will own one
- * (through FJumpSession) and step it after the board.
+ * Pure: no UObject, no world. UTrickTrackerComponent owns one (through FJumpSession) and steps it
+ * after the board.
  *
  * The first step only reads the counters. After that, in this order:
  * - Reset: ResetCount changed while a jump is open: the jump is dropped.
@@ -201,7 +200,7 @@ private:
 
 /**
  * A session of jumps: an FJumpRecorder, the repeat counts per family key, and the last
- * MaxRecords records. Pure; the tracker component will own one.
+ * MaxRecords records. Pure; the tracker component owns one.
  *
  * A landed jump is counted in the session's FTrickSession and its RepeatFactor set to the share
  * paid (1, 0.75, 0.5, ...). A crash scores 0 and is not a landing, so it is not counted; its

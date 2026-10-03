@@ -9,6 +9,8 @@
 #include "WindStreakComponent.h"
 #include "KiteComponent.h"
 #include "Tricks/TrickTrackerComponent.h"
+#include "Tricks/RiderAttitudeComponent.h"
+#include "Tricks/RiderAxes.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "KiteSurf.h"
@@ -204,6 +206,15 @@ AKiteRiderPawn::AKiteRiderPawn()
 	// Jump records and tricks: polls the board and the kite after each board step.
 	TrickTracker = CreateDefaultSubobject<UTrickTrackerComponent>(TEXT("TrickTracker"));
 	TrickTracker->SetSources(BoardMovement, Kite);
+
+	// The rider's rotation in the air: stepped by StepSimulation before the board (it does not tick).
+	RiderAttitude = CreateDefaultSubobject<URiderAttitudeComponent>(TEXT("RiderAttitude"));
+	bUseRiderAttitude = true;
+	PreWindBuildSeconds = 0.5f;
+	PreWindStickThreshold = 0.3f;
+	AirRotationDeadzone = 0.15f;
+	VerticalAccelFilterSeconds = 0.1f;
+	RiderHandoverSeconds = 0.2f;
 
 	SimStepSeconds = 1.0f / 240.0f;
 	MaxFrameSeconds = 0.1f;
@@ -585,8 +596,10 @@ void AKiteRiderPawn::OnSteerTriggered(const FInputActionValue& Value)
 	}
 }
 
-void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop)
+void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carve, float WeightShift, bool bLoop, FVector2D AirRotation, float Tuck)
 {
+	SetAirRotationInput(AirRotation);
+	SetTuck(Tuck);
 	KeySteerInput = FMath::Clamp(Steer, -1.0f, 1.0f);
 	SteerKite(KeySteerInput);
 	SetSheetRateInput(SheetRate);
@@ -596,6 +609,21 @@ void AKiteRiderPawn::ApplyScriptedInput(float Steer, float SheetRate, float Carv
 		BoardMovement->SetWeightShift(WeightShift);
 	}
 	bScriptedRawSteer = bLoop;
+}
+
+void AKiteRiderPawn::SetPreWind(FVector2D Stick)
+{
+	PreWindStick = Stick.GetClampedToMaxSize(1.0f);
+}
+
+void AKiteRiderPawn::SetAirRotationInput(FVector2D Stick)
+{
+	AirRotationStick = Stick.GetClampedToMaxSize(1.0f);
+}
+
+void AKiteRiderPawn::SetTuck(float Amount)
+{
+	TuckInput = FMath::Clamp(Amount, 0.0f, 1.0f);
 }
 
 void AKiteRiderPawn::OnWeightShiftTriggered(const FInputActionValue& Value)
@@ -783,9 +811,18 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	{
 		BoardMovement->AddExternalForce(Kite->GetLineForce());
 	}
+	// The rider's rotation, with this step's line force and the board as it starts the step; the board
+	// then turns and lands with it (docs/tricks/T1.md T1.2.7).
+	StepRiderAttitude(StepSeconds);
 	if (BoardMovement)
 	{
 		BoardMovement->StepBoard(StepSeconds);
+		if (BoardMovement->GetBoardState() != EBoardState::Airborne)
+		{
+			// The load and the edge the rider takes off with: the pop zeroes the board's load.
+			LastGroundLoad = BoardMovement->GetLoadAmount();
+			LastGroundEdgeHold = FMath::Abs(BoardMovement->GetEdgeInput());
+		}
 	}
 	if (TrickTracker) TrickTracker->StepTracker(StepSeconds);
 
@@ -799,6 +836,220 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 	if (GetPhysicsDebugLevel() >= 2)
 	{
 		LogPhysicsTelemetry();
+	}
+}
+
+FVector AKiteRiderPawn::ComputeLevelBodyUp(const FVector& Facing, const FVector& TowardsKite, bool bHasKite, bool bAirborne, float Load) const
+{
+	// Lean away from the pull of the lines, whichever way the rider is facing. On the water that
+	// is leaning out against the kite; in the air the rider hangs from the harness at their
+	// waist, so the lower the kite the further back the shoulders go. Floating, they lie back
+	// in the water with the board out in front.
+	FVector BodyUp = FVector::UpVector;
+	if (bHasKite && Kite)
+	{
+		const float FullLeanForce = 60000.0f; // 600 N
+		const float LineLoad = FMath::Clamp(Kite->GetLineForce().Size() / FullLeanForce, 0.0f, 1.0f);
+		float PullLeanDeg = RiderMaxLeanDeg * FMath::Clamp(Kite->GetLineForce().Size2D() / FullLeanForce, 0.0f, 1.0f);
+		if (bAirborne)
+		{
+			const float LineOffVerticalDeg = 90.0f - Kite->GetElevationDeg();
+			PullLeanDeg = FMath::Min(RiderAirHangLeanDeg, 0.6f * LineOffVerticalDeg) * LineLoad;
+		}
+		BodyUp -= TowardsKite * FMath::Tan(FMath::DegreesToRadians(PullLeanDeg));
+	}
+	if (BoardMovement && BoardMovement->FloatSubmersionCm > 0.0f)
+	{
+		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
+		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
+	}
+	// Loading: the rider sits back away from the kite, weight low over the back of the board.
+	if (Load > 0.0f)
+	{
+		const FVector Away = bHasKite ? -TowardsKite : -Facing;
+		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
+	}
+	return BodyUp;
+}
+
+FQuat AKiteRiderPawn::ComputeSlavedBodyQuat() const
+{
+	// The riding pose from the simulation's own state (the root as stepped, the kite where it is),
+	// so the take-off is the same at any frame rate. Up is the lean line exactly: the pelvis sits on
+	// it in the drawn pose, so the attitude starts where the drawn rider stands.
+	const float RootYawDeg = RootComponent ? static_cast<float>(RootComponent->GetComponentRotation().Yaw) : 0.0f;
+	const FVector Facing = FRotator(0.0f, RootYawDeg + 90.0f * RiderStanceSide + RiderTurnOffsetDeg, 0.0f).Vector();
+	const bool bHasKite = HasKitePosition();
+	const FVector TowardsKite = bHasKite ? (Kite->GetKiteWorldPosition() - GetActorLocation()).GetSafeNormal2D() : FVector::ZeroVector;
+	const FVector BodyUp = ComputeLevelBodyUp(Facing, TowardsKite, bHasKite, false, BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f).GetSafeNormal();
+	return FRotationMatrix::MakeFromZX(BodyUp.IsNearlyZero() ? FVector::UpVector : BodyUp, Facing).ToQuat();
+}
+
+void AKiteRiderPawn::StepRiderAttitude(float StepSeconds)
+{
+	if (!BoardMovement)
+	{
+		return;
+	}
+	if (!RiderAttitude || !bUseRiderAttitude || StepSeconds <= 0.0f)
+	{
+		BoardMovement->SetAirAttitude(BoardMovement->GetBoardWorldQuat(), false);
+		return;
+	}
+
+	const bool bAirborne = BoardMovement->GetBoardState() == EBoardState::Airborne;
+	const bool bTakeoff = bAirborne && !RiderAttitude->IsSimulating();
+	const FVector Velocity = BoardMovement->Velocity;
+	const FVector Location = GetActorLocation();
+	const FQuat RootQuat = RootComponent ? RootComponent->GetComponentQuat() : FQuat::Identity;
+
+	// The vertical acceleration the time to contact needs, measured from the board's vertical speed
+	// step to step and filtered: the kite makes the fall far from ballistic. The pop is an impulse,
+	// so the take-off starts the filter from free fall rather than from the kick.
+	if (bTakeoff || !bHasLastStepVerticalSpeed)
+	{
+		FilteredVerticalAccelCmS2 = -KiteUnits::GravityCmS2;
+	}
+	else
+	{
+		const float RawAccelCmS2 = (static_cast<float>(Velocity.Z) - LastStepVerticalSpeedCmS) / StepSeconds;
+		FilteredVerticalAccelCmS2 += (RawAccelCmS2 - FilteredVerticalAccelCmS2) * (1.0f - FMath::Exp(-StepSeconds / FMath::Max(VerticalAccelFilterSeconds, 0.001f)));
+	}
+	LastStepVerticalSpeedCmS = static_cast<float>(Velocity.Z);
+	bHasLastStepVerticalSpeed = true;
+
+	// The pre-wind is wound up while the load is held on the water, in the last direction the stick
+	// was held past the threshold, and kept until the take-off uses it (letting go of the stick as
+	// the rider pops does not lose it); standing up again without leaving the water lets it go.
+	if (!bAirborne)
+	{
+		if (BoardMovement->IsLoadHeld())
+		{
+			if (PreWindStick.Size() > PreWindStickThreshold)
+			{
+				PreWindAmount = FMath::Min(PreWindAmount + StepSeconds / FMath::Max(PreWindBuildSeconds, 0.01f), 1.0f);
+				PreWindDirection = PreWindStick;
+			}
+		}
+		else
+		{
+			PreWindAmount = 0.0f;
+			PreWindDirection = FVector2D::ZeroVector;
+		}
+	}
+
+	FAttitudeInputs In;
+	In.bAirborne = bAirborne;
+	In.bStrapped = true;
+	In.SlavedBodyQuat = ComputeSlavedBodyQuat();
+	In.SlavedBoardQuat = RootQuat;
+	In.VelocityCmS = Velocity;
+	In.LineForceUU = Kite ? Kite->GetLineForce() : FVector::ZeroVector;
+	In.bLinesTaut = Kite && Kite->AreLinesTaut();
+	float WaterHeightCm = 0.0f;
+	FVector WaterNormal = FVector::UpVector;
+	BoardMovement->SampleWaterSurface(Location, WaterHeightCm, WaterNormal);
+	In.HeightAboveWaterCm = static_cast<float>(Location.Z) - WaterHeightCm;
+	In.VerticalAccelCmS2 = FilteredVerticalAccelCmS2;
+	In.WaterNormal = WaterNormal;
+	In.RotationStick = AirRotationStick;
+	In.bRotationInput = AirRotationStick.Size() > AirRotationDeadzone;
+	In.Tuck = TuckInput;
+	In.PreWindStick = PreWindDirection;
+	In.PreWindAmount = PreWindAmount;
+	In.TakeoffLoad = LastGroundLoad;
+	In.TakeoffEdgeHold = LastGroundEdgeHold;
+	if (bTakeoff)
+	{
+		TravelSideSigma = RiderAxes::TravelSide(In.SlavedBodyQuat, Velocity, RootQuat.GetAxisX());
+	}
+	In.TravelSideSigma = TravelSideSigma;
+
+	RiderAttitude->Step(StepSeconds, In);
+	BoardMovement->SetAirAttitude(RiderAttitude->GetBoardQuat(), RiderAttitude->IsSimulating(), RiderAttitude->GetBodyQuat(), RiderAttitude->GetAngularVelocity());
+}
+
+void AKiteRiderPawn::ResetRiderAttitude()
+{
+	const FQuat RootQuat = RootComponent ? RootComponent->GetComponentQuat() : FQuat::Identity;
+	if (RiderAttitude)
+	{
+		RiderAttitude->Reset(ComputeSlavedBodyQuat(), RootQuat);
+	}
+	if (BoardMovement)
+	{
+		BoardMovement->SetAirAttitude(RootQuat, false);
+	}
+	PreWindAmount = 0.0f;
+	PreWindDirection = FVector2D::ZeroVector;
+	bHasLastStepVerticalSpeed = false;
+	RiderAirBlend = 0.0f;
+	if (bAttitudeOwnsBoardVisual)
+	{
+		ClearBoardVisualOverride();
+		if (BoardVisual)
+		{
+			BoardVisual->SetRelativeLocation(FVector::ZeroVector);
+		}
+		bAttitudeOwnsBoardVisual = false;
+	}
+}
+
+void AKiteRiderPawn::UpdateBoardVisualFromAttitude(float DeltaTime)
+{
+	// A crash or a reset ends the rotation at once: no hand-over. Polled, as well as the board's
+	// events, so a pawn whose delegates are not bound (tests) does the same.
+	if (BoardMovement && (BoardMovement->IsCrashing() || BoardMovement->GetResetCount() != SeenAttitudeResetCount))
+	{
+		SeenAttitudeResetCount = BoardMovement->GetResetCount();
+		RiderAirBlend = 0.0f;
+		if (bAttitudeOwnsBoardVisual)
+		{
+			ClearBoardVisualOverride();
+			if (BoardVisual)
+			{
+				BoardVisual->SetRelativeLocation(FVector::ZeroVector);
+			}
+			bAttitudeOwnsBoardVisual = false;
+		}
+	}
+	const bool bLive = RiderAttitude && RiderAttitude->IsSimulating();
+	const float BlendStep = RiderHandoverSeconds > 0.0f ? DeltaTime / RiderHandoverSeconds : 1.0f;
+	RiderAirBlend = bLive ? FMath::Min(RiderAirBlend + BlendStep, 1.0f) : FMath::Max(RiderAirBlend - BlendStep, 0.0f);
+	if (!BoardVisual)
+	{
+		return;
+	}
+	if (bLive)
+	{
+		// The strapped board, drawn between the last two steps. The rider turns about their centre
+		// of mass, not about their feet: the board sits ComAboveBoardCm below it along the body
+		// (T1.2.6), which is the root itself at the take-off and again when upright for the landing.
+		const FQuat Body = RiderAttitude->GetRenderBodyQuat(LastRenderAlpha);
+		const FQuat Board = RiderAttitude->GetRenderBoardQuat(LastRenderAlpha);
+		const FVector Offset = RiderAttitude->GetVisualComOffsetCm(LastRenderAlpha) - Body.RotateVector(FVector(0.0f, 0.0f, RiderAttitude->ComAboveBoardCm));
+		LastAirBodyQuat = Body;
+		LastAirBoardQuat = Board;
+		LastAirBoardOffsetCm = Offset;
+		SetBoardVisualWorldRotation(Board);
+		BoardVisual->SetWorldLocation(GetActorLocation() + Offset);
+		bAttitudeOwnsBoardVisual = true;
+	}
+	else if (bAttitudeOwnsBoardVisual)
+	{
+		if (RiderAirBlend > 0.0f)
+		{
+			// Landed: the drawn board eases back onto the root as the rider hands back to the riding pose.
+			const float W = FMath::SmoothStep(0.0f, 1.0f, RiderAirBlend);
+			SetBoardVisualWorldRotation(FQuat::Slerp(GetActorQuat(), LastAirBoardQuat, W));
+			BoardVisual->SetWorldLocation(GetActorLocation() + LastAirBoardOffsetCm * W);
+		}
+		else
+		{
+			ClearBoardVisualOverride();
+			BoardVisual->SetRelativeLocation(FVector::ZeroVector);
+			bAttitudeOwnsBoardVisual = false;
+		}
 	}
 }
 
@@ -916,6 +1167,26 @@ void AKiteRiderPawn::DrawPhysicsDebug() const
 		BoardMovement->GetLastLandingG(), BoardMovement->WasLastLandingHot() ? TEXT(" HOT") : TEXT(""), Gust);
 	DrawDebugString(World, RiderAt + FVector(0.0f, 0.0f, DebugRiderTextHeightCm), RiderText, nullptr, FColor::White, 0.0f, true);
 
+	// The rider's rotation in the air: the body's axes at the centre of mass (front red, right green,
+	// up blue), the committed axis (white), the line and assist torques (yellow, cyan, 1 cm per N*m)
+	// and the time to contact.
+	if (RiderAttitude && RiderAttitude->IsSimulating())
+	{
+		const FAttitudeDebug& Attitude = RiderAttitude->GetLastStepDebug();
+		const FQuat Body = RiderAttitude->GetBodyQuat();
+		const FVector Com = RiderAt + RiderAttitude->GetVisualComOffsetCm(1.0f);
+		DrawDebugVector(World, Com, Body.GetAxisX(), 60.0f, FColor::Red);
+		DrawDebugVector(World, Com, Body.GetAxisY(), 60.0f, FColor::Green);
+		DrawDebugVector(World, Com, Body.GetAxisZ(), 60.0f, FColor::Blue);
+		DrawDebugVector(World, Com, Attitude.CommittedAxisWorld, 100.0f, FColor::White);
+		DrawDebugVector(World, Com, Attitude.LineTorqueNm, 1.0f, FColor::Yellow);
+		DrawDebugVector(World, Com, Attitude.AssistTorqueNm, 1.0f, FColor::Cyan);
+		const FString AttitudeText = FString::Printf(TEXT("spin %.0f deg/s  up %.2f\ncontact in %.2f s  error %.0f deg%s"),
+			FMath::RadiansToDegrees(RiderAttitude->GetAngularVelocity().Size()), Body.GetAxisZ().Z,
+			FMath::Min(Attitude.TimeToContactSeconds, 99.0f), Attitude.LandingErrorDeg, Attitude.bAssistActive ? TEXT("  ASSIST") : TEXT(""));
+		DrawDebugString(World, Com + FVector(0.0f, 0.0f, 60.0f), AttitudeText, nullptr, FColor::White, 0.0f, true);
+	}
+
 	// The gust bar: grey from 0.5 to 1.5, a white tick at 1, filled to the gust factor here now.
 	const FVector Side = FVector::CrossProduct(FVector::UpVector, GetActorForwardVector()).GetSafeNormal();
 	const FVector BarFoot = RiderAt + FVector(0.0f, 0.0f, DebugGustBarBaseHeightCm) + Side * DebugGustBarSideOffsetCm;
@@ -991,6 +1262,7 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 	}
 	LastFrameSimSteps = Steps;
 	const float RenderAlpha = (bHasSimState && bInterpolateRendering) ? FMath::Clamp(SimAccumulatorSeconds / Step, 0.0f, 1.0f) : 1.0f;
+	LastRenderAlpha = RenderAlpha;
 	if (bHasSimState && bInterpolateRendering && RootComponent)
 	{
 		LastRenderLocation = FMath::Lerp(PrevSimLocation, SimLocation, RenderAlpha);
@@ -1007,6 +1279,8 @@ void AKiteRiderPawn::Tick(float DeltaTime)
 			: KiteOffset;
 	}
 
+	// The drawn board first: the rider's feet go in its straps.
+	UpdateBoardVisualFromAttitude(DeltaTime);
 	UpdateRiderPose(DeltaTime);
 	if (Kite)
 	{
@@ -1108,7 +1382,18 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	}
 	else
 	{
-		RiderStanceSide = ChooseStanceSide(BoardYawDeg, RiderFacingYawDeg);
+		// Keep the side that keeps the rider facing the way they were. In the air with the attitude,
+		// that is the way the body faces now, so the riding pose after the landing is the body's.
+		float PreferredFacingYawDeg = RiderFacingYawDeg;
+		if (RiderAttitude && RiderAttitude->IsSimulating())
+		{
+			const FVector BodyFront = RiderAttitude->GetRenderBodyQuat(LastRenderAlpha).GetAxisX();
+			if (BodyFront.Size2D() > 0.3f)
+			{
+				PreferredFacingYawDeg = FMath::RadiansToDegrees(FMath::Atan2(BodyFront.Y, BodyFront.X));
+			}
+		}
+		RiderStanceSide = ChooseStanceSide(BoardYawDeg, PreferredFacingYawDeg);
 
 		// The harness hook is on the rider's front, so on the water they do not ride with their
 		// back to the kite: after a moment of that they slide the board round under them and
@@ -1129,35 +1414,18 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RiderTurnOffsetDeg = FMath::FixedTurn(RiderTurnOffsetDeg, 0.0f, RiderSwitchTurnRateDeg * DeltaTime);
 	const FVector Facing = FRotator(0.0f, RiderFacingYawDeg + RiderTurnOffsetDeg, 0.0f).Vector();
 
-	// Lean away from the pull of the lines, whichever way the rider is facing. On the water that
-	// is leaning out against the kite; in the air the rider hangs from the harness at their
-	// waist, so the lower the kite the further back the shoulders go. Floating, they lie back
-	// in the water with the board out in front.
-	FVector BodyUp = FVector::UpVector;
-	if (bHasKite)
-	{
-		const float FullLeanForce = 60000.0f; // 600 N
-		const float Load = FMath::Clamp(Kite->GetLineForce().Size() / FullLeanForce, 0.0f, 1.0f);
-		float PullLeanDeg = RiderMaxLeanDeg * FMath::Clamp(Kite->GetLineForce().Size2D() / FullLeanForce, 0.0f, 1.0f);
-		if (bAirborne)
-		{
-			const float LineOffVerticalDeg = 90.0f - Kite->GetElevationDeg();
-			PullLeanDeg = FMath::Min(RiderAirHangLeanDeg, 0.6f * LineOffVerticalDeg) * Load;
-		}
-		BodyUp -= TowardsKite * FMath::Tan(FMath::DegreesToRadians(PullLeanDeg));
-	}
-	if (BoardMovement && BoardMovement->FloatSubmersionCm > 0.0f)
-	{
-		const float FloatLeanDeg = RiderFloatLeanDeg * FMath::Clamp(BoardMovement->GetFloatDepthCm() / BoardMovement->FloatSubmersionCm, 0.0f, 1.0f);
-		BodyUp -= Facing * FMath::Tan(FMath::DegreesToRadians(FloatLeanDeg));
-	}
-	// Loading: the rider sits back away from the kite, weight low over the back of the board.
-	const float Load = BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f;
-	if (Load > 0.0f)
-	{
-		const FVector Away = bHasKite ? -TowardsKite : -Facing;
-		BodyUp += Away * FMath::Tan(FMath::DegreesToRadians(RiderLoadLeanDeg * Load));
-	}
+	// In the air the hang from the harness is the kinematic stand-in for the rotation the attitude
+	// simulates: with the attitude live the riding pose keeps its water lean, so the hand-over at the
+	// take-off starts from the pose the rider left the water in.
+	// The load is drawn letting go no faster than the board lets it go on the water: the pop zeroes
+	// the board's load at once, and the rider stands up out of the crouch over a moment instead of
+	// the pelvis jumping 30 cm in a frame. Otherwise it is the board's load as it always was.
+	const float BoardLoad = BoardMovement ? BoardMovement->GetLoadAmount() : 0.0f;
+	const float LoadReleaseRate = BoardMovement ? FMath::Max(BoardMovement->LoadReleaseRatePerSec, 0.1f) : 6.0f;
+	DrawnLoad = bViewInitialized ? FMath::Max(BoardLoad, DrawnLoad - LoadReleaseRate * DeltaTime) : BoardLoad;
+	const float Load = DrawnLoad;
+	const bool bAttitudeLive = RiderAttitude && RiderAttitude->IsSimulating();
+	const FVector BodyUp = ComputeLevelBodyUp(Facing, TowardsKite, bHasKite, bAirborne && !bAttitudeLive, Load);
 	const FQuat BodyQuat = FRotationMatrix::MakeFromXZ(Facing, BodyUp.GetSafeNormal()).ToQuat();
 
 	// The jointed rider: feet in the straps wherever the board goes, pelvis over them along the
@@ -1167,12 +1435,24 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RigInput.Board = BoardVisual ? BoardVisual->GetComponentTransform() : GetActorTransform();
 	RigInput.Facing = Facing;
 	RigInput.BodyUp = BodyUp.GetSafeNormal();
-	RigInput.Crouch = Load;
-	// RigInput.BodyQuat stays unset: on the water the rig solves from the level Facing and BodyUp.
-	// The rider attitude (URiderAttitudeComponent, T1.2) will set it in the air.
+	// The crouch: the load, or the tuck in the air.
+	RigInput.Crouch = FMath::Max(Load, RiderAttitude ? RiderAttitude->GetTuckAmount() : 0.0f);
+	// On the water RigInput.BodyQuat stays unset and the rig solves from the level Facing and BodyUp.
+	// In the air it is the rider attitude's body. Over RiderHandoverSeconds from the take-off, and
+	// back after the landing, the torso turns between the two and the pelvis line with it, so the
+	// pelvis starts and ends exactly where the riding pose has it.
+	if (RiderAirBlend > 0.0f)
+	{
+		const FQuat AirBody = bAttitudeLive ? RiderAttitude->GetRenderBodyQuat(LastRenderAlpha) : LastAirBodyQuat;
+		const float W = FMath::SmoothStep(0.0f, 1.0f, RiderAirBlend);
+		const FVector LevelUp = BodyUp.GetSafeNormal().IsNearlyZero() ? FVector::UpVector : BodyUp.GetSafeNormal();
+		RigInput.BodyQuat = FQuat::Slerp(BodyQuat, AirBody, W).GetNormalized();
+		RigInput.PelvisUp = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(LevelUp, AirBody.GetAxisZ()), W).RotateVector(LevelUp);
+	}
 	RiderPose = RiderRig::SolveBody(RigInput);
-
-
+	// The bar hangs in front of the body the rig drew: the level facing on the water, the body's own in the air.
+	const bool bBodyPose = RigInput.BodyQuat.IsSet();
+	const FVector BarFacing = bBodyPose ? RiderPose.Torso.GetAxisX() : Facing;
 
 	// The lines pull on the harness hook at the front of the rider's waist. The bar rides on them
 	// just beyond the hook, further out the more it is sheeted out, and always in front of the
@@ -1180,12 +1460,12 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	HarnessHookPosition = RiderPose.Pelvis + RiderPose.Torso.RotateVector(HarnessHookOffsetCm);
 	if (Kite)
 	{
-		FVector LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : Facing;
+		FVector LineDir = bHasKite ? (Kite->GetKiteWorldPosition() - HarnessHookPosition).GetSafeNormal() : BarFacing;
 		const float MinForward = 0.15f;
-		const float Forward = FVector::DotProduct(LineDir, Facing);
+		const float Forward = FVector::DotProduct(LineDir, BarFacing);
 		if (Forward < MinForward)
 		{
-			LineDir = (LineDir + Facing * (MinForward - Forward)).GetSafeNormal();
+			LineDir = (LineDir + BarFacing * (MinForward - Forward)).GetSafeNormal();
 		}
 		// The bar is never further up the lines than the rider's arms reach: leaning back with the
 		// kite low, it comes in closer to the hook.
@@ -1208,7 +1488,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		const FVector BarCentre = HarnessHookPosition + LineDir * BarReachCm;
 
 		// The bar is held square to the lines across the rider's body, and tilts with the steering.
-		const FVector RiderRight = FVector::CrossProduct(FVector::UpVector, Facing);
+		const FVector RiderRight = bBodyPose ? RiderPose.Torso.GetAxisY() : FVector::CrossProduct(FVector::UpVector, Facing);
 		FVector Span = (RiderRight - FVector::DotProduct(RiderRight, LineDir) * LineDir).GetSafeNormal();
 		if (Span.IsNearlyZero())
 		{
@@ -1378,6 +1658,8 @@ void AKiteRiderPawn::ResetRider()
 
 void AKiteRiderPawn::HandleBoardCrash(float Intensity)
 {
+	// A crash ends the rotation: the rider is back on the riding pose and the drawn board on the root.
+	ResetRiderAttitude();
 	// Running aground and a shark have just played their own sound.
 	if (!bSkipNextCrashSplash)
 	{
@@ -1389,6 +1671,7 @@ void AKiteRiderPawn::HandleBoardCrash(float Intensity)
 
 void AKiteRiderPawn::HandleBoardReset()
 {
+	ResetRiderAttitude();
 	PlayOneShot(ResetSound, 0.5f);
 	bSkipNextCrashSplash = false;
 }

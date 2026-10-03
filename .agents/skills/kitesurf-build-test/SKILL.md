@@ -60,13 +60,14 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
        -ExecCmds="kitesurf.After 500 kitesurf.Input 1 0 0 0 1, kitesurf.SmokeFrames 700"
    ```
    - `kitesurf.After <frames> <command...>` runs a console command later.
-   - `kitesurf.Input <steer> <sheet rate> <turn> <weight shift> <raw steer 0|1>` holds inputs on the rider. The last flag sends the bar straight to the kite from any position; players loop by steering towards the kite's own side instead.
+   - `kitesurf.Input <steer> <sheet rate> <turn> <weight shift> <raw steer 0|1> [<air rot x> <air rot y> <tuck 0..1>]` holds inputs on the rider. The raw steer flag sends the bar straight to the kite from any position; players loop by steering towards the kite's own side instead. The optional three are the rider's rotation stick in the air (x +1 back roll, y -1 backflip) and the tuck.
    - `kitesurf.Jump`, `kitesurf.TogglePause`, `kitesurf.OpenSettings` and `kitesurf.OpenGear` do what the keys and buttons do.
    - `kitesurf.Wind <knots>` sets the base wind speed, e.g. `kitesurf.After 200 kitesurf.Wind 2` to drop the kite and leave the rider floating.
    - `kite.Physics.Debug 1` draws the winds, forces and numbers at the kite and the rider and a gust bar (colours and scales in `docs/ARCHITECTURE.md`); `kite.Physics.Debug 2` also logs a `kitecsv` line per fixed step to `LogKiteSurf`, which `grep -o 'kitecsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` turns into a CSV. Not in Shipping builds.
    - `kitesurf.HoldKite <clock deg|off>` flies the kite at a clock position (+ on the right) by working the steering, as a rider holding it low to keep riding: left alone, the kite climbs to the zenith and the rider stops. `kitesurf.Kite <m2>` rigs a kite size (0 for the one recommended for the wind). `kitesurf.State` logs the ride in one line (board state, speed, height, kite clock and elevation, tension, bar); call it every second to see what a scripted ride did.
    - `kitesurf.Shot <Chase|Side|Low|Orbit|Wide|KiteView>` cuts to a cinematic camera on the rider, `kitesurf.HideUI` clears the HUD and widgets, and `kitesurf.CaptureFrames <frames> <name>` writes every frame to `Saved/MenuVideo/<name>/` and exits. With `-benchmark -fps=30` the timestep is fixed, so the same commands film the same ride every run; `scripts/render-menu-video.sh` uses this to film and encode the menu videos.
    - `kitesurf.Load <0|1>` holds or lets go of the jump button: held is the loaded crouch, letting go pops. `kitesurf.Jump` is an immediate pop.
+   - `kitesurf.PreWind <x> <y>` holds the pre-wind stick: it winds up while the jump button is held on the water and the take-off turns it into a rotation (x +1 back roll). A back roll on the default 9 m kite: `kitesurf.After 5 kitesurf.Wind 24, kitesurf.After 5 kitesurf.Input 0.3 0 0 0 0, kitesurf.After 240 kitesurf.Input -1 0 0 -1 0, kitesurf.After 240 kitesurf.Load 1, kitesurf.After 240 kitesurf.PreWind 1 0, kitesurf.After 267 kitesurf.Input 0 1 0 0 0 1 0 1, kitesurf.After 267 kitesurf.Load 0, kitesurf.After 270 kitesurf.PreWind 0 0, kitesurf.After 300 kitesurf.Input 0 0 0 0 0 0 0 0` (the air stick and the tuck for the first second take it over at that kite's line tension; the pre-wind alone turns the rider to horizontal).
    - `kitesurf.MenuKey <key>` sends a key press through the UI (`Down`, `Enter`, `Gamepad_DPad_Up`, `Gamepad_FaceButton_Bottom`, ...) and logs whether a menu handled it, so menu navigation can be driven and captured in an offscreen run.
    - `kitesurf.MotionBar <0|1>` switches the motion-sensor bar and logs the controller, its raw readings and the resulting steer and bar position. It works in offscreen runs if a controller with sensors is connected.
    - `kitesurf.AudioRecordStart` and `kitesurf.AudioRecordStop <name>` record what the game plays, on a ride or in the menus, to `Saved/BouncedWavFiles/<name>.wav`. Offscreen runs use a dummy audio device and are muted as unfocused, so add `-ini:Engine:[Audio]:UnfocusedVolumeMultiplier=1.0`; then check the WAV's level instead of listening.
@@ -76,9 +77,26 @@ Do not use this for writing new tests (`kitesurf-automation-tests`) or generatin
    ```
    Output is archived under `Build/`.
 7. **CI** runs steps 2 and 3 on a self-hosted runner, followed by a non-blocking `gpu-smoke` job (step 5) for every push and pull request to `main`.
+   CI builds are incremental: each job keeps `Binaries/`, `Intermediate/` and
+   `DerivedDataCache/` from the previous run in the runner's workspace and deletes every other
+   untracked file, so `gpu-smoke` reuses the editor that `build-and-test` just built.
 
 ## Pitfalls
 
+- **One GPU, one run at a time.** Agents, worktrees and the CI runner share one 8 GB GPU,
+  and two Vulkan runs at once can crash with `VulkanMemory.cpp ... Out of memory`. The
+  GPU-using scripts therefore take a machine-wide lock
+  (`${XDG_RUNTIME_DIR:-/run/user/$UID}/kitesurf-gpu.lock`, via `with_gpu_lock` in
+  `scripts/common.sh`) and queue behind each other, printing
+  `=== Waiting for the GPU lock ..., held by: pid ... from <worktree> ...` while they wait.
+  Taking it: `smoke-test.sh`, `render-menu-video.sh` (per take), `run-editor.sh` with
+  `-RenderOffScreen`, `run-python.sh` with `-RenderOffScreen` or
+  `-AllowCommandletRendering`, and `run-tests.sh` without `-nullrhi`. Not taking it: a
+  windowed `run-editor.sh` (editor or `-game`), because someone is at the screen and it may
+  stay open for hours, blocking every queued run; close it before GPU runs if VRAM is tight.
+  Call the engine through these scripts, not directly, or the lock is bypassed.
+  `KITESURF_GPU_LOCK=0` skips the lock; `KITESURF_GPU_LOCK_FILE` points it elsewhere.
+  A wait is not a hang: check the holder's pid before killing anything.
 - **A green test run can be empty.** `scripts/run-tests.sh` only warns when the report is
   missing, and `scripts/parse_test_report.py` exits 0 if the report cannot be parsed. Always
   read the `Test Results:` line and check that `Total` is the number of tests you expect.

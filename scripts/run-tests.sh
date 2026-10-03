@@ -7,8 +7,14 @@ source "$SCRIPT_DIR/common.sh"
 REPORT_PATH="$PROJECT_ROOT/Saved/Automation/Report"
 mkdir -p "$REPORT_PATH"
 
+# Without -nullrhi the tests render on the GPU, so they queue for the GPU lock (common.sh).
+LOCK=()
+if ! has_arg -nullrhi "$@"; then
+    LOCK=(with_gpu_lock)
+fi
+
 echo "=== Running KiteSurf Automation Tests ==="
-"$UE_EDITOR_CMD" "$UPROJECT"     -unattended     -nopause     -nosplash     -log     -ExecCmds="Automation RunTests KiteSurf; Quit"     -ReportExportPath="$REPORT_PATH"     "$@"
+"${LOCK[@]}" "$UE_EDITOR_CMD" "$UPROJECT"     -unattended     -nopause     -nosplash     -log     -ExecCmds="Automation RunTests KiteSurf; Quit"     -ReportExportPath="$REPORT_PATH"     "$@"
 
 INDEX_JSON="$REPORT_PATH/index.json"
 if [[ -f "$INDEX_JSON" ]]; then

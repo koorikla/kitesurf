@@ -19,7 +19,8 @@ rm -f "$PROJECT_ROOT/Saved/Screenshots/LinuxEditor"/*.png
 
 # Run editor in game mode with Vulkan, off-screen rendering, and exit cleanly after N frames.
 # kitesurf.SmokeFrames saves Saved/Screenshots/LinuxEditor/smoke.png shortly before exiting.
-"$UE_EDITOR" "$UPROJECT" ${MAP:+"$MAP"} \
+# Queues behind any other GPU run on the machine (see with_gpu_lock in common.sh).
+with_gpu_lock "$UE_EDITOR" "$UPROJECT" ${MAP:+"$MAP"} \
     -vulkan \
     -game \
     -RenderOffScreen \

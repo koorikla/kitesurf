@@ -86,7 +86,8 @@ INTRO_SHOTS=(
     "$INTRO_START kitesurf.Shot Orbit"
 )
 
-# Plays the ride with the given shots in the game, offscreen, on a fixed timestep.
+# Plays the ride with the given shots in the game, offscreen, on a fixed timestep, holding the GPU
+# lock (common.sh) for the take.
 film() {
     local cmds="" entry frame
     # The ride's state in the log once a second, to see what the script did.
@@ -96,7 +97,7 @@ film() {
     for entry in "${RIDE[@]}" "$@"; do
         cmds+="kitesurf.After ${entry},"
     done
-    __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia "$UE_EDITOR" "$UPROJECT" /Game/Maps/L_OpenWater \
+    __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia with_gpu_lock "$UE_EDITOR" "$UPROJECT" /Game/Maps/L_OpenWater \
         -vulkan -game -RenderOffScreen -ResX="$RES_X" -ResY="$RES_Y" -ForceRes -benchmark -fps=$FPS \
         -unattended -nosound -log -ExecCmds="${cmds%,}"
 }

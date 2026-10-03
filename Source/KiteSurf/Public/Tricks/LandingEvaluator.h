@@ -8,9 +8,9 @@
  * The landing evaluator (docs/tricks.md 6.7, docs/tricks/T1.md T1.5): grades a touchdown as
  * stomped, clean, sketchy or crash and names the cause. Pure functions over plain structs.
  *
- * Not yet called by the board: UBoardMovementComponent still uses its own angle and landing g tests. The
- * wiring PR builds FLandingInputs with LandingEvaluator::ComputeGeometry plus the board's landing
- * g, sink and hot-landing flag (physics phase 2 item 4) and the kite's elevation.
+ * UBoardMovementComponent grades every landing from a jump with Evaluate: ComputeGeometry from the
+ * board's and the rider's orientation at contact, plus the board's landing g, sink and hot-landing
+ * flag (physics phase 2 item 4) and the kite's elevation. It crashes only on a Crash verdict.
  *
  * TrickScoring::GradeLanding is the record-only shortcut over this evaluator: it has no tilt or
  * rider state, and it leaves the crash decision to the board. Evaluate is the full verdict.

@@ -66,7 +66,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Input"),
-			TEXT("Holds inputs on the player's rider. Usage: kitesurf.Input <Steer -1..1> <SheetRate -1..1> <Turn -1..1> <WeightShift -1..1> <RawSteer 0|1>"),
+			TEXT("Holds inputs on the player's rider. Usage: kitesurf.Input <Steer -1..1> <SheetRate -1..1> <Turn -1..1> <WeightShift -1..1> <RawSteer 0|1> [<AirRotX -1..1> <AirRotY -1..1> <Tuck 0..1>]. AirRotX +1 is a back roll, AirRotY -1 a backflip."),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 			{
 				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
@@ -74,7 +74,23 @@ public:
 				{
 					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
 					{
-						It->ApplyScriptedInput(Arg(0), Arg(1), Arg(2), Arg(3), Arg(4) > 0.5f);
+						It->ApplyScriptedInput(Arg(0), Arg(1), Arg(2), Arg(3), Arg(4) > 0.5f, FVector2D(Arg(5), Arg(6)), Arg(7));
+					}
+				}
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.PreWind"),
+			TEXT("Holds the pre-wind stick on the player's rider: it winds up while the jump button is held (kitesurf.Load 1) and the take-off turns it into a rotation. Usage: kitesurf.PreWind <X -1..1: +1 back roll> <Y -1..1: -1 backflip>"),
+			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+			{
+				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
+				for (TObjectIterator<AKiteRiderPawn> It; It; ++It)
+				{
+					if (It->GetWorld() && It->GetWorld()->IsGameWorld() && It->IsPlayerControlled())
+					{
+						It->SetPreWind(FVector2D(Arg(0), Arg(1)));
 					}
 				}
 			}),
@@ -381,6 +397,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStart"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.AudioRecordStop"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Wind"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.PreWind"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.SmokeFrames"));
 		FDefaultGameModuleImpl::ShutdownModule();
 	}

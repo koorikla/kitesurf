@@ -279,9 +279,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	bool IsFloating() const { return CurrentFloatDepthCm > 0.5f * FloatSubmersionCm; }
 
-	/** The depth the board settles to at a given speed (cm). */
+	/** The depth the board settles to at a given speed with no pull on the lines (cm). */
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	float GetFloatDepthForSpeed(float SpeedCmS) const;
+
+	/**
+	 * The depth the board settles to at a given speed with the lines pulling this hard (N): the depth
+	 * for the speed, less the share of it the pull lifts the rider out of, PullN / FloatRiseTensionN
+	 * (all of it from FloatRiseTensionN up). A water start is the kite lifting the rider onto the board,
+	 * then the board planing.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
+	float GetFloatDepthForSpeedAndPull(float SpeedCmS, float PullN) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Board|Physics")
 	float GetForwardSpeed() const;
@@ -418,29 +427,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0", ClampMax = "0.99"))
 	float FloatUntilSpeedFraction;
 
-	/** How quickly the rider sinks or rises as the speed changes (1/s). */
+	/** How quickly the rider sinks or rises as the speed and the pull change (1/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float FloatResponse;
 
 	/**
+	 * Line tension that lifts a floating rider onto the board before they are moving (N): the float
+	 * depth for the speed falls by the tension over this, to the surface at this pull
+	 * (GetFloatDepthForSpeedAndPull). A rider sitting in the water with the board on their feet is
+	 * pulled up out of it by the kite and then planes; without it they could not rise until they were
+	 * moving, nor move until they rose. About 0.6 body weights (docs/physics/plan-3.md item 1); 0 turns
+	 * it off, the depth then following the speed alone.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
+	float FloatRiseTensionN;
+
+	/**
 	 * Drag area of a rider floating in the water with the board sunk (m^2): a body sitting in the
-	 * water and a board under it are slow to pull through it in any direction. While floating the
-	 * water drags them with 0.5 rho_w A v^2 against the horizontal velocity, A this times how far past
-	 * half the floating depth they are (none at IsFloating's threshold, all of it fully sunk), fading
-	 * out by FloatingDragFadeSpeedCmS. Nothing on the plane (docs/physics/plan-2.md item 3d).
+	 * water and a board under it are slow to pull through it in any direction. The water drags them
+	 * with 0.5 rho_w A v^2 against the horizontal velocity at every speed, A this times how far past
+	 * half the floating depth they are (none at IsFloating's threshold, all of it fully sunk): the drag
+	 * goes only as the body rises, by speed or by the pull (docs/physics/plan-2.md item 3d, plan-3.md
+	 * item 1). So the speed a kite can drag a sunk rider at is bounded, sqrt(T / (0.5 rho_w A)): 3 m/s
+	 * for 1.6 kN. Research: 0.3 to 0.5 m^2 for a body and a sunk board.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
 	float FloatingDragAreaM2;
-
-	/**
-	 * Speed by which a floating rider pulled through the water has come up to plane on their back and
-	 * the board, and FloatingDragAreaM2 no longer acts (cm/s); it fades out from rest (smoothstep). The
-	 * float depth only starts to rise at FloatUntilSpeedFraction of planing speed, and a drag held at
-	 * full depth up to there would take more pull than a parked kite gives to get through: a
-	 * transition, a slow start or a water start would leave the rider stuck. 0 = no fade.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning", meta = (ClampMin = "0.0"))
-	float FloatingDragFadeSpeedCmS;
 
 	/** Below this speed the board pivots to point along the kite's pull (cm/s). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")

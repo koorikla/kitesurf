@@ -79,8 +79,8 @@ UBoardMovementComponent::UBoardMovementComponent()
 	FloatSubmersionCm = 85.0f;
 	FloatUntilSpeedFraction = 0.45f;
 	FloatResponse = 2.5f;
-	FloatingDragAreaM2 = 0.35f;        // a rider sitting in the water and a sunk board
-	FloatingDragFadeSpeedCmS = 200.0f; // about 4 kn: a body dragged by the kite planes on the surface
+	FloatingDragAreaM2 = 0.35f;        // a rider sitting in the water and a sunk board: research 0.3 to 0.5
+	FloatRiseTensionN = 0.6f * MassKg * KiteUnits::GravityMS2; // 500 N: about 0.6 body weights lifts the rider onto the board
 	CurrentFloatDepthCm = 0.0f;
 	TailWeightDrag = 0.35f;
 	NoseWeightDragSaving = 0.15f;
@@ -346,6 +346,14 @@ float UBoardMovementComponent::GetFloatDepthForSpeed(float SpeedCmS) const
 	return FloatSubmersionCm * (1.0f - Planing);
 }
 
+float UBoardMovementComponent::GetFloatDepthForSpeedAndPull(float SpeedCmS, float PullN) const
+{
+	// The pull lifts the rider out of the water before the board is moving fast enough to carry them:
+	// the share it lifts grows with the tension, to all of it at FloatRiseTensionN.
+	const float Lifted = FloatRiseTensionN > KINDA_SMALL_NUMBER ? FMath::Clamp(PullN / FloatRiseTensionN, 0.0f, 1.0f) : 0.0f;
+	return GetFloatDepthForSpeed(SpeedCmS) * (1.0f - Lifted);
+}
+
 void UBoardMovementComponent::SetWeightShift(float Value)
 {
 	CurrentWeightShift = FMath::Clamp(Value, -1.0f, 1.0f);
@@ -474,10 +482,12 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 		bool bIsAirborne = (CurrentBoardState == EBoardState::Airborne);
 
-		// Without planing speed the board does not carry the rider: they float, sunk to the chest,
-		// and rise onto the surface as the board gets up to speed (the water start). A rider in
-		// the air comes down onto the surface first and sinks from there.
-		const float TargetFloatDepthCm = bIsAirborne ? 0.0f : GetFloatDepthForSpeed(Velocity.Size2D());
+		// Without planing speed the board does not carry the rider: they float, sunk to the chest. The
+		// kite's pull lifts them onto the board, and they rise onto the surface as the board gets up to
+		// speed (the water start). A rider in the air comes down onto the surface first and sinks from
+		// there.
+		const float PullN = (StepExternalForce / KiteUnits::UnrealForcePerN).Size();
+		const float TargetFloatDepthCm = bIsAirborne ? 0.0f : GetFloatDepthForSpeedAndPull(Velocity.Size2D(), PullN);
 		CurrentFloatDepthCm = FMath::FInterpTo(CurrentFloatDepthCm, TargetFloatDepthCm, DeltaTime, FloatResponse);
 		const float RideHeight = WaterHeight - CurrentFloatDepthCm;
 
@@ -605,30 +615,32 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 		const float EffectiveMass = FMath::Max(MassKg, 1.0f);
 		float DragRatePerS = 0.0f;   // linear drag as a rate: a in dv/dt = -a v - b v^2
 		float DragRatePerCm = 0.0f;  // quadratic drag as a rate: b
+
+		// A floating rider is pulled through the water body first: 0.5 rho_w A v^2 at any speed,
+		// blending in from half the floating depth to all of it (docs/physics/plan-2.md item 3d). It
+		// goes only as the body rises, lifted by the pull or carried by the board's speed: a sunk body
+		// dragged faster keeps its drag, so the speed a kite can drag it at is bounded (plan-3.md item
+		// 1; until then it faded out by 2 m/s, and a dragged rider had nothing holding them back). As a
+		// rate on the speed in cm/s, b = 0.5 rho_w A / (m * 100 cm/m).
+		const float SunkFraction = FloatSubmersionCm > 0.0f ? CurrentFloatDepthCm / FloatSubmersionCm : 0.0f;
+		const float DepthBlend = FMath::Clamp(2.0f * SunkFraction - 1.0f, 0.0f, 1.0f);
+		const float FloatingDragRatePerCm = 0.5f * KiteUnits::WaterDensityKgM3 * FMath::Max(FloatingDragAreaM2, 0.0f) * DepthBlend / (EffectiveMass * KiteUnits::CmPerM);
 		if (!bHydrodynamicsDisabled)
 		{
 			if (!bPlaning)
 			{
 				// Displacement regime: quadratic + linear drag so depowering stops (< 2 kn) within 5s
 				DragRatePerS = DisplacementDragKgPerS / EffectiveMass;
-				DragRatePerCm = DisplacementQuadraticDragKgPerCm / EffectiveMass;
-
-				// A floating rider is pulled through the water body first: 0.5 rho_w A v^2, blending in
-				// from half the floating depth to all of it, and going as the pull brings the body up to
-				// plane on the surface by FloatingDragFadeSpeedCmS (docs/physics/plan-2.md item 3d). As a
-				// rate on the speed in cm/s, b = 0.5 rho_w A / (m * 100 cm/m).
-				const float SunkFraction = FloatSubmersionCm > 0.0f ? CurrentFloatDepthCm / FloatSubmersionCm : 0.0f;
-				const float DepthBlend = FMath::Clamp(2.0f * SunkFraction - 1.0f, 0.0f, 1.0f);
-				const float SpeedFade = FloatingDragFadeSpeedCmS > 0.0f ? 1.0f - FMath::SmoothStep(0.0f, FloatingDragFadeSpeedCmS, Speed2D) : 1.0f;
-				DragRatePerCm += 0.5f * KiteUnits::WaterDensityKgM3 * FMath::Max(FloatingDragAreaM2, 0.0f) * DepthBlend * SpeedFade / (EffectiveMass * KiteUnits::CmPerM);
+				DragRatePerCm = DisplacementQuadraticDragKgPerCm / EffectiveMass + FloatingDragRatePerCm;
 			}
 			else
 			{
 				// Planing regime: linear drag + high-speed form/spray drag
-				// A sunk tail drags more; weight forward flattens the board and frees it up.
+				// A sunk tail drags more; weight forward flattens the board and frees it up. A rider
+				// yanked past planing speed before their body has come up still drags it.
 				const float EdgeDragScale = 1.0f + TailWeightDrag * FMath::Max(-CurrentWeightShift, 0.0f) - NoseWeightDragSaving * FMath::Max(CurrentWeightShift, 0.0f);
 				DragRatePerS = PlaningDragKgPerS * EdgeDragScale / EffectiveMass;
-				DragRatePerCm = PlaningQuadraticDragKgPerCm * EdgeDragScale / EffectiveMass;
+				DragRatePerCm = PlaningQuadraticDragKgPerCm * EdgeDragScale / EffectiveMass + FloatingDragRatePerCm;
 
 				// Hydrodynamic lift raising the board with surface contact falloff
 				const float SurfaceContact = FMath::Clamp((Submersion + WaterContactHeightCm) / (WaterContactHeightCm + PlaningLiftFullDepthCm), 0.0f, 1.0f);

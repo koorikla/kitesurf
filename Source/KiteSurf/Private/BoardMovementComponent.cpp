@@ -60,6 +60,7 @@ UBoardMovementComponent::UBoardMovementComponent()
 	MaxHeelDeg = 65.0f;
 	LoadExtraHeelDeg = 25.0f;
 	HeelResponse = 8.0f;
+	CarveHeelDeg = MaxEdgeAngleDeg;  // the lean the carve was drawn with before it entered the balance
 	FinAreaM2 = 0.013f;              // four fins 4.5 cm deep on a 7 cm mean chord
 	RailAreaM2 = 0.08f;              // the immersed rail at full heel
 	LateralLiftSlopePerRad = 2.5f;   // 2 to 3 /rad for these low aspect ratios
@@ -568,9 +569,8 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 
 			// Positive pitch is nose up: weight on the tail lifts the nose.
 			TargetRotation.Pitch = FMath::Clamp(SurfacePitch - CurrentWeightShift * WeightShiftPitchDeg, -20.0f, 20.0f);
-			// The heel lifts the rail on the kite's side; the carve's lean is drawn on top of it and
-			// does not change the force balance.
-			TargetRotation.Roll = FMath::Clamp(SurfaceRoll - HeelDeg + SmoothedCarveInput * MaxEdgeAngleDeg, -MaxHeelDeg, MaxHeelDeg);
+			// The heel lifts the rail on the kite's side; it carries the carve's lean into the turn too.
+			TargetRotation.Roll = FMath::Clamp(SurfaceRoll - HeelDeg, -MaxHeelDeg, MaxHeelDeg);
 
 			// A twin-tip rides either way: once it is moving tail-first, the tail becomes the nose.
 			if (ForwardSpeed < -SwitchStanceSpeedCmS && CurrentBoardState != EBoardState::Landing)
@@ -579,6 +579,7 @@ void UBoardMovementComponent::StepBoard(float StepSeconds)
 				TargetRotation.Pitch = -TargetRotation.Pitch;
 				TargetRotation.Roll = -TargetRotation.Roll;
 				HeelDeg = -HeelDeg; // the same rail in the water, seen from the new nose
+				BalanceHeelDeg = -BalanceHeelDeg;
 			}
 			// Edging changes board heading relative to velocity
 			else if (FMath::Abs(ForwardSpeed) > 50.0f && FMath::Abs(SmoothedCarveInput) > 0.02f)
@@ -760,8 +761,9 @@ FVector UBoardMovementComponent::UpdateHeelAndNormalSideForce(float DeltaTime, c
 	LastStepDebug.PullAcrossN = PullAcrossN;
 	LastStepDebug.CarriedN = CarriedN;
 
-	// The heel the rider sets: the balance, tan(heel) = pull across / weight carried, plus the
-	// load's extra on top. In the air there is nothing to heel against and the board comes level.
+	// The heel the rider holds against the pull: the balance, tan(heel) = pull across / weight
+	// carried, plus the load's extra on top, followed at HeelResponse. In the air there is nothing
+	// to heel against and the board comes level.
 	float TargetHeelDeg = 0.0f;
 	if (bOnWater)
 	{
@@ -771,10 +773,17 @@ FVector UBoardMovementComponent::UpdateHeelAndNormalSideForce(float DeltaTime, c
 		}
 		TargetHeelDeg = FMath::Min(TargetHeelDeg + LoadAmount * LoadExtraHeelDeg, MaxHeelDeg);
 		// Against the pull; with no pull across the board the rider stays on the rail they are on.
-		const float PullSide = FMath::Abs(PullAcrossN) > KINDA_SMALL_NUMBER ? FMath::Sign(PullAcrossN) : (HeelDeg < 0.0f ? -1.0f : 1.0f);
+		const float PullSide = FMath::Abs(PullAcrossN) > KINDA_SMALL_NUMBER ? FMath::Sign(PullAcrossN) : (BalanceHeelDeg < 0.0f ? -1.0f : 1.0f);
 		TargetHeelDeg *= PullSide;
 	}
-	HeelDeg += (TargetHeelDeg - HeelDeg) * (1.0f - FMath::Exp(-FMath::Max(HeelResponse, 0.0f) * DeltaTime));
+	BalanceHeelDeg += (TargetHeelDeg - BalanceHeelDeg) * (1.0f - FMath::Exp(-FMath::Max(HeelResponse, 0.0f) * DeltaTime));
+
+	// Carving, the rider leans into the turn as the board yaws, with the same smoothed input
+	// (docs/physics/plan-2.md item 3c): a turn to the right (positive input) tilts the normal force
+	// to the board's right, which is negative heel. Towards the kite that takes the edge off and the
+	// pull across turns the board; away from it the rail digs in.
+	const float CarveLeanDeg = bOnWater ? SmoothedCarveInput * CarveHeelDeg : 0.0f;
+	HeelDeg = FMath::Clamp(BalanceHeelDeg - CarveLeanDeg, -MaxHeelDeg, MaxHeelDeg);
 	LastStepDebug.HeelDeg = HeelDeg;
 
 	if (!bOnWater)
@@ -945,6 +954,7 @@ void UBoardMovementComponent::ResetToTack(float SpeedKnots)
 
 	// 5. Clear crash and set rideable state
 	HeelDeg = 0.0f;
+	BalanceHeelDeg = 0.0f;
 	bIsCrashing = false;
 	CrashTimer = 0.0f;
 	CrashInitialVelocity = FVector::ZeroVector;

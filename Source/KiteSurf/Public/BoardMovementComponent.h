@@ -264,7 +264,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float PlaningQuadraticDragKgPerCm;
 
-	/** Lean of the board drawn at full carve input (deg), on top of the heel; also how far the carve turns the board off its course. */
+	/** How far the full carve input turns the board's heading off its course (deg); also the default CarveHeelDeg. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float MaxEdgeAngleDeg;
 
@@ -376,6 +376,16 @@ public:
 	float HeelResponse;
 
 	/**
+	 * Heel the full carve input adds towards the inside of the turn (deg), on top of the balance: the
+	 * rider leans into the carve, so the water's normal force on the board tilts into the turn and
+	 * pulls the velocity round after the heading (docs/physics/plan-2.md item 3c). Turning towards the
+	 * kite it takes the edge off and lets the pull across turn the board; turning away it digs the
+	 * rail in harder. The board is drawn at this heel too.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.0"))
+	float CarveHeelDeg;
+
+	/**
 	 * Lateral area of the fins (m^2). Four fins 4 to 5 cm deep (research 2.3) on a 10 to 12 cm base
 	 * are 0.003 to 0.005 m^2 each. They are all a flat board has, and they cannot hold a riding pull
 	 * on their own: a board ridden flat slides downwind.
@@ -399,7 +409,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning|Edging", meta = (ClampMin = "0.01"))
 	float TailWeightRailScale;
 
-	/** The board's heel (deg): positive when heeled to hold a pull towards the board's right, negative towards its left. */
+	/** The board's heel (deg): positive when heeled to hold a pull towards the board's right, negative towards its left; it includes the lean into a carve (CarveHeelDeg). */
 	UFUNCTION(BlueprintPure, Category = "Board|Physics")
 	float GetHeelDeg() const { return HeelDeg; }
 
@@ -481,8 +491,10 @@ private:
 	bool bLoadHeld = false;
 	float SmoothedCarveInput;
 	bool bLiftedByKite;
-	/** The board's heel (deg), signed as GetHeelDeg. */
+	/** The board's heel (deg), signed as GetHeelDeg: BalanceHeelDeg less the lean into a carve. */
 	float HeelDeg = 0.0f;
+	/** The heel the rider holds against the pull (deg), the balance plus the load's extra, followed at HeelResponse. */
+	float BalanceHeelDeg = 0.0f;
 
 	/**
 	 * Moves the heel towards its target for this step and returns the sideways part of the water's

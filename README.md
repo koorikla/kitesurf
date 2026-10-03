@@ -142,10 +142,12 @@ Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:
   in light wind; the 145 planes early and grips, with less pop; the 138 is the all-rounder.
 - *Rider*: who is on the board.
 
-Without enough speed the board does not carry you: you float chest-deep until the kite pulls you
-back up onto the plane. The BAR panel at the bottom right shows what your hands are doing: the bar
-slides down as you pull it in and tilts as you steer, with a marker for the steering that actually
-reaches the kite.
+Without enough speed the board does not carry you: you float chest-deep, slow through the water
+at any speed, until the kite's pull lifts you onto the board and it planes (bar in and dive the
+kite to water start). After a crash you are put back on the board at 8 kn, however hard the kite
+was pulling while you were down. The BAR panel at the bottom right shows what your hands are
+doing: the bar slides down as you pull it in and tilts as you steer, with a marker for the
+steering that actually reaches the kite.
 
 **Reading the wind.** White streaks on the water lie along the wind and drift down it. The WIND
 dial at the top right is a flag seen from above, with the top of the dial the way you are

@@ -1,9 +1,10 @@
 # Physics rework: changelog
 
-What the `physics/rework` branch (phase 1, merged as PR 45 at `13f8e13`) and the `physics/phase2`
-branch changed, commit by commit, what to tune next, and what is still missing. Read with
-`review.md` (the code before), `research.md` (what the physics says), `plan.md` (phase 1's items,
-referred to by number) and `plan-2.md` (phase 2's). Every number below comes from the `-nullrhi`
+What the `physics/rework` branch (phase 1, merged as PR 45 at `13f8e13`), the `physics/phase2`
+branch (merged as PR 71 at `b7f9ac6`) and the `physics/phase3` branch changed, commit by commit,
+what to tune next, and what is still missing. Read with `review.md` (the code before), `research.md`
+(what the physics says), `plan.md` (phase 1's items, referred to by number), `plan-2.md` (phase 2's)
+and `plan-3.md` (phase 3's). Every number below comes from the `-nullrhi`
 automation tests named next to it (`scripts/run-tests.sh -nullrhi`) or from release sweeps run the
 same way; none of it was seen in a `-game` run.
 
@@ -196,7 +197,7 @@ against the commit before it, and the section after the list what moved against 
 | Landing g at 2 / 4 / 6 m/s sink (`Physics.LandingGFromSink`) | none (the sink over g, a time) | 1.66 / 3.67 / 7.05 g standing; 1.33 / - / 4.02 g crouched | 4 m/s into 0.3 m is 3.7 g |
 | The timed jump's landing (`Physics.GoodLandingIsThreeToSixG`) | not measured as a g | 4.78 g crouched over 90 cm, sinking 8.17 m/s, hot; standing 8.6 g, hot but landed | 3 to 6 g (measured 4.2 to 5.5); sink 3 to 6 m/s |
 | A 1 m, 20 m swell at 15 m/s (`Physics.RidesASwellWithoutTunnelling`) | held within 20 cm by the clamp | at most 21.8 cm under, over 15 cm for at most 0.133 s; off the water over each crest | no tunnelling |
-| Floating under a kite at 12, 15 kn (`Physics.FloatingRiderIsSlowThroughTheWater`) | 0.3 kn (at `4d33f9e`) | 0.81 kn | a sunk rider barely moves |
+| Floating under a kite at 12, 15 kn (`Physics.FloatingRiderIsSlowThroughTheWater`) | 0.3 kn (at `4d33f9e`) | 0.81 kn (0.86 kn since phase 3) | a sunk rider barely moves |
 | Pop with the kite parked | 1.5 m | 1.0 m | under 1 m plus kite lift |
 | Same ride at 30, 60, 120 fps (`Physics.StepRateIndependent`) | identical | identical | identical |
 
@@ -219,6 +220,105 @@ What a player who knew `13f8e13` will notice, and which way it went:
 - **Landings cost something**: a big jump has to be landed crouched (the jump button held again on
   the way down); the timed jump lands hot at 4.8 g crouched, 8.6 g standing; the biggest jumps
   in 40 kn crash even crouched.
+
+## Phase 3: what changed
+
+The `physics/phase3` branch, cut from `b7f9ac6` (phase 2 merged as PR 71), implementing `plan-3.md`.
+Every entry says what moved against `b7f9ac6`.
+
+35. `b41c04a` **docs(physics): plan for phase 3.** The rider flung by the kite after a crash (item 1)
+    and the redirect before landing (item 2).
+36. `b4f95e6` **fix(board): a crash spends the kite's pull instead of saving it up** (item 1).
+    Reproduced with the `kite.Physics.Debug 2` trace in 20 and 25 kn on the recommended kite before
+    anything changed. The 30 m throw was the board's crash: the crash branch of `StepBoard` returned
+    before the external force was cleared, so the 360 steps of line force through a 1.5 s crash (up to
+    1.8 to 4.1 kN with the bar in and the kite deep in the window) came out in the first step after the
+    reset, at t = 1.5042 s: a change of 20.8 to 34.3 m/s, a peak of 22.8 to 35.9 m/s, 47 to 80 m in
+    5 s and 13 to 30 m up. Each step now spends the force added for it, whatever path it takes. The
+    same crash comes out of the reset at its 8 kn (4.12 m/s), never airborne, at most 25 cm above the
+    water (`Physics.CrashedRiderIsNotFlung`; 35.7 m/s and 26.4 m up before). The floating cases in the
+    same trace were dragged, not thrown: no step changed the speed by more than 0.09 m/s, and slack
+    lines snatching tight gave no impulse (the kite's outward speed is taken out on the kite's side), so
+    line compliance was not needed. 181 tests.
+37. `035c6df` **feat(board): the kite's pull lifts a floating rider; the water's drag stays at every
+    speed** (item 1). `FloatingDragFadeSpeedCmS` is removed: the floating drag (`FloatingDragAreaM2`
+    0.35 m^2) stays at any speed while the body is sunk, in the planing regime too, and goes only as it
+    rises. The float depth answers the pull as well as the speed (`GetFloatDepthForSpeedAndPull`): the
+    speed's depth less the share the line tension lifts, over `FloatRiseTensionN` (500 N, 0.6 body
+    weights). From a float under the kite at 12, the kite looped through the power zone for 5 s with
+    the bar let go: 3.73 m/s and 7.5 m in 25 kn (the plan's 4 m/s and 15 m), 3.98 m/s and 8.1 m in
+    20 kn, 1.6 and 2.5 m/s through the water while sunk (`Physics.FloatingRiderIsNotFlung`). With the
+    bar in, the same loop is a downloop water start: lifted onto the board within a second, the rider
+    rides away at 8.0 m/s and 21 m in 25 kn (7.2 m/s, 18 m in 20 kn), at most 0.8 m/s through the water
+    while sunk (up to 3.7 m/s at `b7f9ac6`); the 15 m does not hold for it. The water start in 20 kn
+    with the bar in and the kite dived: out of the water 0.15 s after the bar comes in, at 0.73 m/s
+    under 551 N, planing after 2.77 s (2.2 s at `b7f9ac6`; plan: within 10 s); without the lift the
+    drag holds the rider at about 1.75 m/s, planing after 7.48 s
+    (`Physics.WaterStartIsTheKiteLiftingTheRider`). Re-based: `Gear.ChangesBehaviour` (in 12 kn the
+    small board stays off the plane at 7.2 kn, but the kite lifts the rider onto it, 12 cm deep where it
+    was 42; the depth over 20 cm is dropped) and `Physics.FloatingRiderIsSlowThroughTheWater` (without
+    the floating drag the drift is 1.95 kn, 2.20 before, asserted as more than twice the 0.86 kn with
+    it). 183 tests.
+38. **Item 2, the redirect before landing: measured, not committed.** No design of the assist met the
+    plan's targets together (below), and every one made storm landings harder, so nothing of it is in
+    the code; bar centred in the air still holds the kite overhead all the way down.
+39. **docs(physics)**: this section, `docs/movement.md`, `docs/jumping.md`, `docs/ARCHITECTURE.md`,
+    `README.md` and the status of each item in `plan-3.md`.
+
+### What moved against b7f9ac6
+
+All from the floating change (37); riding on the plane, jumping and landing are unchanged to the
+logged decimal (`SteadyRideAcross`, `TimedReleaseBeatsPop`, `HangTime`, `GoodLandingIsThreeToSixG`,
+`LandingGFromSink`, `StormIsRideable`).
+- **A floating rider sits higher under a pull and drifts a little more.** Under the kite at 12 with
+  the bar out: 85 -> 66 cm deep in 15 kn, the drift 0.81 -> 0.86 kn (15 kn) and 1.13 -> 1.39 kn
+  (20 kn); `Ride.KeepsPlaningWithoutInput` 1.0 -> 1.5 kn, 11 -> 14 m downwind in 30 s.
+- **Water starts**: the dived start in 20 kn 2.2 -> 2.8 s; with the kite parked at the window edge in
+  20 kn 3.5 -> 3.4 s, in 15 kn reaching 14.1 -> 13.8 kn (`Ride.FloatsUntilPlaning`).
+- **A depowered or slow board** keeps the floating drag as it sinks: `Board.DepowersAndStops` and
+  `Movement.DepowerToStop` 0.28 -> 0.18 kn after 5 s; `Movement.SpeedEnvelope` decays to 2.34 kn (4.68) and settles at 16.95 kn
+  (15.15); bar out on the 9 m in 20 kn 6.0 -> 6.1 kn; `Ride.TransitionReversesTack` 13.3 -> 13.7 kn;
+  the 12 kn small board 6.8 -> 7.2 kn, off the plane.
+- **A crash** no longer throws the rider (36): out of the reset at 8 kn, on the water.
+
+### The descent (item 2): what was measured
+
+The trace (`Physics.HangTime`, 20 Hz) says the kite overhead merely loses elevation on the way down,
+it does not stall: the angle of attack is 12.7 to 13.8 deg against the 20 deg stall while the kite goes
+from 84.6 deg above the rider at 3.25 s to 55.8 deg at touchdown, sitting at the top of a window that
+the sink tilts downwind (at 8 m/s of sink the air meets the kite from some 25 to 30 deg below the
+horizontal).
+Its pull there is 540 to 670 N, 0.65 to 0.8 body weights; a 6 m/s touchdown from the 10.7 m jump
+needs 83% or more of the rider carried all the way down.
+
+Tried on the kite's assist (`bAutoRedirectAssist`, `RedirectStartHeightCm`, `RedirectSinkMS`,
+`RedirectGain`, `RedirectHeadingDeg`, and `AirborneTrimEaseDeg` easing the trim near the stall), on the
+timed 30 kn jump, about 1500 runs: the plan's lean of the nose towards the travel side added to the hold
+to 12; the lean replacing the hold; a lean on the sink above a target sink with the hold fading in as
+it eases; starts from 5 to 10 m and 1 to 5 m/s of sink, gains of 8 to 60 deg per m/s, leans of 45 to
+110 deg, the redirect's steering capped at 0.15 to 1, the trim eased by up to 10 deg.
+- At the plan's defaults (500 cm, 5 m/s, a lean of 10 deg per m/s up to 60 deg, added to the hold):
+  sink 8.17 -> 7.50 m/s, the kite at 59.8 deg, 4.78 -> 4.19 g crouched, from 0.8 s before touchdown.
+- Best sink: 5.55 m/s (2.74 g, not hot), with the kite at 53.6 deg at touchdown; 5.76 m/s at 56.8 deg.
+  With the kite above 60 deg the best was 7.19 m/s (62.8 deg, 3.93 g). A rider's own redirect with the
+  bar over (either side, from 3 to 9 m, for 0.2 to 1.5 s) did no better than 6.85 m/s (60.6 deg), and a
+  gentler overhead hold (`AirborneZenithMaxHeadingDeg` 20, no redirect) gives 7.43 m/s at 62.7 deg.
+- Why: the turn costs pull before the kite's own speed adds any. As the nose swings across the flow
+  the angle of attack rises to 21 to 23 deg (stalled) and the steering drag comes on; the tension falls
+  from 650 to 360 to 400 N for about half a second while the sink grows, then the kite flies across at
+  1.2 to 1.5 kN for a few tenths of a second and carries on down the side. Easing the trim keeps it
+  unstalled but makes the burst smaller.
+- The ride-away was slower than the touchdown in every run: 13 to 18 m/s over the water as the board
+  touches down, 7 to 11 m/s a second later. The flight carries the rider faster than the 11.2 m/s they
+  ride at in 30 kn, and the landing keeps 80% of it (`CleanLandingSpeedRetention`).
+- Storms: every variant made the landing harder. In 60 kn on the 3 m with the 0.2 s release (21.2 m),
+  9.4 g and landed today, 9.8 to 15.6 g with the redirect; the best 60 kn jump (23.9 m, 0.25 s) crashes
+  at 11.2 g today and at 11.7 to 16 g with it. The rider is carried downwind with the wind, and a kite
+  flown to the side in that little air loses its vertical pull without gaining speed.
+
+So the targets (sink 6 m/s or less with the kite above 60 deg, 2 to 5 g crouched, riding away faster
+than touching down, `8h/t^2` 1.5 to 5, the 60 kn best jump landing) were not met together.
+`8h/t^2` (3.46) and the height (10.7 m) are unchanged.
 
 ## What to tune
 
@@ -247,7 +347,8 @@ towards. "Estimate" values in `research.md` are starting points, not requirement
 | `UBoardMovementComponent::LateralLiftSlopePerRad` / `LeewayStallDeg` | 2.5 /rad / 12 deg | 2 to 3 /rad | |
 | `UBoardMovementComponent::PlaningTrimDeg` / `PlaningTrimHumpDeg` / `PlaningTrimHumpSpeedCmS` | 6 / 10 deg / 600 cm/s | trim 6 to 10 deg (Savitsky) | The hump bounds the course at 30 deg and slows light-wind riding; 13 deg strands a board at the planing threshold. |
 | `UBoardMovementComponent::PlaningDragKgPerS` / `PlaningQuadraticDragKgPerCm` | 6.15 kg/s / 0.0231 kg/cm | `a + c v^2` with a about 60 N, c 0.5 to 1.0 N s^2/m^2 | Today's 6.15 v + 2.31 v^2 N plus the pressure drag is 380 N at 10 m/s, two to three times the research's: it sets riding speed against the kite. |
-| `UBoardMovementComponent::FloatingDragAreaM2` / `FloatingDragFadeSpeedCmS` | 0.35 m^2 / 200 cm/s | a sitting rider and a sunk board | |
+| `UBoardMovementComponent::FloatingDragAreaM2` | 0.35 m^2 | 0.3 to 0.5 m^2 for a sitting rider and a sunk board | At any speed while sunk (phase 3; it faded out by 2 m/s before). |
+| `UBoardMovementComponent::FloatRiseTensionN` | 500 N (0.6 body weights) | the pull that lifts a rider onto the board in a water start | Phase 3. 0 makes the depth follow the speed alone, and the sunk rider's drag then holds them: the dived water start in 20 kn takes 7.5 s instead of 2.8. |
 | `UBoardMovementComponent::LandingAbsorbDistanceCm` / `CrouchAbsorbBonus` | 45 cm / 1.0 | 0.2 to 0.4 m of legs and immersion, plus the water's give | The crouch doubles it; the knobs for landing feel with `CrashLandingG`. |
 | `UBoardMovementComponent::CrashLandingG` | 10 g | measured landings 4.2 to 5.5 g | With 45 cm standing, a crash past 8.9 m/s of sink; crouched (90 cm), past 12.6 m/s. |
 | `UBoardMovementComponent::HotLandingSinkMS` / `HotLandingKiteElevationDeg` | 6 m/s / 45 deg | a descent of 3 to 6 m/s under a kite held overhead | The flag only; not a crash. |
@@ -255,6 +356,9 @@ towards. "Estimate" values in `research.md` are starting points, not requirement
 | `UBoardMovementComponent::RiderDragAreaM2` | 0.7 m^2 | 0.5 to 1.0 m^2 | |
 | `UWindComponent::ShearExponent` / `GustStrength` / `DirectionDriftDeg` | 0.11 / 0.3 / 5 deg | 0.11 +- 0.03; gust factor 1.23 at sea; 4 to 6 deg | |
 | `AKiteRiderPawn::SimStepSeconds` | 1/240 s | 1/240 s (1/120 would do) | |
+
+Removed in phase 3: `FloatingDragFadeSpeedCmS` (the floating drag stays at every speed; the pull lifts
+the rider instead, `FloatRiseTensionN`).
 
 Removed in phase 2: `BaseGripKgPerS`, `EdgeGripKgPerS`, `EdgeDriveEfficiency`, `TailWeightGripScale`,
 `LoadGripBonus`, `AutoHeelDeg`, `AutoHeelFullLoadN`, `TailWeightHeelDeg` (item 3: the force
@@ -301,7 +405,22 @@ and the 20 cm water-contact clamp (item 4).
 - **Research values not at their defaults:** `GravityTurnRadMPerS2` (2.4, research 6.28),
   `PopImpulseKgCmPerS` (2.5 m/s, research 1 to 2), the rail area and its tail scale (tuned for the
   jump), the planing drag (two to three times the research's).
-- **Deferred** (plan-2 item 5): compliant lines at the real stiffness (`MaxLineTensionN` stands in);
+- **The descent, after phase 3.** The redirect of plan-3 item 2 did not close it (Phase 3 above): with
+  the 6 m in 30 kn the best a redirect gave was 5.6 m/s of sink with the kite at 53 to 57 deg, or
+  7.2 m/s with it above 60, and none rode away faster than it touched down; in storms it made landings
+  harder. What would move it: the cost of a turn at the zenith (steering drag, the stall as the nose
+  swings), a redirect timed from the time to touchdown rather than height and sink, the kite size the
+  game recommends for 30 kn (6 m for 85 kg, the small end of what riders use), and a landing that does
+  not take 20% of a fast rider's speed.
+- **A strong pull on a floating rider is a water start.** Since phase 3 a pull of `FloatRiseTensionN`
+  lifts a floating rider onto the board, and the board then planes wherever the pull takes it: a kite
+  looped through the power zone with the bar in, relaunched into the middle of the window with the bar
+  in, or snatching tight, gets the rider up and riding downwind (in 25 kn 8.0 m/s and 21 m, 9.7 m/s and
+  34 m, 9.5 m/s and 26 m in 5 s; in 20 kn 7.2, 5.5 and 5.3 m/s). Not a throw (never in the air, no jerk,
+  slow through the water while sunk), but a real rider pulled that hard is often dragged over the front
+  instead; nothing models that.
+- **Deferred** (plan-2 item 5): compliant lines at the real stiffness (`MaxLineTensionN` stands in; the
+  phase 3 trace found no snatch impulse that would call for them);
   the world wind subsystem with water darkening; a relaunch that has to be flown; line sag in the
   visuals; rider rotation.
 - **Hitches.** With the defaults the frame clamp (0.1 s) binds before `MaxSimStepsPerFrame`, and

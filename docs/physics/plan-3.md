@@ -5,6 +5,14 @@ rules as `plan-2.md`; numbers reported against `main` at `b7f9ac6` (phase 2).
 
 ## 1. A crashed or floating rider is flung by the kite
 
+**Status: done with deviations** (`b4f95e6`, `035c6df`). The 30 m throw was the board's crash, not the
+floating rider: the crash branch never spent the line force, and 1.5 s of it came out in one step after
+the reset (`Physics.CrashedRiderIsNotFlung`). The floating changes are in as designed. The looped-kite
+target holds with the bar let go (3.7 m/s, 7.5 m in 25 kn); with the bar in the loop is a downloop water
+start that rides the rider away (8.0 m/s, 21 m), so the 15 m is not asserted for it. The snatch was not a
+cause: no line compliance. Re-based: `Gear.ChangesBehaviour` (the small board's depth) and
+`Physics.FloatingRiderIsSlowThroughTheWater` (the drift without the drag, as a ratio).
+
 **Report.** After a crash, with the rider in the water and the kite in a bad spot (deep in the
 window, or relaunching), the rider is thrown about 30 m.
 
@@ -44,6 +52,12 @@ window, or relaunching), the rider is thrown about 30 m.
   and the snatch case if it was a cause.
 
 ## 2. The descent: redirect before landing, and the kite kept flying
+
+**Status: not done; measured** (`CHANGELOG.md`, Phase 3). No design of the redirect met the targets
+together: the best sink was 5.6 m/s with the kite at 53 to 57 deg at touchdown, 7.2 m/s with it above 60;
+the ride-away was always slower than the touchdown; storm landings got harder. The kite stalls in the
+redirect's turn (21 to 23 deg), not in the hold; easing the trim keeps it flying but shrinks the burst.
+Nothing of it is in the code.
 
 **Problem** (phase 2 changelog). The timed 30 kn jump comes down at 8.2 m/s with the kite at
 55 deg; real descents are 3 to 6 m/s. In the last two seconds the sink speed tilts the apparent

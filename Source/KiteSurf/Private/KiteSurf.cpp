@@ -7,6 +7,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "KiteRiderPawn.h"
+#include "Tricks/TrickTrackerComponent.h"
 #include "WindComponent.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "UI/KiteSurfMainMenuWidget.h"
@@ -216,6 +217,31 @@ public:
 			ECVF_Default
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
+			TEXT("kitesurf.Jumps"),
+			TEXT("Logs the player's jump records this session as CSV: index, outcome, name, height m, airtime s, distance m, landing g, peak line tension N, completed loops, points."),
+			FConsoleCommandDelegate::CreateLambda([]()
+			{
+				AKiteRiderPawn* Rider = FindPlayerRider();
+				const UTrickTrackerComponent* Tracker = Rider ? Rider->GetTrickTracker() : nullptr;
+				if (!Tracker)
+				{
+					UE_LOG(LogKiteSurf, Warning, TEXT("kitesurf.Jumps: no rider with a trick tracker"));
+					return;
+				}
+				UE_LOG(LogKiteSurf, Display, TEXT("jumpcsv,index,outcome,name,height_m,airtime_s,distance_m,landing_g,peak_n,loops,score"));
+				for (const FJumpRecord& Record : Tracker->GetJumpRecords())
+				{
+					UE_LOG(LogKiteSurf, Display, TEXT("jumpcsv,%d,%s,\"%s\",%.2f,%.2f,%.1f,%.2f,%.0f,%d,%.1f"),
+						Record.Index, Record.Outcome == EJumpOutcome::Landed ? TEXT("Landed") : TEXT("Crashed"), *Record.TrickName,
+						KiteUnits::CmToM(Record.ApexHeightCm), Record.AirtimeSeconds, KiteUnits::CmToM(Record.DistanceCm), Record.LandingG,
+						Record.PeakTensionN, Record.CountCompletedLoops(), Record.Score.Total * Record.RepeatFactor);
+				}
+				UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Jumps: %d jumps recorded, %d kept, %.1f points this session"),
+					Tracker->GetJumpRecordCount(), Tracker->GetJumpRecords().Num(), Tracker->GetJumpSession().GetSessionPoints());
+			}),
+			ECVF_Default
+		);
+		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.MenuKey"),
 			TEXT("Sends a key press through the UI, as the keyboard or gamepad would. Usage: kitesurf.MenuKey <Up|Down|Left|Right|Enter|Gamepad_DPad_Down|...>"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -294,6 +320,7 @@ public:
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.MenuKey"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Input"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jump"));
+		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Jumps"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Load"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.Shot"));
 		IConsoleManager::Get().UnregisterConsoleObject(TEXT("kitesurf.CaptureFrames"));

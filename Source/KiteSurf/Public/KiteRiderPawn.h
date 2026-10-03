@@ -17,6 +17,7 @@ class UBoardMovementComponent;
 class UBoardWakeComponent;
 class UWindStreakComponent;
 class UKiteComponent;
+class UTrickTrackerComponent;
 class UInputMappingContext;
 class UInputAction;
 class UAudioComponent;
@@ -148,6 +149,8 @@ public:
 	UBoardWakeComponent* GetWake() const { return Wake.Get(); }
 	UWindStreakComponent* GetWindStreaks() const { return WindStreaks.Get(); }
 	UWindComponent* GetWind() const { return Wind.Get(); }
+	/** Names, grades and scores the rider's jumps; stepped after the board in StepSimulation. */
+	UTrickTrackerComponent* GetTrickTracker() const { return TrickTracker.Get(); }
 	UStaticMeshComponent* GetControlBarMesh() const { return ControlBarMesh.Get(); }
 
 	/**
@@ -478,6 +481,10 @@ protected:
 	/** Wind lines on the water round the rider: how the wind's direction is read off the sea. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWindStreakComponent> WindStreaks;
+
+	/** Follows the jumps by polling the board and the kite: jump records, trick names and scores. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<UTrickTrackerComponent> TrickTracker;
 
 	// Sound: loops that play all the time and are faded and pitched by UpdateAudioModulation
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")

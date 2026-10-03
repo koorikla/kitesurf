@@ -69,6 +69,30 @@ Upon re-entering the water surface ($v_z \le 0$ and $z \le z_{\text{water}} + 10
 
 The yaw is folded to 0..90°, so a switch landing (tail first) grades the same as a forward one. Each verdict carries a cause for the failure message: under- or over-rotated (tilt past 50°, by the direction of the spin), sideways, inverted, kite too low, too hard, board not caught, bar lost, pass not finished. Today any yaw over 30° crashes; with the table, 30 to 75° will be clean or sketchy, and the 90° of `KiteSurf.Jump.CrashRecovery` still crashes.
 
+## Jump record and trick card
+`UTrickTrackerComponent` (`Tricks/TrickTrackerComponent.h`, on the pawn as `GetTrickTracker()`) turns every jump into an `FJumpRecord` with a name, a grade and a score (docs/tricks/T0.md sections 4 and 6). It does not tick: `AKiteRiderPawn::StepSimulation` calls `StepTracker` once per fixed step, right after the board. It reads only public getters of the board and the kite, so it works in tests where no delegate is bound:
+
+- **Take-off**: the board entering `Airborne`. The take-off time is the board time less `GetCurrentJumpAirtime()`. It counts as **popped** when the board already has airtime on the first step in the air: a pop (the jump key, or letting go of the load) leaves the water between steps, a kite lift-off inside one. This is an inference until the board exposes `WasLastTakeoffPopped` (physics phase 2).
+- **Apex**: the board's `GetLastJumpApexHeight()`, at the time of the step the board was seen highest.
+- **Airtime and distance**: the board's `GetLastJumpAirtime()` and `GetLastJumpDistance()`.
+- **Landing g**: 1 + v²/(2 g s) (`LandingMath::ComputeLandingG`) with v the last airborne step's sink rate and s = `LandingAbsorbDistanceCm` (30 cm, an estimate). This replaces the board's `|Vz| / g` in the record only; the board's haptics, sound and splash still use their own. Today's 13 m send-and-pop sinks at about 14.6 m/s, about 37 g, so big landings grade **Sketchy** until physics phase 2 slows the descent. The landing yaw is not exposed by the board, so it is recorded as 0.
+- **Kite loops**: an `FKiteLoopTracker` stepped with the kite's heading turn each step: the signed angle between successive `GetKiteHeading()` values about the line from the rider to the kite (positive to the kite's right, the sign of `GetTurnDeg`). In the tests it agrees with the kite's own turn count to within 1%. A heading jump over 45° in one step, or a reset, cancels the open run. T0.3's kite hookup replaces this with the kite's own per-step turn.
+- **The record**: `FJumpRecorder` finalises it when the board's jump count goes up, landed or crashed; a skip or a reset drops it. The loops are those overlapping take-off to landing, plus an open run of 180° or more. `FJumpSession` applies the repeat factor (a landed family pays 1, 0.75, 0.5, ...), keeps the last 200 records and the session's points.
+- **The trick book**: each finished record goes to `UKiteSurfGameInstance::RecordTrickLanding` when the game has that game instance; the book is saved with the settings, not here.
+
+`GetLiveJump()` is the jump in progress (take-off facts, height and airtime so far) with the loops flown since the take-off.
+
+The HUD shows a **trick card** under the jump readout after every jump of a metre or more, for four seconds:
+
+```
+Kiteloop  SKETCHY  8 pts
+26.5 g landing
+```
+
+The first line is in the grade's colour: STOMPED green, CLEAN white, SKETCHY amber, CRASH red. The points are what the session paid (`Score.Total x RepeatFactor`); a repeat adds `(repeat 75%)`. While a jump is in the air and has something to name, today a completed kite loop, a **ticker** names it live in the same place ("Kiteloop", then "Double kiteloop"). Landing replaces it with the card.
+
+`kitesurf.Jumps` logs the session as CSV lines tagged `jumpcsv` in `LogKiteSurf`: index, outcome, name, height (m), airtime (s), distance (m), landing g, peak line tension (N), completed loops, points. `grep -o 'jumpcsv,.*' Saved/Logs/KiteSurf.log | cut -d, -f2-` gives the CSV.
+
 ## Rider rotation (not yet wired)
 
 `URiderAttitudeComponent` (`Source/KiteSurf/Public/Tricks/`) is the rider's rotation in the air for tricks (T1.2 in `docs/tricks.md`). **The pawn does not step it yet**: the air orientation in the game is still `AirSpinRate` and the auto-align above. Wiring it into `StepSimulation`, after the line force and before `StepBoard`, comes in a later change. Until then it runs only in the `KiteSurf.Trick.*` tests.
@@ -138,4 +162,5 @@ Exposed in `UBoardMovementComponent` under `UPROPERTY(EditAnywhere, BlueprintRea
 `AKiteSurfHUD` renders:
 - Current board state: `Displacement`, `Planing`, `Airborne (<height>m)`, or `Landing (Clean/Crash!)`.
 - Jump stats in the telemetry: best height and distance, and the last jump's.
+- The trick card under the readout after a jump, and the trick ticker while a named element is in the air (see Jump record and trick card).
 - The jump readout, top centre: `12.4 m high   35 m far   2.1 s` while the rider is more than a metre up, then `JUMP  14.8 m high   62 m far   4.1 s` for four seconds after it ends, in gold with NEW BEST when it beat the session's best height (`UpdateJumpReadout`). Hops under a metre are not announced.

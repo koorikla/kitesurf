@@ -1,6 +1,7 @@
 #include "UI/KiteSurfMainMenuWidget.h"
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
+#include "UI/KiteSurfSchoolWidget.h"
 #include "UI/KiteSurfMenuStyle.h"
 #include "UI/KiteSurfMenuVideo.h"
 #include "Widgets/Images/SImage.h"
@@ -200,6 +201,27 @@ TSharedRef<SWidget> UKiteSurfMainMenuWidget::RebuildWidget()
 						.Margin(FMargin(10.0f, 8.0f))
 					]
 				]
+				// School Button
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(30.0f, 8.0f)
+				[
+					SAssignNew(SlateSchoolButton, SButton)
+					.IsFocusable(false)
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						OnSchoolClicked();
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(TEXT("SCHOOL")))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
+						.Margin(FMargin(10.0f, 8.0f))
+					]
+				]
 				// Settings Button
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -353,6 +375,46 @@ void UKiteSurfMainMenuWidget::OnGearCancelled()
 	FocusFirst();
 }
 
+void UKiteSurfMainMenuWidget::OnSchoolClicked()
+{
+	UWorld* World = GetWorld();
+	if (!World || ActiveSchoolWidget)
+	{
+		return;
+	}
+	ActiveSchoolWidget = CreateWidget<UKiteSurfSchoolWidget>(World, UKiteSurfSchoolWidget::StaticClass());
+	if (ActiveSchoolWidget)
+	{
+		ActiveSchoolWidget->OnClosedDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::OnSchoolClosed);
+		ActiveSchoolWidget->OnLessonStartedDelegate.AddDynamic(this, &UKiteSurfMainMenuWidget::OnSchoolLessonStarted);
+		if (World->GetGameViewport() != nullptr)
+		{
+			ActiveSchoolWidget->AddToViewport(20);
+		}
+		ActiveSchoolWidget->FocusFirst();
+		// One screen at a time: the menu comes back when the lesson menu closes.
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UKiteSurfMainMenuWidget::OnSchoolClosed()
+{
+	ActiveSchoolWidget = nullptr;
+	SetVisibility(ESlateVisibility::Visible);
+	FocusFirst();
+}
+
+void UKiteSurfMainMenuWidget::OnSchoolLessonStarted(FName LessonId)
+{
+	// ULessonSubsystem::StartLesson has opened the lesson's map (L_FlatWater); the lesson starts
+	// when the rider spawns there.
+	ActiveSchoolWidget = nullptr;
+	if (UKiteSurfMenuVideoSubsystem* Videos = GetVideos())
+	{
+		Videos->PrepareLoadingScreen();
+	}
+}
+
 void UKiteSurfMainMenuWidget::OnSettingsClicked()
 {
 	UWorld* World = GetWorld();
@@ -422,6 +484,7 @@ void UKiteSurfMainMenuWidget::BuildNavigation()
 		KiteSurfMenuStyle::PlayMenuSound(this, Action == FKiteMenuNavigator::EAction::Activated ? EKiteMenuSound::Select : EKiteMenuSound::Move);
 	};
 	Navigator.AddButton(SlatePlayButton, [this]() { OnPlayClicked(); });
+	Navigator.AddButton(SlateSchoolButton, [this]() { OnSchoolClicked(); });
 	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
 	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });
 }

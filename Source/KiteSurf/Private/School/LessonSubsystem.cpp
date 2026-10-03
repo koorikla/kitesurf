@@ -8,6 +8,11 @@
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "KiteRiderPawn.h"
+#include "KiteSurfHUD.h"
+#include "UI/KiteSurfMainMenuGameMode.h"
+#include "UI/KiteSurfMainMenuWidget.h"
+#include "UI/KiteSurfPauseMenuWidget.h"
+#include "UI/KiteSurfSchoolWidget.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfSaveGame.h"
 
@@ -88,15 +93,20 @@ void ULessonSubsystem::ResetProgress()
 
 bool ULessonSubsystem::StartLesson(FName LessonId)
 {
-	return StartLessonChecked(LessonId, true);
+	return StartLessonChecked(LessonId, true, FLessonRunOptions());
+}
+
+bool ULessonSubsystem::StartLessonWithOptions(FName LessonId, const FLessonRunOptions& Options)
+{
+	return StartLessonChecked(LessonId, true, Options);
 }
 
 bool ULessonSubsystem::StartLessonIgnoringPrerequisites(FName LessonId)
 {
-	return StartLessonChecked(LessonId, false);
+	return StartLessonChecked(LessonId, false, FLessonRunOptions());
 }
 
-bool ULessonSubsystem::StartLessonChecked(FName LessonId, bool bCheckPrerequisites)
+bool ULessonSubsystem::StartLessonChecked(FName LessonId, bool bCheckPrerequisites, const FLessonRunOptions& Options)
 {
 	const FLessonDef* Lesson = LessonCatalog::Find(LessonId);
 	if (!Lesson)
@@ -115,6 +125,7 @@ bool ULessonSubsystem::StartLessonChecked(FName LessonId, bool bCheckPrerequisit
 		return false;
 	}
 	PendingLessonId = LessonId;
+	PendingRunOptions = Options;
 
 	UGameInstance* GameInstance = GetGameInstance();
 	UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
@@ -148,8 +159,70 @@ ALessonDirector* ULessonSubsystem::StartPendingLesson(APawn* Rider)
 	{
 		return nullptr;
 	}
-	PendingLessonId = NAME_None;
-	return ALessonDirector::StartInWorld(Rider->GetWorld(), *Lesson, Rider);
+	const FLessonRunOptions Options = PendingRunOptions;
+	ClearPendingLesson();
+	return ALessonDirector::StartInWorld(Rider->GetWorld(), *Lesson, Rider, Options);
+}
+
+void ULessonSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	// The lesson menu answers the result card's "Lesson menu" (RequestLessonMenu, S4).
+	OnLessonMenuRequested.AddUObject(this, &ULessonSubsystem::OpenLessonMenuForRequest);
+}
+
+void ULessonSubsystem::OpenLessonMenuForRequest()
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	const bool bOpened = OpenLessonMenuInWorld(World) != nullptr;
+	UE_LOG(LogKiteSchool, Log, TEXT("Lesson menu requested: %s"), bOpened ? TEXT("opened") : TEXT("no menu or ride to open it in"));
+}
+
+UKiteSurfSchoolWidget* ULessonSubsystem::OpenLessonMenuInWorld(UWorld* World)
+{
+	if (!World)
+	{
+		return nullptr;
+	}
+	// The main menu level: the lesson menu replaces the main menu, as the gear screen does.
+	if (const AKiteSurfMainMenuGameMode* MenuMode = World->GetAuthGameMode<AKiteSurfMainMenuGameMode>())
+	{
+		if (UKiteSurfMainMenuWidget* MainMenu = Cast<UKiteSurfMainMenuWidget>(MenuMode->ActiveMainMenuWidget))
+		{
+			MainMenu->OnSchoolClicked();
+			return MainMenu->ActiveSchoolWidget;
+		}
+		return nullptr;
+	}
+	// A ride: pause it with the pause menu, then open the lesson menu from there.
+	APlayerController* PC = World->GetFirstPlayerController();
+	AKiteSurfHUD* HUD = PC ? Cast<AKiteSurfHUD>(PC->GetHUD()) : nullptr;
+	if (!HUD)
+	{
+		// A world whose actors were never initialised for play keeps no controller list.
+		TActorIterator<AKiteSurfHUD> It(World);
+		HUD = It ? *It : nullptr;
+	}
+	if (!HUD)
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("OpenLessonMenuInWorld: no main menu and no ride HUD in %s"), *World->GetName());
+		return nullptr;
+	}
+	// The HUD keeps its pointer after the pause menu resumes the ride by itself, so a menu that is
+	// not up (the ride running, or the widget gone from the viewport) is opened afresh.
+	const UKiteSurfPauseMenuWidget* Open = HUD->GetActivePauseMenuWidget();
+	if (!Open || !UGameplayStatics::IsGamePaused(World) || (World->GetGameViewport() && !Open->IsInViewport()))
+	{
+		HUD->ShowPauseMenu();
+	}
+	UKiteSurfPauseMenuWidget* PauseMenu = HUD->GetActivePauseMenuWidget();
+	if (!PauseMenu)
+	{
+		return nullptr;
+	}
+	PauseMenu->OnSchoolClicked();
+	return PauseMenu->ActiveSchoolWidget;
 }
 
 namespace LessonSubsystemPrivate
@@ -251,6 +324,37 @@ namespace LessonSubsystemPrivate
 				return;
 			}
 			UE_LOG(LogKiteSchool, Display, TEXT("kitesurf.LessonAction %s: %s"), *Action, bDone ? TEXT("done") : TEXT("not possible now"));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs LessonResultCommand(
+		TEXT("kitesurf.LessonResult"),
+		TEXT("Records a finished lesson attempt as if it had been played (ULessonSubsystem::RecordLessonResult), for checking the lesson menu: 1 to 3 stars is a pass, 0 a failed attempt. Writes the save. Usage: kitesurf.LessonResult <Id> <stars 0-3>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			UKiteSurfGameInstance* GI = FindPlayedGameInstance(World);
+			ULessonSubsystem* Lessons = GI ? GI->GetSubsystem<ULessonSubsystem>() : nullptr;
+			if (!Lessons || !Args.IsValidIndex(1))
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("Usage: kitesurf.LessonResult <Id> <stars 0-3> (in a running game)"));
+				return;
+			}
+			const FName Id(*Args[0].ToUpper());
+			const int32 Stars = FMath::Clamp(FCString::Atoi(*Args[1]), 0, FLessonProgressBook::MaxStars);
+			Lessons->RecordLessonResult(Id, Stars > 0, Stars, NAN, Stars == FLessonProgressBook::MaxStars);
+			UE_LOG(LogKiteSchool, Display, TEXT("kitesurf.LessonResult %s: %s, best stars now %d"), *Id.ToString(),
+				Stars > 0 ? TEXT("pass") : TEXT("failed attempt"), Lessons->GetProgress().GetStars(Id));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs OpenSchoolCommand(
+		TEXT("kitesurf.OpenSchool"),
+		TEXT("Opens the lesson menu (ULessonSubsystem::OpenLessonMenuInWorld): over the main menu, or over the paused ride."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World)
+		{
+			UKiteSurfGameInstance* GI = FindPlayedGameInstance(World);
+			if (!ULessonSubsystem::OpenLessonMenuInWorld(GI ? GI->GetWorld() : nullptr))
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("kitesurf.OpenSchool: no menu or ride to open the lesson menu in"));
+			}
 		}));
 }
 

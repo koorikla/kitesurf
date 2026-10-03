@@ -592,16 +592,17 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         return false;
     }
 
-    // Main menu: PLAY, SETTINGS, QUIT.
+    // Main menu: PLAY, SCHOOL, SETTINGS, QUIT.
     UKiteSurfMainMenuWidget* MainMenu = CreateWidget<UKiteSurfMainMenuWidget>(World, UKiteSurfMainMenuWidget::StaticClass());
     if (MainMenu)
     {
         FKiteMenuNavigator& Navigator = MainMenu->GetNavigator();
-        TestEqual(TEXT("The main menu has three items"), Navigator.Num(), 3);
+        TestEqual(TEXT("The main menu has four items"), Navigator.Num(), 4);
         TestEqual(TEXT("and opens on PLAY"), Navigator.GetSelected(), 0);
         Navigator.HandleKey(EKeys::Down);
+        Navigator.HandleKey(EKeys::Down);
         Navigator.HandleKey(EKeys::Enter);
-        TestNotNull(TEXT("Down then accept opens settings"), MainMenu->ActiveSettingsWidget.Get());
+        TestNotNull(TEXT("Down twice then accept opens settings"), MainMenu->ActiveSettingsWidget.Get());
         MainMenu->OnSettingsClosed();
         TestEqual(TEXT("Back on the menu the selection is PLAY again"), MainMenu->GetNavigator().GetSelected(), 0);
         MainMenu->GetNavigator().HandleKey(EKeys::Gamepad_FaceButton_Bottom);
@@ -612,12 +613,12 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         }
     }
 
-    // Pause menu: RESUME, RESTART, GEAR, BEST-THREE SESSION, SETTINGS, MAIN MENU, QUIT.
+    // Pause menu in free ride: RESUME, RESTART, GEAR, BEST-THREE SESSION, SCHOOL, SETTINGS, MAIN MENU, QUIT.
     UKiteSurfPauseMenuWidget* PauseMenu = CreateWidget<UKiteSurfPauseMenuWidget>(World, UKiteSurfPauseMenuWidget::StaticClass());
     if (PauseMenu)
     {
         FKiteMenuNavigator& Navigator = PauseMenu->GetNavigator();
-        TestEqual(TEXT("The pause menu has seven items"), Navigator.Num(), 7);
+        TestEqual(TEXT("The pause menu has eight items"), Navigator.Num(), 8);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);

@@ -3,11 +3,13 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "School/LessonProgress.h"
+#include "School/LessonDirector.h"
 #include "LessonSubsystem.generated.h"
 
 class UKiteSurfSaveGame;
 class ALessonDirector;
 class APawn;
+class UKiteSurfSchoolWidget;
 
 /** The kite school's log: lesson starts, the director's state changes, results. */
 KITESURF_API DECLARE_LOG_CATEGORY_EXTERN(LogKiteSchool, Log, All);
@@ -68,6 +70,9 @@ class KITESURF_API ULessonSubsystem : public UGameInstanceSubsystem
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
+	/** Binds OnLessonMenuRequested to the lesson menu (OpenLessonMenuInWorld in the game instance's world). */
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
 	const FLessonProgressBook& GetProgress() const { return Progress; }
 
 	/**
@@ -116,6 +121,23 @@ public:
 	bool StartLesson(FName LessonId);
 
 	/**
+	 * StartLesson with options for the run: the lesson menu's rerun choices (more wind, fewer
+	 * assists). The options travel with the pending lesson and reach the director; a refused start
+	 * keeps nothing.
+	 */
+	bool StartLessonWithOptions(FName LessonId, const FLessonRunOptions& Options);
+
+	/** The options the pending lesson will run with (defaults when nothing is pending). */
+	const FLessonRunOptions& GetPendingRunOptions() const { return PendingRunOptions; }
+
+	/**
+	 * Opens the lesson menu (S5) in a world: over the main menu, or during a ride over the paused game
+	 * (the pause menu is opened first, and closing the lesson menu goes back to it). The lesson menu it
+	 * opened, or null when the world has neither. What OnLessonMenuRequested does (bound in Initialize).
+	 */
+	static UKiteSurfSchoolWidget* OpenLessonMenuInWorld(UWorld* World);
+
+	/**
 	 * StartLesson without the prerequisite check, for the kitesurf.Lesson console command's "force"
 	 * (testing and -game checks). A lesson whose feature is not built still cannot start.
 	 */
@@ -127,7 +149,7 @@ public:
 
 	/** Forgets the pending lesson. */
 	UFUNCTION(BlueprintCallable, Category = "School")
-	void ClearPendingLesson() { PendingLessonId = NAME_None; }
+	void ClearPendingLesson() { PendingLessonId = NAME_None; PendingRunOptions = FLessonRunOptions(); }
 
 	/**
 	 * Starts the pending lesson on this rider (ALessonDirector::StartInWorld in the rider's world)
@@ -144,7 +166,7 @@ public:
 	 */
 	bool RequestLessonMenu();
 
-	/** Bound by the School menu (S5); see RequestLessonMenu. */
+	/** Bound by the School menu (S5) in Initialize: it opens the lesson menu; see RequestLessonMenu. */
 	FOnLessonMenuRequested OnLessonMenuRequested;
 
 	/** Whether StartLesson may open a map (on by default). Tests switch it off. */
@@ -162,10 +184,13 @@ public:
 
 private:
 	void SaveProgress();
-	bool StartLessonChecked(FName LessonId, bool bCheckPrerequisites);
+	/** OnLessonMenuRequested's handler: the lesson menu in the game instance's world. */
+	void OpenLessonMenuForRequest();
+	bool StartLessonChecked(FName LessonId, bool bCheckPrerequisites, const FLessonRunOptions& Options);
 
 	FLessonProgressBook Progress;
 	bool bWriteToDisk = true;
 	bool bTravelEnabled = true;
 	FName PendingLessonId;
+	FLessonRunOptions PendingRunOptions;
 };

@@ -680,8 +680,9 @@ bool FKiteSurfTrickSlavedOnWaterAndStrappedBoard::RunTest(const FString& Paramet
 	const FQuat Canonical = URiderAttitudeComponent::MakeCanonicalStrapOffset(-1.0f);
 	TestTrue(TEXT("In the air the board settles flat under the feet (< 0.5 deg)"),
 		FMath::RadiansToDegrees(A->GetStrapOffset().AngularDistance(Canonical)) < 0.5);
-	TestTrue(TEXT("Board quat is body times strap offset"),
-		A->GetBoardQuat().AngularDistance(A->GetBodyQuat() * A->GetStrapOffset()) < 1.0e-5);
+	// 1e-4 rad: arm64 fuses multiply-adds, which leaves the product ~3e-5 rad off there.
+	const double BoardRad = A->GetBoardQuat().AngularDistance(A->GetBodyQuat() * A->GetStrapOffset());
+	TestTrue(FString::Printf(TEXT("Board quat is body times strap offset (%.3g rad apart)"), BoardRad), BoardRad < 1.0e-4);
 	TestTrue(TEXT("The board's nose lies along -Right (stance side +1)"),
 		(A->GetBoardQuat().GetAxisX() | -A->GetBodyQuat().GetAxisY()) > 0.999);
 	TestTrue(TEXT("Visual centre of mass settles straight above the board"),

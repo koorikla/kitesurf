@@ -6,5 +6,5 @@ source "$SCRIPT_DIR/common.sh"
 
 CONFIG="${1:-Development}"
 
-echo "=== Building KiteSurfEditor Linux $CONFIG ==="
-"$UE_BUILD" KiteSurfEditor Linux "$CONFIG" -Project="$UPROJECT" -WaitMutex -FromMsBuild "${@:2}"
+echo "=== Building KiteSurfEditor $UE_HOST_PLATFORM $CONFIG ==="
+"$UE_BUILD" KiteSurfEditor "$UE_HOST_PLATFORM" "$CONFIG" -Project="$UPROJECT" -WaitMutex -FromMsBuild "${@:2}"

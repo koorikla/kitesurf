@@ -381,7 +381,8 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Pressed again in the air: the hand reaches"), State.IsReaching());
 	}
 
-	// Both buttons are the board-off's chord (T2.3): not a double grab.
+	// Both buttons are the board-off's chord (T2.3): not a double grab. The board comes off instead
+	// (KiteSurf.Trick.BoardOff*).
 	{
 		FGrabState State;
 		FGrabStateInput In;
@@ -393,8 +394,9 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 		{
 			State.Step(In, 1.0f / 240.0f);
 		}
-		TestFalse(TEXT("Both pressed together: no hand leaves the bar"), State.IsHandOffBar());
+		TestFalse(TEXT("Both pressed together: no hand grabs"), State.IsHandOffBar());
 		TestEqual(TEXT("and nothing is logged"), State.GetGrabs().Num(), 0);
+		TestTrue(TEXT("the board-off holds the board instead"), State.GetBoardOff().IsHeld());
 
 		FGrabState Second;
 		FGrabStateInput In2;
@@ -410,8 +412,14 @@ bool FKiteSurfTrickGrabHoldCounts::RunTest(const FString& Parameters)
 		{
 			Second.Step(In2, 1.0f / 240.0f);
 		}
-		TestTrue(TEXT("The back hand grabbing, front pressed too: still only the back hand"), Second.IsHolding() && Second.GetHand() == ETrickHand::Back);
+		TestFalse(TEXT("The back hand grabbing, front pressed too: the grab ends"), Second.IsHolding() || Second.IsReaching());
+		TestTrue(TEXT("and the board-off takes over"), Second.GetBoardOff().IsBoardOff());
 		TestEqual(TEXT("one grab, not two"), Second.GetGrabs().Num(), 1);
+		if (Second.GetGrabs().Num() == 1)
+		{
+			TestEqual(TEXT("the back hand's, logged with its hold"), Second.GetGrabs()[0].Hand, ETrickHand::Back);
+			TestNearlyEqual(TEXT("held from the reach to the chord (s)"), Second.GetGrabs()[0].HoldSeconds, 0.3f, 0.01f);
+		}
 	}
 
 	// The grab tucks the body: its zone's tuck once the hand is there, nothing on the bar.

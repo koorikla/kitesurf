@@ -9,7 +9,9 @@ namespace GrabStateLocal
 void FGrabState::Reset()
 {
 	const FGrabStateTuning Kept = Tuning;
+	const FBoardOffTuning KeptBoardOff = BoardOff.Tuning;
 	*this = FGrabState(Kept);
+	BoardOff.Tuning = KeptBoardOff;
 }
 
 ETrickGrabZone FGrabState::ResolveZone(const FVector2D& ZoneStick, float Deadzone)
@@ -67,7 +69,8 @@ float FGrabState::GetPrevReachWeight() const
 
 float FGrabState::GetTuckTarget() const
 {
-	return Phase == EPhase::OnBar ? 0.0f : TuckForZone(Zone) * GetReachWeight();
+	const float GrabTuck = Phase == EPhase::OnBar ? 0.0f : TuckForZone(Zone) * GetReachWeight();
+	return FMath::Max(GrabTuck, BoardOff.GetTuckTarget());
 }
 
 EFootStrapState FGrabState::GetFootAtTouchdown() const
@@ -131,20 +134,28 @@ void FGrabState::Step(const FGrabStateInput& In, float Dt)
 	bWasAirborne = In.bAirborne;
 	bZoneStickActive = In.bAirborne && (In.bFront || In.bBack);
 
+	// The board-off (T2.3): both buttons held, made this step by a fresh press of either.
+	FBoardOffInput BoardOffIn;
+	BoardOffIn.bChord = In.bFront && In.bBack;
+	BoardOffIn.bChordPressed = BoardOffIn.bChord && (bFrontPressed || bBackPressed);
+	BoardOffIn.bAirborne = In.bAirborne;
+	BoardOffIn.Stick = In.ZoneStick;
+	BoardOff.Step(BoardOffIn, Dt);
+
 	const bool bHolding = Phase == EPhase::Reaching || Phase == EPhase::Holding;
 	if (bHolding)
 	{
-		// The grab lasts as long as its own button is held in the air.
+		// The grab lasts as long as its own button is held in the air, and until the board comes off.
 		const bool bOwnHeld = Hand == ETrickHand::Front ? In.bFront : In.bBack;
-		if (!In.bAirborne || !bOwnHeld)
+		if (!In.bAirborne || !bOwnHeld || BoardOff.IsBoardOff())
 		{
 			EndGrab();
 		}
 	}
-	else if (In.bAirborne)
+	else if (In.bAirborne && !BoardOff.IsBoardOff())
 	{
 		// One hand at a time. A press with the other button held, or both at once, is the board-off's
-		// chord (T2.3) and starts nothing yet.
+		// chord (above), not a grab.
 		if (bFrontPressed && !In.bBack)
 		{
 			StartReach(ETrickHand::Front, In.ZoneStick);

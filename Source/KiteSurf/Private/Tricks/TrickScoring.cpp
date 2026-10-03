@@ -105,9 +105,13 @@ FTrickScore TrickScoring::ScoreJump(const FJumpRecord& Record, const FTrickSigna
 	{
 		Technicality += Settings.OneFooter;
 	}
-	if (Signature.BoardOff != ETrickBoardOff::None)
+	switch (Signature.BoardOff)
 	{
-		Technicality += Settings.BoardOff;
+	case ETrickBoardOff::None:      break;
+	case ETrickBoardOff::Superman:  Technicality += Settings.BoardOffSuperman; break;
+	case ETrickBoardOff::TicTac:    Technicality += Settings.BoardOffTicTac; break;
+	case ETrickBoardOff::BoardPass: Technicality += Settings.BoardOffPass; break;
+	default:                        Technicality += Settings.BoardOff; break;
 	}
 	if (!Signature.bHooked)
 	{

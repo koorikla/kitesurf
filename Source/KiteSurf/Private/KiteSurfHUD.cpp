@@ -240,6 +240,7 @@ FString AKiteSurfHUD::LandingCauseLine(ELandingCause Cause)
 	case ELandingCause::BoardNotAligned: return TEXT("Board not lined up with the feet");
 	case ELandingCause::FootOutOfStrap:  return TEXT("Back foot still out of the strap");
 	case ELandingCause::FootLate:        return TEXT("Back foot back in too late");
+	case ELandingCause::BoardCaughtLate: return TEXT("Board caught late: let go sooner");
 	case ELandingCause::None:
 	default:                             return FString();
 	}

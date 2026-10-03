@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Tricks/BoardOffState.h"
 #include "Tricks/TrickSignature.h"
 #include "Tricks/TrickTypes.h"
 
@@ -54,9 +55,10 @@ struct FGrabStateInput
  * sends that hand to the board: it reaches for ReachSeconds, sampling the zone stick (the strongest
  * push during the reach picks the zone), and when it gets there the zone is latched and the hold
  * starts. Letting go ends the grab (logged with its hold) and the hand goes back to the bar over
- * ReturnSeconds. Both buttons together are kept for the board-off (T2.3): a press while the other
- * button is held does nothing, and pressing both at once starts nothing. On the water nothing
- * starts, and a hand on the board goes back to the bar (a landing ends the grab).
+ * ReturnSeconds. Both buttons together are the board-off's chord (T2.3, FBoardOffState, stepped
+ * here): pressing both at once, or one while the other is held, takes the board off the feet; a grab
+ * in progress ends (logged with its hold so far) and no grab starts while the board is off the feet.
+ * On the water nothing starts, and a hand on the board goes back to the bar (a landing ends the grab).
  *
  * The one-footer: in the air, held, the back foot comes out of its strap over FootOutSeconds and goes
  * back over FootReturnSeconds when let go (and on the water). GetFootAtTouchdown is what a landing
@@ -97,8 +99,12 @@ public:
 	/** The hand reached its socket on the last step (for a haptic). */
 	bool DidHandArriveThisStep() const { return bArrivedThisStep; }
 
-	/** The tuck the grab asks of the body, 0..1: the zone's tuck times the reach weight (TuckForZone). */
+	/** The tuck the hands ask of the body, 0..1: the grab's (its zone's tuck times the reach weight, TuckForZone) or the board-off's, whichever is more. */
 	float GetTuckTarget() const;
+
+	/** The board-off (T2.3): the chord of the two grab buttons, stepped with the grabs. */
+	const FBoardOffState& GetBoardOff() const { return BoardOff; }
+	FBoardOffState& GetBoardOff() { return BoardOff; }
 
 	/** The back foot, 0 in its strap .. 1 fully out (linear in time). */
 	float GetFootOut() const { return FootOut; }
@@ -157,4 +163,6 @@ private:
 	bool bBackWasHeld = false;
 
 	TArray<FTrickGrab> Grabs;
+
+	FBoardOffState BoardOff;
 };

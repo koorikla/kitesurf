@@ -132,7 +132,7 @@ public:
 		);
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.Trick"),
-			TEXT("Holds the trick buttons on the player's rider (T2.1, T2.2), scripted: the grabs (LB/Q front hand, RB/E back hand) and the one-footer (L3/C), with the grab zone stick in rotation axes (X -1 the toe edge, +1 the heel edge; Y +1 the nose, -1 the tail; centred: the toe edge). In the air only. Usage: kitesurf.Trick <Front 0|1> <Back 0|1> <OneFoot 0|1> [<ZoneX -1..1> <ZoneY -1..1>]"),
+			TEXT("Holds the trick buttons on the player's rider (T2.1, T2.2), scripted: the grabs (LB/Q front hand, RB/E back hand) and the one-footer (L3/C), with the grab zone stick in rotation axes (X -1 the toe edge, +1 the heel edge; Y +1 the nose, -1 the tail; centred: the toe edge). Both grab buttons are the board-off (T2.3), whose variant the same stick picks (Y +1 superman, -1 tic tac, X board pass, centred plain); setting either back to 0 catches the board. In the air only. Usage: kitesurf.Trick <Front 0|1> <Back 0|1> <OneFoot 0|1> [<ZoneX -1..1> <ZoneY -1..1>]"),
 			FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 			{
 				auto Arg = [&Args](int32 Index) { return Args.IsValidIndex(Index) ? FCString::Atof(*Args[Index]) : 0.0f; };
@@ -142,10 +142,12 @@ public:
 					{
 						It->SetTrickInput(Arg(0) > 0.5f, Arg(1) > 0.5f, Arg(2) > 0.5f, FVector2D(Arg(3), Arg(4)));
 						const FGrabState& Grabs = It->GetGrabState();
-						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Trick front %d back %d one-foot %d zone (%.2f, %.2f): hand off the bar %d (%s, %s), holding %d for %.2f s, foot out %.2f, %d grab(s) this flight"),
+						UE_LOG(LogKiteSurf, Display, TEXT("kitesurf.Trick front %d back %d one-foot %d zone (%.2f, %.2f): hand off the bar %d (%s, %s), holding %d for %.2f s, foot out %.2f, %d grab(s) this flight; board-off %s %s (off %.2f, held %.2f s, catch %s)"),
 							Arg(0) > 0.5f, Arg(1) > 0.5f, Arg(2) > 0.5f, Arg(3), Arg(4), Grabs.IsHandOffBar(),
 							*UEnum::GetValueAsString(Grabs.GetHand()), *UEnum::GetValueAsString(Grabs.GetZone()), Grabs.IsHolding(), Grabs.GetHoldSeconds(),
-							Grabs.GetFootOut(), Grabs.GetGrabs().Num());
+							Grabs.GetFootOut(), Grabs.GetGrabs().Num(),
+							Grabs.GetBoardOff().IsBoardOff() ? TEXT("on") : TEXT("off"), *UEnum::GetValueAsString(Grabs.GetBoardOff().GetVariant()),
+							Grabs.GetBoardOff().GetOffAlpha(), Grabs.GetBoardOff().GetHeldSeconds(), *UEnum::GetValueAsString(Grabs.GetBoardOff().GetCatchAtTouchdown()));
 					}
 				}
 			}),

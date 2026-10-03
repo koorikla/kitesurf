@@ -269,6 +269,15 @@ public:
 	void SetRiderBackFoot(EFootStrapState State) { RiderBackFoot = State; }
 	EFootStrapState GetRiderBackFoot() const { return RiderBackFoot; }
 
+	/**
+	 * Where the board is relative to the rider's feet (T2.3, the board-off): the pawn sets it every
+	 * fixed step before StepBoard from its FBoardOffState, and the next landing grades it
+	 * (FLandingInputs::bBoardAttached and bBoardCaughtLate: NotCaught crashes with BoardOff,
+	 * CaughtLate is at best sketchy). Attached by default.
+	 */
+	void SetRiderBoardCatch(EBoardCatchState State) { RiderBoardCatch = State; }
+	EBoardCatchState GetRiderBoardCatch() const { return RiderBoardCatch; }
+
 	/** True while the board's air orientation comes from the rider attitude (SetAirAttitude). */
 	UFUNCTION(BlueprintPure, Category = "Board|Jump")
 	bool IsAirAttitudeActive() const { return bAirAttitudeActive; }
@@ -929,6 +938,8 @@ private:
 	FLandingInputs LastLandingInputs;
 	/** SetRiderBackFoot: read by the landing. */
 	EFootStrapState RiderBackFoot = EFootStrapState::In;
+	/** SetRiderBoardCatch: read by the landing. */
+	EBoardCatchState RiderBoardCatch = EBoardCatchState::Attached;
 
 	/** The rider attitude handed over by SetAirAttitude, and the board orientation the last air step took from it. */
 	bool bAirAttitudeActive = false;

@@ -232,9 +232,11 @@ public:
 	 * (L3, C), Started and Completed. In the air only (FGrabState): a grab button sends that hand to
 	 * the board, and while one is held the left stick picks the zone (rotation axes: towards the
 	 * chest the toe edge, the back the heel edge, up the nose, down the tail) instead of rotating the
-	 * rider, whose rotation keeps its momentum. Both grab buttons together are kept for the
-	 * board-off (T2.3) and do nothing yet. The one-footer takes the back foot out of its strap while
-	 * held; it must be back in before the landing. Public so tests press them.
+	 * rider, whose rotation keeps its momentum. Both grab buttons together (the chord) take the board
+	 * off the feet (T2.3, FBoardOffState): the stick picks the variant as it comes off (up superman,
+	 * down tic tac, sideways board pass, centred a plain board-off), and letting go of either button
+	 * catches it again, which must be done before the touchdown. The one-footer takes the back foot
+	 * out of its strap while held; it must be back in before the landing. Public so tests press them.
 	 */
 	void OnGrabFrontPressed(const FInputActionValue& Value) { bGrabFrontHeld = true; }
 	void OnGrabFrontReleased(const FInputActionValue& Value) { bGrabFrontHeld = false; }
@@ -1010,6 +1012,8 @@ private:
 	/** SetTrickInput owns the zone stick until the player's stick moves. */
 	bool bScriptedGrabZoneStick = false;
 	FVector GrabBoardPullCm = FVector::ZeroVector;
+	/** The board-off variant being drawn; kept through the last frames of a catch, when the state is back on the feet. */
+	ETrickBoardOff DrawnBoardOffVariant = ETrickBoardOff::Plain;
 	/** Jump was pressed in the air and is still held: the tuck. A press that began on the water (a kite lift-off with the button still down) does not tuck until pressed again. */
 	bool bPlayerTuckHeld = false;
 	float ScreenBackSign = 1.0f;

@@ -21,6 +21,7 @@ namespace
 		{ TEXT("Hold jump in the air: tuck"),      TEXT("Space"),                     TEXT("Bottom face button") },
 		{ TEXT("Air: grab, front / back hand (hold)"), TEXT("Q / E"),                 TEXT("LB / RB") },
 		{ TEXT("Grab zone: nose, toe edge, heel edge, tail"), TEXT("W / S: nose / tail; A / D towards your chest: toe edge, your back: heel edge (while grabbing)"), TEXT("Left stick, same directions") },
+		{ TEXT("Air: board-off (hold both; let go to catch before landing)"), TEXT("Q + E; W: superman, S: tic tac, A / D: board pass"), TEXT("LB + RB, left stick") },
 		{ TEXT("Air: back foot out (hold; back in before landing)"), TEXT("C"),          TEXT("Left stick click") },
 		{ TEXT("Reset the rider"),                 TEXT("R"),                         TEXT("Right face button") },
 		{ TEXT("Pause menu"),                      TEXT("Esc or P"),                  TEXT("Start") },

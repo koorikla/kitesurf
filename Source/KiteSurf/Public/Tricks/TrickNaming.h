@@ -59,4 +59,16 @@ namespace TrickNaming
 
 	/** The take-off move: S-bend, then raley, then the first inversion, otherwise a pop. */
 	KITESURF_API ETrickMove FreestyleMove(const FTrickSignature& Signature);
+
+	/**
+	 * The GKA family and difficulty (1 to 5, an estimate) of a freestyle trick, from the freestyle
+	 * table's family and difficulty columns (docs/tricks/T3.md section 4). Numbered names past the
+	 * base rotation take the row's numbered difficulty (KGB 4, KGB 5 4.5; 313 3.5, 315 4).
+	 * Overrides, in order: a kite loop with a pass is KiteLoopPasses, a toeside or blind take-off
+	 * ToesideBlind, two or more inversions InvertedDoubles; a trick no row names takes 5 in those
+	 * families. Returns false, with family None, for a hooked jump with no pass, the unhooked pop
+	 * and anything else no row or override covers (difficulty 0 when no row fits).
+	 * Either out pointer may be null.
+	 */
+	KITESURF_API bool FreestyleFamily(const FTrickSignature& Signature, EGkaFamily* OutFamily, float* OutDifficulty);
 }

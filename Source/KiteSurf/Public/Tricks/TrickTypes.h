@@ -152,6 +152,39 @@ enum class ETrickPassKind : uint8
 	Surface UMETA(DisplayName = "Surface")
 };
 
+/**
+ * The GKA freestyle trick families (2025 rulebook sections 28 to 33, as summarised in
+ * docs/tricks.md 3.6). Only the best trick in each family counts in a heat. The assignment of
+ * tricks to families is in TrickNaming's freestyle table and is not yet checked against the
+ * rulebook's own lists.
+ */
+UENUM(BlueprintType)
+enum class EGkaFamily : uint8
+{
+	/** Heelside group. */
+	RaleyBased      UMETA(DisplayName = "Raley-based"),
+	KgbSlim         UMETA(DisplayName = "KGB and slim"),
+	HinterHeart     UMETA(DisplayName = "Hinterberger and heart attack"),
+	Mobes           UMETA(DisplayName = "Mobes"),
+	/** Variety group. */
+	Rewinds         UMETA(DisplayName = "Rewinds"),
+	ToesideBlind    UMETA(DisplayName = "Toeside and blind"),
+	Combos          UMETA(DisplayName = "Combos"),
+	InvertedDoubles UMETA(DisplayName = "Inverted doubles"),
+	KiteLoopPasses  UMETA(DisplayName = "Kite-loop passes"),
+	/** Not a freestyle family trick (an unhooked pop, a hooked jump): never counts in a heat. */
+	None            UMETA(DisplayName = "None")
+};
+
+/** The two GKA groups: a heat counts at most so many tricks from each. */
+UENUM(BlueprintType)
+enum class EGkaGroup : uint8
+{
+	Heelside UMETA(DisplayName = "Heelside"),
+	Variety  UMETA(DisplayName = "Variety"),
+	None     UMETA(DisplayName = "None")
+};
+
 /** One jump's score: Height x (1 + Extremity) x (1 + Technicality) x Execution (docs/tricks.md 6.8). */
 USTRUCT(BlueprintType)
 struct FTrickScore

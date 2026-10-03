@@ -611,6 +611,33 @@ Use the per-jump formula from `research.md`:
 Scoring is pure functions over `FJumpRecord` and `FTrickSignature`, in `TrickScoring.h/.cpp`.
 That keeps it testable now and easy to retune.
 
+**Best-three session (T2.5, backlog F5).** A timed session, 90 s by default, started with
+`kitesurf.Session [seconds]` or the pause menu's "Best-three session (90 s)". The pure rules are
+`FBestThreeSession` (`Tricks/SessionScoring.h`); `UTrickSessionSubsystem` feeds it from the
+rider's trick tracker by polling the record count.
+
+- **The window:** a jump counts if it took off at or after the start and before the horn. A jump
+  in the air at the horn that took off before it counts at its landing, as in real heats: the
+  session goes to overtime and ends at that landing (at most 15 s later). A take-off after the
+  horn never counts, and neither does a jump already in the air at the start.
+- **Repeats:** the session counts landings per family key from zero (free-ride repeats do not
+  carry over) and pays 100, 75, 50, 25, then 10%.
+- **The repeat rule (F5 against GKA):** each family key counts once, with its best paid landing,
+  and the total is the best three of those. So a repeat of the same quality never raises the
+  total, as F5 asks; a repeat raises it only by beating the counted landing by more than 1/0.75
+  on its raw score, which is GKA's "counts once, the best one". Three identical straight airs
+  total one straight air.
+- **Crashes** score 0 and never count, and do not use up a family's full-value landing. Jumps
+  under 1 m are ignored, so a hop does not use it up either.
+- **Clock:** the board's simulation time, so the pause menu pauses the session.
+- **HUD:** the clock and the three counting scores at the top centre while it runs; a results
+  card at the end with the total, the three counting jumps (name, height, points), "NEW BEST" and
+  the local best.
+- **Local best:** per session length, in the save game (`BestSessionTotalBySeconds`), saved
+  through the settings save path when beaten.
+
+The tests are `KiteSurf.Trick.Session*` in `TrickSessionTests.cpp`.
+
 ### 6.9 HUD and feedback
 
 **Trick ticker:** a Canvas element in `AKiteSurfHUD`, modelled on `ShowNotice`.
@@ -665,7 +692,7 @@ named and scored, and crash an under-rotation.
 | T2.2 | One-footer | `KiteSurf.Trick.OneFooterFootReturns` | S |
 | T2.3 | Board-off: board follows the hand socket, re-catch, variants (plain, superman, tic tac, board pass) | `KiteSurf.Trick.BoardOffNotCaughtCrashes`; `KiteSurf.Trick.BoardOffCaughtLands` | M |
 | T2.4 | Loop families: contra, double and triple, S-loop and snake, heli-loop landing, early or late roll | `KiteSurf.Trick.ClassifiesLoops` on recorded loop sets | S |
-| T2.5 | Best-three session and repeat devaluation (backlog F5) | `KiteSurf.Trick.SessionBestThree` | S |
+| T2.5 | Best-three session and repeat devaluation (backlog F5) | `KiteSurf.Trick.SessionBestThree`, `SessionCrashScoresZero`, `SessionTakeoffBeforeHorn`, `SessionOnPawn`, `SessionHornMidAirOnPawn`, `SessionHUDFormatting`, `SessionBestPersists`, `SessionOldSaveLoads`, `SessionStartsFromPauseMenu` | S |
 | T2.6 | Failure cause messages (backlog F6) | `KiteSurf.Trick.FailureCauseNamed` | S |
 | T2.7 | Trick book: tricks landed, saved with the save game (backlog G4) | `KiteSurf.Trick.TrickBookPersists` | S |
 

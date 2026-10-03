@@ -130,6 +130,12 @@ second. Right out, the kite flags and barely pulls (about 160 N on the 9 m in 20
 speed); right in it pulls five times as hard (850 N, 21 kn). The ride starts with it 70% in. In
 light wind ride with it right in: the 12 m only planes in 12 kn that way.
 
+**Best-three session.** BEST-THREE SESSION (90 s) in the pause menu (or `kitesurf.Session
+[seconds]` in the console) starts a timed session: the best three jumps count, one per trick, and
+a repeat is paid less (75%, 50%, ...). A jump in the air at the horn still counts if it took off
+before it. The clock and the counting scores show at the top; at the end a results card shows the
+total, the three jumps and your local best for that length, which is saved with the settings.
+
 **Gear.** PLAY opens the gear screen, and GEAR in the pause menu opens it during a ride.
 Pick the wind (8 to 90 kn: a light breeze to a hurricane), then rig for it:
 

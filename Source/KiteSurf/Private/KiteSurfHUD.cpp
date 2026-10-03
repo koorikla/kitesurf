@@ -6,6 +6,8 @@
 #include "Tricks/TrickTrackerComponent.h"
 #include "Tricks/TrickRecognition.h"
 #include "Tricks/TrickNaming.h"
+#include "Tricks/SessionScoring.h"
+#include "Tricks/TrickSessionSubsystem.h"
 #include "WindComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -514,6 +516,9 @@ void AKiteSurfHUD::DrawHUD()
 		GetTextSize(BestText, BestW, BestH, nullptr, 1.2f);
 		DrawText(BestText, FLinearColor(1.0f, 0.85f, 0.2f), ScreenW * 0.5f - BestW * 0.5f, BelowReadoutY - 6.0f, nullptr, 1.2f);
 	}
+
+	// The best-three session: its clock and counting jumps at the top, then its results card.
+	DrawSession(ScreenW, ScreenH);
 
 	if (JumpRejectionRemainingTime > 0.0f)
 	{
@@ -1058,4 +1063,203 @@ void AKiteSurfHUD::DrawOnboardingPrompt(float ScreenW, float ScreenH)
 	DrawRect(FLinearColor(0.15f, 0.2f, 0.25f, 0.9f), BarX, BarY, BarW, BarH);
 	const float ClampedProgress = FMath::Clamp(CurrentStepProgress, 0.0f, 1.0f);
 	DrawRect(FLinearColor(0.2f, 0.85f, 1.0f, 1.0f), BarX, BarY, BarW * ClampedProgress, BarH);
+}
+
+FString AKiteSurfHUD::FormatSessionClock(float SecondsLeft)
+{
+	const int32 Whole = FMath::Max(FMath::CeilToInt(SecondsLeft - KINDA_SMALL_NUMBER), 0);
+	return FString::Printf(TEXT("%d:%02d"), Whole / 60, Whole % 60);
+}
+
+FString AKiteSurfHUD::FormatSessionSlot(const FJumpRecord& Counting)
+{
+	FString Slot = FString::Printf(TEXT("%.1f"), FBestThreeSession::Paid(Counting));
+	if (Counting.RepeatFactor < 0.999f)
+	{
+		Slot += FString::Printf(TEXT(" x%.2f"), Counting.RepeatFactor);
+	}
+	return Slot;
+}
+
+TArray<FString> AKiteSurfHUD::FormatSessionPanel(const FBestThreeSession& Session)
+{
+	TArray<FString> Lines;
+	FString Header = FString::Printf(TEXT("SESSION %s"), *FormatSessionClock(Session.GetTimeLeft()));
+	if (Session.GetPhase() == EBestThreePhase::Overtime)
+	{
+		Header += TEXT("  OVERTIME");
+	}
+	Lines.Add(Header);
+	const TArray<FJumpRecord> Counting = Session.GetCounting();
+	for (int32 Slot = 0; Slot < FMath::Max(Session.Settings.CountingJumps, 0); ++Slot)
+	{
+		Lines.Add(FString::Printf(TEXT("%d  %s"), Slot + 1, Counting.IsValidIndex(Slot) ? *FormatSessionSlot(Counting[Slot]) : TEXT("--")));
+	}
+	return Lines;
+}
+
+TArray<FString> AKiteSurfHUD::FormatSessionResults(const FBestThreeSession& Session, float PreviousBest, bool bHadPreviousBest, bool bNewBest)
+{
+	TArray<FString> Lines;
+	const int32 Seconds = FMath::RoundToInt(Session.GetDuration());
+	Lines.Add(FString::Printf(TEXT("SESSION OVER  (%d s)"), Seconds));
+	Lines.Add(FString::Printf(TEXT("TOTAL  %.1f"), Session.GetTotal()));
+	if (bNewBest)
+	{
+		Lines.Add(TEXT("NEW BEST"));
+	}
+	const TArray<FJumpRecord> Counting = Session.GetCounting();
+	for (int32 Rank = 0; Rank < Counting.Num(); ++Rank)
+	{
+		const FJumpRecord& Jump = Counting[Rank];
+		Lines.Add(FString::Printf(TEXT("%d  %s  %.1f m  %.1f pts"), Rank + 1, Jump.TrickName.IsEmpty() ? TEXT("Jump") : *Jump.TrickName,
+			KiteUnits::CmToM(Jump.ApexHeightCm), FBestThreeSession::Paid(Jump)));
+	}
+	if (Counting.Num() == 0)
+	{
+		Lines.Add(TEXT("No jumps counted"));
+	}
+	if (!bHadPreviousBest)
+	{
+		Lines.Add(FString::Printf(TEXT("First %d s session"), Seconds));
+	}
+	else
+	{
+		Lines.Add(FString::Printf(TEXT("%s  %.1f"), bNewBest ? TEXT("Previous best") : TEXT("Local best"), PreviousBest));
+	}
+	return Lines;
+}
+
+TArray<FString> AKiteSurfHUD::GetSessionLines() const
+{
+	const UWorld* World = GetWorld();
+	const UTrickSessionSubsystem* Sessions = World ? World->GetSubsystem<UTrickSessionSubsystem>() : nullptr;
+	if (!Sessions)
+	{
+		return TArray<FString>();
+	}
+	if (Sessions->IsSessionActive())
+	{
+		return FormatSessionPanel(Sessions->GetSession());
+	}
+	if (Sessions->IsShowingResults())
+	{
+		return FormatSessionResults(Sessions->GetSession(), Sessions->GetPreviousBest(), Sessions->HadPreviousBest(), Sessions->IsNewBest());
+	}
+	return TArray<FString>();
+}
+
+void AKiteSurfHUD::DrawSession(float ScreenW, float ScreenH)
+{
+	const UWorld* World = GetWorld();
+	const UTrickSessionSubsystem* Sessions = World ? World->GetSubsystem<UTrickSessionSubsystem>() : nullptr;
+	const TArray<FString> Lines = GetSessionLines();
+	if (!Sessions || Lines.Num() == 0)
+	{
+		return;
+	}
+	// Sized and placed from the screen height, inside a safe-area margin, so it holds its place at
+	// any resolution.
+	const float UiScale = FMath::Clamp(ScreenH / 1080.0f, 0.85f, 1.6f);
+	const float Margin = FMath::Max(16.0f, ScreenH * 0.02f);
+	const FLinearColor Panel(0.02f, 0.05f, 0.1f, 0.75f);
+	const FLinearColor Gold(1.0f, 0.85f, 0.2f);
+
+	if (Sessions->IsSessionActive())
+	{
+		// One row at the top centre, above the jump readout and the trick card: the clock, then the
+		// counting slots.
+		const FBestThreeSession& Session = Sessions->GetSession();
+		const float Scale = 1.25f * UiScale;
+		const float Gap = 28.0f * UiScale;
+		TArray<float> Widths;
+		float RowW = 0.0f;
+		float RowH = 0.0f;
+		for (const FString& Line : Lines)
+		{
+			float W = 0.0f;
+			float H = 0.0f;
+			GetTextSize(Line, W, H, nullptr, Scale);
+			Widths.Add(W);
+			RowW += W;
+			RowH = FMath::Max(RowH, H);
+		}
+		RowW += Gap * (Lines.Num() - 1);
+		float X = ScreenW * 0.5f - RowW * 0.5f;
+		const float Y = Margin;
+		const float Pad = 10.0f * UiScale;
+		DrawRect(Panel, X - Pad * 1.6f, Y - Pad * 0.6f, RowW + Pad * 3.2f, RowH + Pad * 1.2f);
+		for (int32 Index = 0; Index < Lines.Num(); ++Index)
+		{
+			FLinearColor Ink = FLinearColor(0.6f, 1.0f, 0.7f);
+			if (Index == 0)
+			{
+				const bool bHurry = Session.GetPhase() == EBestThreePhase::Overtime || Session.GetTimeLeft() <= 10.0f;
+				Ink = bHurry ? FLinearColor(1.0f, 0.55f, 0.2f) : Gold;
+			}
+			else if (Lines[Index].EndsWith(TEXT("--")))
+			{
+				Ink = FLinearColor(0.6f, 0.65f, 0.7f);
+			}
+			DrawText(Lines[Index], Ink, X, Y, nullptr, Scale);
+			X += Widths[Index] + Gap;
+		}
+		return;
+	}
+
+	// The results card, centred: title, total, the NEW BEST badge, the counting jumps, the local best.
+	struct FStyledLine { FString Text; FLinearColor Ink; float Scale; float W = 0.0f; float H = 0.0f; };
+	TArray<FStyledLine> Styled;
+	for (int32 Index = 0; Index < Lines.Num(); ++Index)
+	{
+		const FString& Line = Lines[Index];
+		FStyledLine& Out = Styled.AddDefaulted_GetRef();
+		Out.Text = Line;
+		if (Index == 0)
+		{
+			Out.Ink = Gold;
+			Out.Scale = 1.4f;
+		}
+		else if (Index == 1)
+		{
+			Out.Ink = FLinearColor::White;
+			Out.Scale = 2.2f;
+		}
+		else if (Line == TEXT("NEW BEST"))
+		{
+			Out.Ink = Gold;
+			Out.Scale = 1.7f;
+		}
+		else if (Index == Lines.Num() - 1)
+		{
+			Out.Ink = FLinearColor(0.55f, 0.9f, 1.0f);
+			Out.Scale = 1.15f;
+		}
+		else
+		{
+			Out.Ink = FLinearColor(0.85f, 0.9f, 0.95f);
+			Out.Scale = 1.2f;
+		}
+		Out.Scale *= UiScale;
+		GetTextSize(Out.Text, Out.W, Out.H, nullptr, Out.Scale);
+	}
+	const float Spacing = 8.0f * UiScale;
+	float CardW = 0.0f;
+	float CardH = 0.0f;
+	for (const FStyledLine& Line : Styled)
+	{
+		CardW = FMath::Max(CardW, Line.W);
+		CardH += Line.H + Spacing;
+	}
+	CardH -= Spacing;
+	const float Pad = 24.0f * UiScale;
+	const float Top = FMath::Max(ScreenH * 0.3f, Margin + Pad);
+	DrawRect(FLinearColor(0.01f, 0.03f, 0.08f, 0.85f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, CardH + 2.0f * Pad);
+	DrawRect(FLinearColor(Gold.R, Gold.G, Gold.B, 0.9f), ScreenW * 0.5f - CardW * 0.5f - Pad, Top - Pad, CardW + 2.0f * Pad, 3.0f * UiScale);
+	float Y = Top;
+	for (const FStyledLine& Line : Styled)
+	{
+		DrawText(Line.Text, Line.Ink, ScreenW * 0.5f - Line.W * 0.5f, Y, nullptr, Line.Scale);
+		Y += Line.H + Spacing;
+	}
 }

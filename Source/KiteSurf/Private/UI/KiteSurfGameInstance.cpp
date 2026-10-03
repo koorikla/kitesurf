@@ -57,6 +57,7 @@ void UKiteSurfGameInstance::ApplySaveGame(const UKiteSurfSaveGame& SaveGame)
 	SetSpotFeatures(SaveGame.bSpotIslands, SaveGame.bSpotSandbars, SaveGame.bSpotSharks);
 	BoardSize = KiteGear::BoardSizeFromIndex(SaveGame.BoardSizeIndex);
 	TrickBook.SetEntries(SaveGame.TrickBook.GetEntries());
+	BestSessionTotalBySeconds = SaveGame.BestSessionTotalBySeconds;
 	FApp::SetVolumeMultiplier(MasterVolume);
 }
 
@@ -89,11 +90,29 @@ void UKiteSurfGameInstance::WriteToSaveGame(UKiteSurfSaveGame& SaveGame) const
 	SaveGame.bSpotSharks = bSpotSharks;
 	SaveGame.BoardSizeIndex = static_cast<int32>(BoardSize);
 	SaveGame.TrickBook = TrickBook;
+	SaveGame.BestSessionTotalBySeconds = BestSessionTotalBySeconds;
 }
 
 bool UKiteSurfGameInstance::RecordTrickLanding(const FJumpRecord& Record)
 {
 	return TrickBook.RecordLanding(Record);
+}
+
+float UKiteSurfGameInstance::GetBestSessionTotal(int32 DurationSeconds) const
+{
+	const float* Best = BestSessionTotalBySeconds.Find(DurationSeconds);
+	return Best ? *Best : 0.0f;
+}
+
+bool UKiteSurfGameInstance::RecordSessionTotal(int32 DurationSeconds, float Total)
+{
+	const float* Best = BestSessionTotalBySeconds.Find(DurationSeconds);
+	if (Total <= 0.0f || (Best && Total <= *Best))
+	{
+		return false;
+	}
+	BestSessionTotalBySeconds.Add(DurationSeconds, Total);
+	return true;
 }
 
 void UKiteSurfGameInstance::SetPendingWindKnots(float InKnots)

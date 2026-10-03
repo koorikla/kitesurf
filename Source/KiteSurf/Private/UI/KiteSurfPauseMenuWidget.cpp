@@ -4,6 +4,7 @@
 #include "UI/KiteSurfControlsLegend.h"
 #include "UI/KiteSurfSettingsWidget.h"
 #include "UI/KiteSurfGearWidget.h"
+#include "Tricks/TrickSessionSubsystem.h"
 #include "Components/Button.h"
 #include "Blueprint/WidgetTree.h"
 #include "Widgets/Layout/SBorder.h"
@@ -150,6 +151,27 @@ TSharedRef<SWidget> UKiteSurfPauseMenuWidget::RebuildWidget()
 						.Margin(FMargin(10.0f, 8.0f))
 					]
 				]
+				// Best-three session button
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(25.0f, 6.0f)
+				[
+					SAssignNew(SlateSessionButton, SButton)
+					.IsFocusable(false)
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						OnSessionClicked();
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(TEXT("BEST-THREE SESSION (90 s)")))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 16))
+						.Margin(FMargin(10.0f, 8.0f))
+					]
+				]
 				// Settings Button
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -246,6 +268,18 @@ void UKiteSurfPauseMenuWidget::OnResumeClicked()
 
 	OnResumeClickedDelegate.Broadcast();
 	RemoveFromParent();
+}
+
+void UKiteSurfPauseMenuWidget::OnSessionClicked()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UTrickSessionSubsystem* Sessions = World->GetSubsystem<UTrickSessionSubsystem>())
+		{
+			Sessions->StartSession(UTrickSessionSubsystem::DefaultSessionSeconds);
+		}
+	}
+	OnResumeClicked();
 }
 
 void UKiteSurfPauseMenuWidget::OnRestartClicked()
@@ -383,6 +417,7 @@ void UKiteSurfPauseMenuWidget::BuildNavigation()
 	Navigator.AddButton(SlateResumeButton, [this]() { OnResumeClicked(); });
 	Navigator.AddButton(SlateRestartButton, [this]() { OnRestartClicked(); });
 	Navigator.AddButton(SlateGearButton, [this]() { OnGearClicked(); });
+	Navigator.AddButton(SlateSessionButton, [this]() { OnSessionClicked(); });
 	Navigator.AddButton(SlateSettingsButton, [this]() { OnSettingsClicked(); });
 	Navigator.AddButton(SlateMainMenuButton, [this]() { OnMainMenuClicked(); });
 	Navigator.AddButton(SlateQuitButton, [this]() { OnQuitClicked(); });

@@ -612,12 +612,12 @@ bool FKiteSurfMenuNavigationTest::RunTest(const FString& Parameters)
         }
     }
 
-    // Pause menu: RESUME, RESTART, GEAR, SETTINGS, MAIN MENU, QUIT.
+    // Pause menu: RESUME, RESTART, GEAR, BEST-THREE SESSION, SETTINGS, MAIN MENU, QUIT.
     UKiteSurfPauseMenuWidget* PauseMenu = CreateWidget<UKiteSurfPauseMenuWidget>(World, UKiteSurfPauseMenuWidget::StaticClass());
     if (PauseMenu)
     {
         FKiteMenuNavigator& Navigator = PauseMenu->GetNavigator();
-        TestEqual(TEXT("The pause menu has six items"), Navigator.Num(), 6);
+        TestEqual(TEXT("The pause menu has seven items"), Navigator.Num(), 7);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_DPad_Down);
         Navigator.HandleKey(EKeys::Gamepad_FaceButton_Bottom);

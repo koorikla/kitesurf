@@ -1,7 +1,8 @@
 # Physics plan, phase 3
 
-Two items, in this order: a bug the user hit, and the descent gap phase 2 left open. Same ground
-rules as `plan-2.md`; numbers reported against `main` at `b7f9ac6` (phase 2).
+Two items, in this order: a bug the user hit, and the descent gap phase 2 left open; a third, the
+board over-rotating under the kite, came later from the user. Same ground rules as `plan-2.md`;
+numbers reported against `main` at `b7f9ac6` (phase 2).
 
 ## 1. A crashed or floating rider is flung by the kite
 
@@ -92,6 +93,17 @@ rises and turns forward and up, the sink slows, and the rider lands moving forwa
 
 ## 3. The harness limits how far the board can point from the pull
 
+**Status: done with deviations** (`42b9495`, `0ddcdfa`). The limit, the return, the lean and the tests
+are in as designed, with 50 deg kept. Not designed and needed: the carve's lean is now the one the
+turn needs (`v w / g`), not `CarveHeelDeg` times the input at any speed, which on a nearly stopped
+board drove it round through the wind; and the low-speed pivot does not take a nose past the limit.
+Not met: "`HarnessLeanAmount` reaches 1" with the stick held. The board stalls about 15 deg past the
+pull's beam and gets no more than 22 to 25 deg past it in 15 to 30 kn, so the limit (40, 50 or 60) is
+never reached there and the lean does not build; it is tested where the harness turns a board back.
+None of the carve, upwind and course tests points past the limit, so none is re-based; the drop-off
+test does not ride at it (at least 10.5 deg short of the pull's beam). Re-based instead:
+`Physics.FloatingRiderIsNotFlung` (the lifted rider's board now turns nose first to the pull).
+
 **Report (user, 2026-10-03).** Riding on the left tack and holding the stick fully left, the
 board keeps turning and the rider ends up rotating round under the kite in the water. A rider
 cannot rotate about the lines like that: the harness hook is on the front of the waist and the
@@ -141,5 +153,5 @@ input) with no reference to the lines (`BoardMovementComponent.cpp`, the carve b
 
 ## Order
 
-Item 1 first (the bug), then item 2. One commit per step, built and tested green. Then merge
-with `main`, PR, CI, squash-merge.
+Item 1 first (the bug), then item 2, then item 3. One commit per step, built and tested green. Then
+merge with `main`, PR, CI, squash-merge.

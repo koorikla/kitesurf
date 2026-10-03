@@ -78,6 +78,13 @@ Islands with palms sit further off to ride round. Sharks patrol in circles; they
 who is up and riding alone unless you run one over, and come for you when you are down in the
 water. Anything you are above, you clear.
 
+**Turning.** A / D carve the board, and you lean into the turn. Turned up away from the kite, the
+board slows and stalls once it points past square to the lines, and it can never point further
+from their pull than your body twists against the harness hook on your front: past that, holding
+the turn leans you back against the hook and the board stops turning, so it does not carry you
+round under the kite. Let go and the board comes back towards the kite and the pull gets you going
+again. Turning towards the kite is not limited.
+
 **Steering and loops.** The bar works like a real one, with no extra key. Steer away from the
 side the kite is on and it flies up over the top to the other side; let go and it drifts up the
 edge of the window to 12 o'clock overhead and sits there. In the air, with the bar centred, the
@@ -92,9 +99,9 @@ back and load the edge: the board heels harder against the lines, the pull build
 held down against the kite as it rises. Steer the kite up hard, pull the bar in, and let go of
 the button as the pull builds to pop. Let go too early and the kite has not loaded up yet; hold
 on too long and it rips you off your edge, which is a much lower jump. Timed well, that is about
-4.5 m in 15 kn, 11 m in 30 kn and 13 to 16 m in 40 kn, and with the bar centred the kite flown
+4.5 m in 15 kn, 11 m in 30 kn and 12 to 15 m in 40 kn, and with the bar centred the kite flown
 overhead carries you down: 5 s in the air at 30 kn. In a 90 kn hurricane on a 2 m kite it is about
-22 m up and 225 m downwind, but a jump that big comes down too fast to land. The HUD shows the
+22 m up and 225 m downwind, and it only just lands, crouched, at 9.9 g. The HUD shows the
 height and distance of a jump as it happens and when it ends. On the way down, hold the jump button
 again to crouch for the landing. Steering the kite up without an edge just plucks you off the water.
 (Weight back on S adds to the pop.) A kite looped through the middle of the window pulls several
@@ -104,8 +111,10 @@ times harder than a parked one.
 were sinking and how far your legs and the board took it out over; crouched, that distance is
 twice as long. It says HOT if you came down fast (over 6 m/s) or with the kite low (under 45 degrees
 up), and past 10 g it is a crash, as is landing with the board across your course. The big 30 kn
-jump lands hot at about 7 g crouched and is a crash standing; the biggest 40 kn jumps and the storm
-jumps crash either way. The card that names and scores the jump shows the same g.
+jump lands hot at 4.8 g crouched and 8.6 g standing; the biggest 40 kn jump (15 m) lands hot at
+6.9 g crouched and is a crash standing; the storm jumps let go early land crouched at 9.4 g (60 kn)
+and 9.9 g (90 kn), and the higher ones, the best 60 kn jump included (11.2 g), crash even crouched.
+The card that names and scores the jump shows the same g.
 
 **Motion bar.** Settings has a MOTION BAR switch (off by default). With it on, a controller's
 motion sensors are the bar: hold the controller like a bar, tilt it to steer (35 degrees is full

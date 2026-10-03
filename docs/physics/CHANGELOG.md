@@ -227,7 +227,7 @@ The `physics/phase3` branch, cut from `b7f9ac6` (phase 2 merged as PR 71), imple
 Every entry says what moved against `b7f9ac6`.
 
 35. `b41c04a` **docs(physics): plan for phase 3.** The rider flung by the kite after a crash (item 1)
-    and the redirect before landing (item 2).
+    and the redirect before landing (item 2); item 3 was added later (40).
 36. `b4f95e6` **fix(board): a crash spends the kite's pull instead of saving it up** (item 1).
     Reproduced with the `kite.Physics.Debug 2` trace in 20 and 25 kn on the recommended kite before
     anything changed. The 30 m throw was the board's crash: the crash branch of `StepBoard` returned
@@ -262,18 +262,83 @@ Every entry says what moved against `b7f9ac6`.
 38. **Item 2, the redirect before landing: measured, not committed.** No design of the assist met the
     plan's targets together (below), and every one made storm landings harder, so nothing of it is in
     the code; bar centred in the air still holds the kite overhead all the way down.
-39. **docs(physics)**: this section, `docs/movement.md`, `docs/jumping.md`, `docs/ARCHITECTURE.md`,
+39. `5c7e6aa` **docs(physics)**: this section, `docs/movement.md`, `docs/jumping.md`, `docs/ARCHITECTURE.md`,
     `README.md` and the status of each item in `plan-3.md`.
+40. `9733c3c` **docs(physics): plan-3 item 3, the harness limits how far the board can point from the
+    pull.** The user's report: on the left tack with the stick held fully left the board kept turning
+    and the rider ended up rotating round under the kite in the water. The design as `plan-3.md`
+    section 3.
+41. `42b9495` **feat(board): the harness limits how far the board can point from the pull** (item 3).
+    On the water, not floating, with the lines taut and pulling at least 50 N across the water, the
+    heading is measured against the beam reach of the pull (square to the line force's horizontal
+    direction, on the side the nose is on; `UpwindOfBeamForHeading`, positive away from the kite). The
+    carve cannot take it past `MaxUpwindHeadingDeg` (50); a heading past it because the pull moved comes
+    back at `HarnessYawRateDegPerS` (90 deg/s); the carve held against the limit builds
+    `HarnessLeanAmount` (1 /s up, 3 /s down), which adds `HarnessLeanHeelDeg` (20) to the heel target
+    like the load and leans the rider back (`RiderHarnessLeanDeg` 15). The low-speed pivot keeps
+    choosing the nearer end, but not a nose pointed further from the pull than the limit. Turns towards
+    the kite and the switch of ends are not limited; `bHarnessLimit` off gives the board before. Not in
+    the design and needed: the carve's lean is the one the turn needs, `tan = v w / g` up to
+    `CarveHeelDeg`, where it was `CarveHeelDeg` times the input at any speed: with the harness alone the
+    limit held but the 35 deg on a board slowed nearly to a stop pushed it to windward at up to 2.6 m/s,
+    its velocity swung round, the carve followed it, and the board still turned 154 deg and was dragged
+    broadside at 9.4 kn. The trace (`kite.Physics.Debug 2`, 15 kn, 12 m^2, 85 kg, left tack, the stick
+    fully left for 6 s from 13.0 kn, 36.5 deg short of the pull's beam): before, 216 deg turned through
+    the wind, up to 80 deg past the pull's beam until the lines went slack at 5.7 s, 8.9 kn at the end,
+    one rail change after the release (in 20 kn 122 deg and two while held, a switch of ends and a slide
+    round); after, the board stalls at 1.4 kn 2.25 s in, 15 deg past the beam, is pivoted back towards the
+    kite and carved up again slowly, at most 25.5 deg past it and 107 deg from where it started, 1.5 kn at
+    the end, no rail change, 5.6 kn 6 s after the release (20 kn: 3.2 kn, planing 3.5 s after it). The
+    same in 15 to 30 kn at limits of 40, 50 and 60 deg: the board gets no more than 23 to 25 deg past the
+    pull's beam and never reaches the limit, so 50, the middle of the range, is kept, and the plan's "the
+    lean reaches 1" is not met (known gaps). Instrumented, the limit clamps no turn in the existing suite; the
+    pivot's end choice moves five tests. Re-based: `Physics.FloatingRiderIsNotFlung`'s over-the-water
+    4 m/s for the 25 kn bar-out loop (below; the plan's target is through the water, now asserted in
+    every case, and the bar let go must get the rider going slower than the bar in). 183 tests.
+42. `0ddcdfa` **test(physics): the harness stops the over-rotation and brings the board back.**
+    `Physics.HarnessStopsOverRotation` (81 kg, the kite rigged for the wind, both tacks): the stick held
+    fully away from the kite for 6 s, then let go for 12 s. 15 kn: from 13.1 kn, at most 22.3 deg past the
+    pull's beam (limit 50), the heading at most 105 deg from where it started, 1.5 kn at the end, off the
+    plane; let go, planing again after 9.5 s, 9.0 kn after 12 s. 20 kn: from 15.1 kn, 24.5 deg, 103 deg,
+    3.0 kn, planing after 3.1 s, 16.2 kn. No rail change; the right tack and 30 fps the same ride.
+    Without the harness: 67 deg past the beam and four rail changes. `Physics.HarnessBringsTheBoardBack`:
+    pointed by hand 70 deg past the pull's beam, planing at 5 m/s in 15 kn, back inside in 0.20 s (the
+    90 deg/s) and staying there; without the harness it swings out to 78 deg until it has slowed off the
+    plane (0.37 s); stopped in 15 and 20 kn, back inside in 0.18 and 0.15 s; the stick held meanwhile
+    pushes against the limit for 0.22 s and the lean reaches 0.22, gone 0.33 s after letting go. The
+    course tests are logged against the limit: none points past the pull's beam (`CourseTheorem` 17 to
+    35 deg short, `PointingTooHighDropsOffThePlane` at least 10.5 deg short, asserted inside the limit,
+    `UpwindAtEdgeAngle` 25 and 27, `Movement.UpwindAngle` 23), so none is re-based. 185 tests.
+43. **docs(physics)**: entries 40 to 43, `docs/movement.md` (carving, the harness, the tunables, the rider's
+    stance), `README.md` (turning; the landing numbers), `docs/jumping.md` (the landing numbers, stale
+    since the 45 cm absorb: the 30 kn jump at 6.7 g is 4.8 g crouched and 8.6 standing, the 0.2 s storm
+    jumps land at 9.4 and 9.9 g where they crashed at 13.5 and 14.4), `docs/ARCHITECTURE.md` (the API,
+    the step, the debug text and the `kitecsv` columns) and the status of item 3 in `plan-3.md`.
 
 ### What moved against b7f9ac6
 
-All from the floating change (37); riding on the plane, jumping and landing are unchanged to the
-logged decimal (`SteadyRideAcross`, `TimedReleaseBeatsPop`, `HangTime`, `GoodLandingIsThreeToSixG`,
-`LandingGFromSink`, `StormIsRideable`).
+From the floating change (37) and the harness (41); riding straight on the plane, upwind, the course
+limit, jumping and landing are unchanged to the logged decimal (`SteadyRideAcross`, `UpwindAtEdgeAngle`,
+`CourseTheorem`, `TimedReleaseBeatsPop`, `HangTime`, `GoodLandingIsThreeToSixG`, `LandingGFromSink`,
+`StormIsRideable`).
+- **Holding the turn away from the kite no longer carries the board round** (41). On the left tack in
+  15 kn, the stick fully left for 6 s: 216 deg turned through the wind, up to 80 deg past the pull's beam,
+  the lines slack, the rider sliding round to face the kite at `b7f9ac6`; now the board stalls about 15 deg
+  past the pull's beam, is never more than 22 to 25 deg past it in 15 to 30 kn, slows to 1.5 kn and the
+  rider keeps the rail they face (`Physics.HarnessStopsOverRotation`).
+- **Carving towards the kite** leans as the turn needs (41): the 1.5 s full carve's course 82.2 -> 78.7 deg
+  with the heading at 80, 9.5 -> 9.3 kn (27 -> 28% lost), the heel at the end 38.8 -> 30.7 deg
+  (`Physics.CarveFollowsTheHeading`); `Ride.CarveIsSymmetric` unchanged at 80 deg.
+- **A lifted rider's board turns nose first to the pull** (41, the pivot's end choice): the 25 kn bar-out
+  loop over a floating rider gets them riding at the end, 4.17 m/s over the water and 10.6 m (3.73 m/s
+  and 7.5 m after 37), through the water while sunk 0.87 m/s (1.64 after 37, up to 3.8 at `b7f9ac6`); the
+  bar-in loops 8.04 -> 7.62 m/s (25 kn) and 7.16 -> 6.88 m/s (20 kn); `Ride.TransitionReversesTack` comes
+  round nose first through downwind instead of riding tail first and swapping ends: 13.7 kn at yaw -90
+  after 37, now 12.0 kn at -71 (13.3 kn at `b7f9ac6`).
 - **A floating rider sits higher under a pull and drifts a little more.** Under the kite at 12 with
   the bar out: 85 -> 66 cm deep in 15 kn, the drift 0.81 -> 0.86 kn (15 kn) and 1.13 -> 1.39 kn
   (20 kn); `Ride.KeepsPlaningWithoutInput` 1.0 -> 1.5 kn, 11 -> 14 m downwind in 30 s.
-- **Water starts**: the dived start in 20 kn 2.2 -> 2.8 s; with the kite parked at the window edge in
+- **Water starts**: the dived start in 20 kn 2.2 -> 2.8 s (37) -> 3.2 s (41); with the kite parked at the window edge in
   20 kn 3.5 -> 3.4 s, in 15 kn reaching 14.1 -> 13.8 kn (`Ride.FloatsUntilPlaning`).
 - **A depowered or slow board** keeps the floating drag as it sinks: `Board.DepowersAndStops` and
   `Movement.DepowerToStop` 0.28 -> 0.18 kn after 5 s; `Movement.SpeedEnvelope` decays to 2.34 kn (4.68) and settles at 16.95 kn
@@ -342,7 +407,10 @@ towards. "Estimate" values in `research.md` are starting points, not requirement
 | `UBoardMovementComponent::PopImpulseKgCmPerS` / `LoadPopBonus` / `TailWeightPopBonus` | 21000 kg cm/s (2.5 m/s) / 0.6 / 0.5 | 1 to 2 m/s from the legs | The loaded pop with the weight back is 5.9 m/s; the 30 kn jump leans on it (known gaps). |
 | `UBoardMovementComponent::LoadHoldBonus` | 1.5 | 1.5 to 3 (take-off at 2.5 to 4 body weights of tension) | More hold widens the release window but does not raise the best jump. |
 | `UBoardMovementComponent::bAutoEdge` / `MaxHeelDeg` / `LoadExtraHeelDeg` / `HeelResponse` | on / 65 deg / 25 deg / 8 /s | lean 30 to 60 deg riding | |
-| `UBoardMovementComponent::CarveHeelDeg` | 35 deg | `atan(v w / g)` for the turn rate: 35 deg at 6.5 m/s and 60 deg/s | |
+| `UBoardMovementComponent::CarveHeelDeg` | 35 deg | `atan(v w / g)` for the turn rate: 35 deg at 6.5 m/s and 60 deg/s | Since phase 3 the most lean into a carve: the lean is `atan(v w / g)` for the turn the board makes, up to this. |
+| `UBoardMovementComponent::MaxUpwindHeadingDeg` / `bHarnessLimit` | 50 deg / on | how far the hips twist from square to the feet; the plan's 40 to 60 | Phase 3. Past the beam reach of the pull, away from the kite. Carving from a beam reach never reaches it (the board stalls about 15 deg past the beam and gets no more than 22 to 25 past it); 40, 50 and 60 give the same rides. |
+| `UBoardMovementComponent::HarnessYawRateDegPerS` | 90 deg/s | | Phase 3. How fast a heading past the limit comes back. |
+| `UBoardMovementComponent::HarnessLeanRatePerS` / `HarnessLeanReleaseRatePerS` / `HarnessLeanHeelDeg` | 1 /s / 3 /s / 20 deg | | Phase 3. The lean back against the hook with the carve held against the limit; rarely builds (known gaps). |
 | `UBoardMovementComponent::FinAreaM2` / `RailAreaM2` / `TailWeightRailScale` | 0.013 / 0.08 m^2 / 4 | fins 4 x 0.003 to 0.005 m^2; rail about 0.04 m^2 at full heel; no value for the tail | The rail and the tail scale hold the edge through the send: the timed jump is 9.5 m at the research's values. |
 | `UBoardMovementComponent::LateralLiftSlopePerRad` / `LeewayStallDeg` | 2.5 /rad / 12 deg | 2 to 3 /rad | |
 | `UBoardMovementComponent::PlaningTrimDeg` / `PlaningTrimHumpDeg` / `PlaningTrimHumpSpeedCmS` | 6 / 10 deg / 600 cm/s | trim 6 to 10 deg (Savitsky) | The hump bounds the course at 30 deg and slows light-wind riding; 13 deg strands a board at the planing threshold. |
@@ -372,8 +440,10 @@ and the 20 cm water-contact clamp (item 4).
   the kite, held at clock 0 by the airborne assist, sinks from 84 to 55 deg above the rider and
   falls faster than they do, and the lines' upward pull drops from 0.8 to 0.5 body weights. So the
   jump lands hot at 4.8 g crouched (inside the 3 to 6 g target; standing 8.6 g, hot but landed), and the
-  bigger the jump the faster the sink: in 40 kn the best release goes 15.9 m and lands at 10.3 m/s,
-  10 g, a crash even crouched; the highest that lands is 13.1 m. The landing model is not what is
+  bigger the jump the faster the sink: in 40 kn the best release (0.44 s) goes 15.3 m and lands at
+  10.2 m/s, 6.9 g crouched (12.8 g standing, a crash); in a storm the 0.2 s releases land crouched at
+  12.1 and 12.6 m/s, 9.4 and 9.9 g (60 and 90 kn), just inside the crash, and later ones crash (the
+  best 60 kn jump, 23.9 m at 0.25 s, at 11.2 g). The landing model is not what is
   short (`Physics.LandingGFromSink`); the airborne kite has to hold the rider up on the way down,
   sheeted in and kept overhead. `Physics.GoodLandingIsThreeToSixG` asserts the 3 to 6 g range (4.8 g).
 - **Course limit** (item 3b). The closest course the board holds while planing is 30 deg above the
@@ -385,10 +455,22 @@ and the 20 cm water-contact clamp (item 4).
   sheeted and moved and lose its drive as the board slows. The same hump drag makes light-wind
   riding harder (12 m^2 in 12 kn planes only with the bar right in). `Physics.CourseTheorem` pins
   25 to 40 deg.
-- **Carve speed loss** (item 3c): a 1.5 s full carve towards the kite loses 27% of its speed (target
-  under 20%; 22% before the pressure drag). The course comes round to nearly straight at the kite,
-  the lines go light, and the hull's drag and the pressure drag of the 39 deg heel slow the board.
-  `Physics.CarveFollowsTheHeading` bounds it at 30%.
+- **Carve speed loss** (item 3c): a 1.5 s full carve towards the kite loses 28% of its speed (target
+  under 20%; 22% before the pressure drag, 27% with the lean fixed at 35 deg until phase 3). The course
+  comes round to nearly straight at the kite, the lines go light, and the hull's drag and the pressure
+  drag of the heel (31 deg at the end) slow the board. `Physics.CarveFollowsTheHeading` bounds it at 30%.
+- **The harness lean rarely builds** (phase 3 item 3). The plan's "HarnessLeanAmount reaches 1" with
+  the stick held from a beam reach is not met: past the pull's beam the kite pulls the board backwards,
+  and it stalls about 15 deg past it and gets no more than 22 to 25 deg past it in 15 to 30 kn, short of
+  `MaxUpwindHeadingDeg` (40 to 60 all give the same rides). The lean builds only while the harness is
+  turning a board back, a fifth of a second for a board pointed 70 deg past the beam by hand. What
+  stopped the rotation was the stalled board's pivot keeping its nose to the pull and the carve's lean
+  following the turn. Two things are left: the carve still turns a board slower than the planing speed
+  at half rate, so the stalled board is carved up again at 1 to 2.5 kn, its heading passing head to wind
+  when the kite is at the window edge (the rider still faces the kite); and on the stall the balance
+  heel alone is 61 to 65 deg (850 to 1000 N of pull), so `MaxHeelDeg` hides the lean's 20 deg. A carve
+  that needs speed over the rails, and a harness limit that binds before the stall, would be the next
+  steps; both change the feel.
 - **Loop yank in the air** (item 2). A loop flown from the apex of the timed jump peaks at 0.9 body
   weights with the kite still 66 deg up, against the research's 3 to 5 with the kite low: at the
   apex the kite flies at about 14 m/s of air with a 3 m turn on 24 m lines and stays near the top.

@@ -11,8 +11,8 @@ struct FTrickSignature;
 
 /**
  * The kite school's evaluators (docs/tutorials.md S1): pure functions over a lesson objective or
- * fault list, the progress so far, the telemetry ring buffer and the last jump record. Not yet run
- * by the game: the lesson director (S3) will call EvaluateObjective once per fixed step, then
+ * fault list, the progress so far, the telemetry ring buffer and the last jump record. The lesson
+ * director (ALessonDirector, S3) calls EvaluateObjective on each new telemetry sample, then
  * ApplyResult, and DiagnoseFault when an attempt fails.
  */
 

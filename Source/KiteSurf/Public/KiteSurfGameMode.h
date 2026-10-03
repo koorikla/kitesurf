@@ -16,6 +16,12 @@ public:
 	virtual void RestartPlayerAtPlayerStart(AController* NewPlayer, AActor* StartSpot) override;
 	virtual void RestartPlayerAtTransform(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
+	/**
+	 * After the player's rider is spawned and set up (RestartPlayer and InitializeRide): starts the
+	 * kite school lesson ULessonSubsystem has pending, if any, by spawning an ALessonDirector.
+	 */
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+
 	/** Clock position of the kite at the start of a ride (deg right of the zenith, looking downwind). */
 	static constexpr float StartKiteClockDeg = 65.0f;
 

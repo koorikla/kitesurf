@@ -1,9 +1,16 @@
 #include "School/LessonSubsystem.h"
 #include "School/LessonCatalog.h"
+#include "School/LessonDirector.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "KiteRiderPawn.h"
 #include "UI/KiteSurfGameInstance.h"
 #include "UI/KiteSurfSaveGame.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogKiteSchool, Log, All);
+DEFINE_LOG_CATEGORY(LogKiteSchool);
 
 bool ULessonSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
@@ -69,13 +76,122 @@ void ULessonSubsystem::ResetProgress()
 
 bool ULessonSubsystem::StartLesson(FName LessonId)
 {
-	if (!IsUnlocked(LessonId))
+	return StartLessonChecked(LessonId, true);
+}
+
+bool ULessonSubsystem::StartLessonIgnoringPrerequisites(FName LessonId)
+{
+	return StartLessonChecked(LessonId, false);
+}
+
+bool ULessonSubsystem::StartLessonChecked(FName LessonId, bool bCheckPrerequisites)
+{
+	const FLessonDef* Lesson = LessonCatalog::Find(LessonId);
+	if (!Lesson)
 	{
-		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is locked or unknown"), *LessonId.ToString());
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: no lesson %s in the catalogue"), *LessonId.ToString());
 		return false;
 	}
-	UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is unlocked, but lessons cannot run yet (S3)"), *LessonId.ToString());
-	return false;
+	if (!LessonCatalog::IsAvailable(*Lesson))
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s needs a feature the game does not have yet"), *LessonId.ToString());
+		return false;
+	}
+	if (bCheckPrerequisites && !LessonUnlock::IsUnlocked(*Lesson, Progress))
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is locked"), *LessonId.ToString());
+		return false;
+	}
+	PendingLessonId = LessonId;
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	if (!World || !World->IsGameWorld())
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is pending (no game world yet)"), *LessonId.ToString());
+		return true;
+	}
+	// Already riding: run it here and now.
+	const APlayerController* PC = World->GetFirstPlayerController();
+	if (APawn* Rider = PC ? Cast<AKiteRiderPawn>(PC->GetPawn()) : nullptr)
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s starts in the ride in %s"), *LessonId.ToString(), *World->GetMapName());
+		StartPendingLesson(Rider);
+		return true;
+	}
+	if (!bTravelEnabled)
+	{
+		UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is pending (travel off)"), *LessonId.ToString());
+		return true;
+	}
+	UE_LOG(LogKiteSchool, Log, TEXT("StartLesson: %s is pending; opening %s"), *LessonId.ToString(), *Lesson->Setup.Map.ToString());
+	UGameplayStatics::OpenLevel(World, Lesson->Setup.Map);
+	return true;
+}
+
+ALessonDirector* ULessonSubsystem::StartPendingLesson(APawn* Rider)
+{
+	const FLessonDef* Lesson = LessonCatalog::Find(PendingLessonId);
+	if (!Lesson || !Rider)
+	{
+		return nullptr;
+	}
+	PendingLessonId = NAME_None;
+	return ALessonDirector::StartInWorld(Rider->GetWorld(), *Lesson, Rider);
+}
+
+namespace LessonSubsystemPrivate
+{
+	/** The game instance of the world being played (ride or menu). */
+	UKiteSurfGameInstance* FindPlayedGameInstance(UWorld* Preferred)
+	{
+		if (Preferred && Preferred->IsGameWorld())
+		{
+			if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(Preferred->GetGameInstance()))
+			{
+				return GI;
+			}
+		}
+		if (GEngine)
+		{
+			for (const FWorldContext& Context : GEngine->GetWorldContexts())
+			{
+				UWorld* World = Context.World();
+				if (World && World->IsGameWorld())
+				{
+					if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+					{
+						return GI;
+					}
+				}
+			}
+		}
+		return nullptr;
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs LessonCommand(
+		TEXT("kitesurf.Lesson"),
+		TEXT("Starts a kite school lesson (ULessonSubsystem::StartLesson): in the ride if there is one, else it opens the lesson's map. 'force' skips the prerequisites. Usage: kitesurf.Lesson <Id, e.g. B2> [force]"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (!Args.IsValidIndex(0))
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("Usage: kitesurf.Lesson <Id> [force]"));
+				return;
+			}
+			UKiteSurfGameInstance* GI = FindPlayedGameInstance(World);
+			ULessonSubsystem* Lessons = GI ? GI->GetSubsystem<ULessonSubsystem>() : nullptr;
+			if (!Lessons)
+			{
+				UE_LOG(LogKiteSchool, Warning, TEXT("kitesurf.Lesson: no game running"));
+				return;
+			}
+			const FName Id(*Args[0].ToUpper());
+			const bool bForce = Args.IsValidIndex(1) && Args[1].Equals(TEXT("force"), ESearchCase::IgnoreCase);
+			const bool bStarted = bForce ? Lessons->StartLessonIgnoringPrerequisites(Id) : Lessons->StartLesson(Id);
+			UE_LOG(LogKiteSchool, Display, TEXT("kitesurf.Lesson %s%s: %s"), *Id.ToString(), bForce ? TEXT(" force") : TEXT(""),
+				bStarted ? TEXT("started") : TEXT("not started (unknown or locked; 'force' skips the prerequisites)"));
+		}));
 }
 
 void ULessonSubsystem::LoadFromSaveGame(const UKiteSurfSaveGame& SaveGame)

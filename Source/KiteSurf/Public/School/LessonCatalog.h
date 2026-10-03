@@ -64,7 +64,7 @@ namespace LessonRules
  * The kite school's lessons (docs/tutorials.md section 2) as C++ data, like the trick naming
  * table. Chapters A (riding) and B (jumps) so far; C to F are added as their trick features land
  * (S9), with the prerequisites of section 2 (chapter F keeps its gate behind chapters C and E).
- * Not yet run by the game.
+ * Run by ALessonDirector (S3).
  */
 namespace LessonCatalog
 {

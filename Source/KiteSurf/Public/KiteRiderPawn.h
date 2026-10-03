@@ -380,6 +380,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Bar")
 	FLineAttachTunables LineAttachTunables;
 
+	/**
+	 * The riding stance on the water (T3.5, docs/tricks.md section 2): Heelside, or after an unhooked
+	 * landing Toeside (chest away from the kite, the bar in front, the lines round the front) or Blind
+	 * (back to the kite, the bar behind the back). Set at the touchdown from the body's heading against
+	 * the kite and the bar's route (BarStateMachine::StanceForWrap of the effective wrap). Toeside and
+	 * Blind are held for ToesideHoldSeconds and BlindHoldSeconds with no slide round; then the slide
+	 * round brings the rider back to Heelside, as it always has for a rider with the back to the kite.
+	 * On the water X (IA_Pass) ends them early: from Toeside the half turn back the way the frontside 180
+	 * came; from Blind a surface pass and the backside half turn on to heelside (with the lines already
+	 * passed round in the air, the half turn alone). Hooked in, the stance is always Heelside, so hooked
+	 * riding slides round as before.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Rider|Stance")
+	ETrickStance GetRidingStance() const { return RidingStance; }
+
+	/** How long the rider has been in the current riding stance on the water (s). */
+	UFUNCTION(BlueprintPure, Category = "Rider|Stance")
+	float GetStanceSeconds() const { return StanceSeconds; }
+
+	/** The torso twist the rig was last drawn with (deg, + turns the chest to the rider's right; FRiderRigInput::TorsoTwistDeg). */
+	float GetDrawnTorsoTwistDeg() const { return DrawnTorsoTwistDeg; }
+
+	/** Toeside is held this long after the landing before the slide round (s). Estimate (docs/tricks/T3.md T3.5). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Stance", meta = (ClampMin = "0.0"))
+	float ToesideHoldSeconds;
+
+	/** Blind is held this long after the landing before the slide round (s). Estimate (docs/tricks/T3.md T3.5). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Stance", meta = (ClampMin = "0.0"))
+	float BlindHoldSeconds;
+
+	/** Riding toeside the torso twists this far back towards the kite over the hips (deg). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Stance", meta = (ClampMin = "0.0", ClampMax = "120.0"))
+	float ToesideTorsoTwistDeg;
+
+	/** How fast the drawn torso twists into and out of the toeside twist (deg/s). Estimate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider|Stance", meta = (ClampMin = "1.0"))
+	float TorsoTwistRateDegPerSec;
+
 	/** The grabs and the one-footer, stepped in the fixed step before the rider attitude. */
 	const FGrabState& GetGrabState() const { return GrabState; }
 	FGrabState& GetGrabState() { return GrabState; }
@@ -1142,6 +1180,41 @@ private:
 
 	/** +1 when the board's nose is on the body's right (the attitude's strap offset). */
 	float GetBarNoseSideSign() const;
+
+	/**
+	 * The riding stance for one fixed step (T3.5), after the board: set at a touchdown from the bar's
+	 * effective wrap and route, Heelside whenever hooked, without the bar, crashing or floating; a held
+	 * stance counts up and ends in the slide round at its hold time, or at a buffered half turn from
+	 * Blind once the tension allows it.
+	 */
+	void StepStance(float StepSeconds);
+
+	/**
+	 * Starts the slide round to the other rail on the water (the drawn body turns over
+	 * RiderSwitchTurnRateDeg) and sets the stance to Heelside: the way the chest goes through the
+	 * board's leading end when bViaTravelNose, through its trailing end otherwise.
+	 */
+	void StartStanceTurn(bool bViaTravelNose);
+
+	/** The chest goes through the leading end for a half turn that raises the wrap (it is under 0), the trailing end otherwise. */
+	void StartUnwindingStanceTurn();
+
+	void SetRidingStance(ETrickStance Stance);
+
+	ETrickStance RidingStance = ETrickStance::Heelside;
+	float StanceSeconds = 0.0f;
+	/** After a touchdown the stance follows the lines for this long, while the body settles on its rail (s). */
+	static constexpr float StanceSettleSeconds = 0.2f;
+	float StanceSettleSecondsLeft = 0.0f;
+	bool bStanceWasAirborne = false;
+	/** Blind with the lines passed round in the air: X waits this long for the tension to allow the half turn (s). */
+	float StanceTurnBufferLeft = 0.0f;
+	/** The bar's nose side on the last StepBar, and the one latched at the touchdown for a held stance (the straps', as in the air). */
+	float LastBarNoseSideSign = 1.0f;
+	float StanceNoseSideSign = 1.0f;
+	/** The drawn toeside twist (deg) and the side it goes to (+1 the rider's right), latched as it starts. */
+	float DrawnTorsoTwistDeg = 0.0f;
+	float TorsoTwistSign = 1.0f;
 
 	FBarState Bar;
 	bool bHookPressPending = false;

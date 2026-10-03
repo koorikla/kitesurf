@@ -910,9 +910,9 @@ bool FKiteSurfTrickPassOnRide::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Named from the bar: a backside 180 with a pass, landing blind"), Record.TrickName, FString(TEXT("Backside 1 to blind")));
 		TestEqual(TEXT("The lines land blind"), Record.BarLandingStance, ETrickStance::Blind);
 		TestNotEqual(TEXT("Not a crash"), Record.Grade, ELandingGrade::Crash);
-		// Riding away blind, the board swaps ends under the rider and they slide round to face the kite: the
-		// lines come back in front, they do not wrap.
-		const float RideAwayUntil = Pawn->GetSimTimeSeconds() + 1.0f;
+		// Riding away blind (T3.5: the blind stance held for BlindHoldSeconds), the board swaps ends under the
+		// rider and then they slide round to face the kite: the lines come back in front, they do not wrap.
+		const float RideAwayUntil = Pawn->GetSimTimeSeconds() + Pawn->BlindHoldSeconds + 1.0f;
 		bool bKept = true;
 		while (!Ride.HasReached(RideAwayUntil))
 		{

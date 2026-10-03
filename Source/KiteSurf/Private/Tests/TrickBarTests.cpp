@@ -605,11 +605,13 @@ bool FKiteSurfTrickSurfacePassGrace::RunTest(const FString& Parameters)
 		JustInTime[I] = Landing(0.05f, Dt, FBarTunables());
 		TestEqual(Rate + TEXT(" 0.2 s of pass left at touchdown: a surface pass"), *KindName(JustInTime[I].LastPassKind), *KindName(ETrickPassKind::Surface));
 
-		// Riding blind, a pass started 0.2 s after touchdown is all on the water and still completes:
-		// the grace counts the pass's time on the water, not the time since touchdown.
+		// Riding blind, a pass started 0.2 s after touchdown is all on the water and still completes: a pass
+		// started on the water takes SurfacePassSeconds and the grace does not cut it short (T3.5); started
+		// within the grace after the touchdown, it joins the jump.
 		OnWater[I] = Landing(-0.2f, Dt, FBarTunables());
 		TestEqual(Rate + TEXT(" A pass started on the water: a surface pass"), *KindName(OnWater[I].LastPassKind), *KindName(ETrickPassKind::Surface));
 		TestEqual(Rate + TEXT(" ...no loss"), *CauseName(OnWater[I].Cause), *CauseName(EBarLossCause::None));
+		TestEqual(Rate + TEXT(" ...and joins the jump"), OnWater[I].State.JumpPasses.Num(), 1);
 	}
 	ExpectSameAtBothRates(*this, TEXT("Surface pass"), Surface[0], Surface[1]);
 	ExpectSameAtBothRates(*this, TEXT("Air pass"), Air[0], Air[1]);

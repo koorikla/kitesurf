@@ -23,6 +23,24 @@ bool FJumpRecorder::Step(const FJumpRecorderInput& In, FJumpRecord& OutRecord)
 
 	bool bFinalised = false;
 
+	if (bPendingFinalise)
+	{
+		// A back-to-blind landing waiting for a surface pass (T3.5): finalised once no pass can join it
+		// any more, or at once on a reset, a take-off or another landing.
+		if (bReset || bTookOff || bJumpEnded || !In.Bar || !BarStateMachine::MaySurfacePassJoinJump(*In.Bar))
+		{
+			if (In.Bar && In.Bar->JumpPasses.Num() > PendingPassCount)
+			{
+				// The surface pass joined the jump: the bar as it stands on the step the pass was done,
+				// before the rider turns on to heelside.
+				ApplyBar(*In.Bar, Live);
+			}
+			Finalise(PendingInput, OutRecord);
+			bPendingFinalise = false;
+			bFinalised = true;
+		}
+	}
+
 	if (bReset && bOpen)
 	{
 		bOpen = false;
@@ -31,9 +49,20 @@ bool FJumpRecorder::Step(const FJumpRecorderInput& In, FJumpRecord& OutRecord)
 	if (bJumpEnded && bOpen)
 	{
 		Accumulate(In);
-		Finalise(In, OutRecord);
 		bOpen = false;
-		bFinalised = true;
+		if (In.Bar && In.bLastLandingClean && BarStateMachine::MaySurfacePassJoinJump(*In.Bar) && !bFinalised)
+		{
+			// Landed back to blind with the bar behind the back and no pass: a surface pass made within
+			// the grace still belongs to this jump, so the record waits for it (T3.5).
+			bPendingFinalise = true;
+			PendingInput = In;
+			PendingPassCount = In.Bar->JumpPasses.Num();
+		}
+		else
+		{
+			Finalise(In, OutRecord);
+			bFinalised = true;
+		}
 	}
 
 	if (bTookOff)
@@ -58,6 +87,8 @@ void FJumpRecorder::Reset()
 {
 	bPrimed = false;
 	bOpen = false;
+	bPendingFinalise = false;
+	PendingPassCount = 0;
 	Live = FJumpRecord();
 	RecordedCount = 0;
 }
@@ -124,10 +155,7 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 	// still between the hands then is not counted.
 	if (In.Bar)
 	{
-		const FBarJumpSummary Bar = BarStateMachine::SummariseJump(*In.Bar);
-		Live.bHooked = In.Bar->bHooked;
-		Live.Passes = In.Bar->bHooked ? TArray<FTrickPass>() : Bar.Passes;
-		Live.BarLandingStance = In.Bar->bHooked ? ETrickStance::Heelside : Bar.LandingStance;
+		ApplyBar(*In.Bar, Live);
 	}
 
 	const float StepSeconds = In.BoardTimeSeconds - LastStepTimeSeconds;
@@ -144,6 +172,14 @@ void FJumpRecorder::Accumulate(const FJumpRecorderInput& In)
 		ApplyRotation(Rotation.GetCurrent(), Live);
 		ApplyRaley(Live);
 	}
+}
+
+void FJumpRecorder::ApplyBar(const FBarState& Bar, FJumpRecord& Record)
+{
+	const FBarJumpSummary Summary = BarStateMachine::SummariseJump(Bar);
+	Record.bHooked = Bar.bHooked;
+	Record.Passes = Bar.bHooked ? TArray<FTrickPass>() : Summary.Passes;
+	Record.BarLandingStance = Bar.bHooked ? ETrickStance::Heelside : Summary.LandingStance;
 }
 
 ETrickMove FJumpRecorder::TakeoffMoveOf(const FJumpRecord& Record)

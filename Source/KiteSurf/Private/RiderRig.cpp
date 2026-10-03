@@ -71,6 +71,7 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		Right = FVector::CrossProduct(FVector::UpVector, Facing);
 		Pose.Torso = FRotationMatrix::MakeFromXZ(Facing, BodyUp).ToQuat();
 	}
+	Pose.Hips = Pose.Torso;
 	if (Input.PelvisUp.IsSet() && !Input.PelvisUp.GetValue().GetSafeNormal().IsNearlyZero())
 	{
 		// A hand-over between the two: the pelvis line is blended separately from the torso.
@@ -107,7 +108,7 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 		for (int32 Side = 0; Side < 2; ++Side)
 		{
 			const float SideSign = Side == 0 ? -1.0f : 1.0f;
-			const FVector Hip = Pose.Pelvis + Pose.Torso.RotateVector(FVector(0.0f, HipHalfWidthCm * SideSign, 0.0f));
+			const FVector Hip = Pose.Pelvis + Pose.Hips.RotateVector(FVector(0.0f, HipHalfWidthCm * SideSign, 0.0f));
 			bReaches = bReaches && FVector::Dist(Hip, Ankles[Side]) <= LegReach;
 		}
 		if (bReaches)
@@ -126,10 +127,17 @@ FRiderRigPose RiderRig::SolveBody(const FRiderRigInput& Input)
 	{
 		const float SideSign = Side == 0 ? -1.0f : 1.0f;
 		FRiderLimbPose& Leg = Pose.Legs[Side];
-		Leg.Root = Pose.Pelvis + Pose.Torso.RotateVector(FVector(0.0f, HipHalfWidthCm * SideSign, 0.0f));
+		Leg.Root = Pose.Pelvis + Pose.Hips.RotateVector(FVector(0.0f, HipHalfWidthCm * SideSign, 0.0f));
 		// Knees forwards and a little apart.
 		Leg.Pole = Facing + Right * (0.35f * SideSign);
 		Leg.Joint = SolveTwoBone(Leg.Root, Ankles[Side], Leg.Pole, ThighLengthCm, ShinLengthCm, Leg.End);
+	}
+
+	// The twist over the hips (riding toeside): about the body's Up, so the legs are untouched and the
+	// shoulders, the arms and the drawn torso turn.
+	if (Input.TorsoTwistDeg != 0.0f)
+	{
+		Pose.Torso = (Pose.Torso * FQuat(FVector::ZAxisVector, FMath::DegreesToRadians(Input.TorsoTwistDeg))).GetNormalized();
 	}
 
 	// The fold at the hips: about the torso's own side axis, which the hips lie on, so the legs are

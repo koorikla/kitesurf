@@ -217,6 +217,11 @@ struct FJumpRecorderSettings
  *   touchdown (Finish with that step's body), when at least one step was counted.
  * A crash in the air that is not a landing (TriggerCrash from the spot) keeps the jump open until
  * the crash recovery's reset drops it.
+ * - Surface pass (T3.5): a clean landing back to blind (unhooked, the lines round the back, no pass)
+ *   is finalised only once no surface pass can join it (BarStateMachine::MaySurfacePassJoinJump):
+ *   when the grace after the touchdown runs out with no pass started, or when a pass started within
+ *   it is done (the record then carries that pass and the stance the bar has on that step), or at a
+ *   reset or the next take-off. Every other landing is finalised on its touchdown step.
  *
  * A finalised record also gets the landing verdict's cause (LastLandingCause) and its trick fields:
  * the signature from TrickRecognition::SignatureFromJump (which reads the rotation fields),
@@ -266,6 +271,8 @@ private:
 	void CollectLoops(const FJumpRecorderInput& In, FJumpRecord& Record) const;
 	/** Copies a rotation result into a record's rotation fields. */
 	static void ApplyRotation(const FRotationResult& Rotation, FJumpRecord& Record);
+	/** Copies the bar's summary (BarStateMachine::SummariseJump) into a record's bar fields: bHooked, Passes and BarLandingStance. */
+	static void ApplyBar(const FBarState& Bar, FJumpRecord& Record);
 	FJumpLoop MakeJumpLoop(const FKiteLoopRecord& Loop, const FJumpRecord& Record) const;
 
 	bool bPrimed = false;
@@ -275,6 +282,15 @@ private:
 
 	bool bOpen = false;
 	FJumpRecord Live;
+	/**
+	 * A landing waiting for a surface pass (T3.5): landed back to blind, unhooked with no pass, so a
+	 * pass made on the water within the grace joins it (BarStateMachine::MaySurfacePassJoinJump). The
+	 * touchdown step's snapshot is kept and finalised once no pass can join any more; with a pass the
+	 * bar fields are taken again on the step it is done.
+	 */
+	bool bPendingFinalise = false;
+	FJumpRecorderInput PendingInput;
+	int32 PendingPassCount = 0;
 	/** Kite time minus board time, read at take-off (s): the two clocks advance together. */
 	float KiteMinusBoardSeconds = 0.0f;
 	/** Highest board Z seen in the air and the board time of that step, for the apex time when the board does not give it. */

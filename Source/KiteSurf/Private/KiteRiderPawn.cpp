@@ -174,6 +174,11 @@ AKiteRiderPawn::AKiteRiderPawn()
 	RiderSwitchDelaySeconds = 0.4f;
 	RiderSwitchTurnRateDeg = 540.0f;
 	HarnessHookOffsetCm = FVector(22.0f, 0.0f, 16.0f);
+	// T3.5 landing stances; every value an estimate (docs/tricks/T3.md T3.5).
+	ToesideHoldSeconds = 3.0f;
+	BlindHoldSeconds = 2.0f;
+	ToesideTorsoTwistDeg = 70.0f;
+	TorsoTwistRateDegPerSec = 240.0f;
 
 	// The rider stands across the board and turns with it, but stays upright and leans against the kite
 	// rather than tilting with the deck, so the pose is set in world space (see UpdateRiderPose).
@@ -1182,6 +1187,8 @@ void AKiteRiderPawn::StepSimulation(float StepSeconds)
 			LastGroundEdgeHold = FMath::Abs(BoardMovement->GetEdgeInput());
 		}
 	}
+	// The riding stance (T3.5): after the board, which has just landed or not.
+	StepStance(StepSeconds);
 	if (TrickTracker)
 	{
 		TrickTracker->SetGrabSource(&GrabState);
@@ -1299,6 +1306,13 @@ float AKiteRiderPawn::GetBarNoseSideSign() const
 	if (RiderAttitude && bUseRiderAttitude && RiderAttitude->IsSimulating())
 	{
 		return RiderAttitude->GetStrapOffset().GetAxisX().Y >= 0.0 ? 1.0f : -1.0f;
+	}
+	if (RidingStance != ETrickStance::Heelside)
+	{
+		// A held toeside or blind stance (T3.5): the straps' side from the touchdown. The physics body did
+		// not turn in the air, so its nose is on the other side of the body now, but the feet are where
+		// they were, and a turn on towards the back foot is still backside.
+		return StanceNoseSideSign;
 	}
 	// The board's nose against the body's right, both as GetBarBodyQuat has them.
 	const FVector Nose = RootComponent ? RootComponent->GetForwardVector() : FVector::ForwardVector;
@@ -1430,9 +1444,9 @@ void AKiteRiderPawn::StepBar(float StepSeconds)
 	if (!Bar.bHooked && !bAirborne && (BoardMovement->IsFloating() || bSlidingRound) && Bar.Place != EBarPlace::Passing && Bar.Place != EBarPlace::Lost)
 	{
 		// Floating in the water, or sliding the board round to face the kite after riding with the back
-		// to it (UpdateRiderPose), the rider turns to face the kite: the lines come back in front rather
-		// than wrapping round them. Until T3.5 gives blind and toeside riding their own stances, this is
-		// how an unhooked rider who lands blind or toeside gets back to heelside.
+		// to it (UpdateRiderPose, StartStanceTurn), the rider turns to face the kite: the lines come back
+		// in front rather than wrapping round them. This is how an unhooked rider who lands blind or
+		// toeside gets back to heelside, at the end of the stance's hold or on X (T3.5).
 		Bar.WrapDeg = 0.0f;
 		Bar.bRouteBehind = false;
 		Bar.bHasLineAngle = false;
@@ -1449,8 +1463,28 @@ void AKiteRiderPawn::StepBar(float StepSeconds)
 	In.bOnWaterRideable = !bAirborne && !BoardMovement->IsCrashing();
 	In.bHookPressed = bHookPressPending;
 	In.bPassPressed = bPassPressPending;
+	LastBarNoseSideSign = In.NoseSideSign;
+	if (bPassPressPending && !bAirborne && !Bar.bHooked && Bar.Place != EBarPlace::Passing && Bar.Place != EBarPlace::Lost)
+	{
+		// X on the water by stance (T3.5). Toeside: the half turn back to heelside, no pass. Blind with
+		// the lines passed round in the air: the half turn on, once the tension allows (StepStance). Blind
+		// with no pass yet: the bar machine's surface pass, and the half turn when it is done (below).
+		if (RidingStance == ETrickStance::Toeside)
+		{
+			In.bPassPressed = false;
+			UE_LOG(LogKiteSurf, Log, TEXT("Stance: toeside to heelside on X (wrap %.0f deg)"), Bar.WrapDeg);
+			StartUnwindingStanceTurn();
+		}
+		else if (RidingStance == ETrickStance::Blind && Bar.WrapDeg < 0.0f)
+		{
+			In.bPassPressed = false;
+			StanceTurnBufferLeft = BarTunables.PassRequestBufferSeconds;
+		}
+	}
 	bHookPressPending = false;
 	bPassPressPending = false;
+	const bool bWaterPassUnderWay = Bar.Place == EBarPlace::Passing && Bar.bPassFromWater;
+	const bool bWaterPassJoinsJump = bWaterPassUnderWay && Bar.bPassJoinsJump;
 	// One hand off the bar in the air (T3.3): a grab button takes that hand off first (a one-hand
 	// grab, with the hand on its way back after the button is let go), and the tantrum's back hand.
 	// Hooked in, the bar machine keeps both hands on it.
@@ -1489,6 +1523,14 @@ void AKiteRiderPawn::StepBar(float StepSeconds)
 	{
 		PlayHaptic(0.25f, 0.05f, false);
 		UE_LOG(LogKiteSurf, Log, TEXT("Bar: pass done (%s), wrap now %.0f deg"), Events.PassKind == ETrickPassKind::Surface ? TEXT("surface") : TEXT("air"), Bar.WrapDeg);
+		if (bWaterPassUnderWay && !bAirborne && RidingStance == ETrickStance::Blind)
+		{
+			// The surface pass from riding blind (T3.5): the bar is round, and the rider turns on backside
+			// to heelside, the lines unwinding as they come round.
+			UE_LOG(LogKiteSurf, Log, TEXT("Stance: blind to heelside after a surface pass (%s)"),
+				bWaterPassJoinsJump ? TEXT("within the grace: it joins the jump") : TEXT("after the grace: not part of the jump"));
+			StartUnwindingStanceTurn();
+		}
 	}
 	if (Events.Lost != EBarLossCause::None)
 	{
@@ -2022,6 +2064,125 @@ bool AKiteRiderPawn::HasKitePosition() const
 	return FMath::IsNearlyEqual(KiteDistance, Kite->LineLengthCm, Kite->LineLengthCm * 0.5f);
 }
 
+void AKiteRiderPawn::SetRidingStance(ETrickStance Stance)
+{
+	if (Stance != RidingStance)
+	{
+		UE_LOG(LogKiteSurf, Log, TEXT("Stance: %s -> %s after %.2f s (wrap %.0f deg)"), *UEnum::GetDisplayValueAsText(RidingStance).ToString(),
+			*UEnum::GetDisplayValueAsText(Stance).ToString(), StanceSeconds, Bar.WrapDeg);
+		RidingStance = Stance;
+		StanceSeconds = 0.0f;
+	}
+	if (Stance == ETrickStance::Heelside)
+	{
+		StanceTurnBufferLeft = 0.0f;
+	}
+}
+
+void AKiteRiderPawn::StepStance(float StepSeconds)
+{
+	if (!BoardMovement)
+	{
+		return;
+	}
+	const bool bAirborne = BoardMovement->GetBoardState() == EBoardState::Airborne;
+	const bool bTouchdown = !bAirborne && bStanceWasAirborne;
+	bStanceWasAirborne = bAirborne;
+	if (Bar.bHooked || Bar.Place == EBarPlace::Lost || BoardMovement->IsCrashing() || BoardMovement->IsFloating())
+	{
+		// Hooked in the harness hook is on the front and the rider slides round as always; without the
+		// bar, crashing or floating there is no stance to hold.
+		SetRidingStance(ETrickStance::Heelside);
+		return;
+	}
+	if (bAirborne)
+	{
+		// The stance in the air is the attitude's; the touchdown sets it again.
+		return;
+	}
+	// The stance the lines give: the body's heading against the kite (the wrap) and their route. A pass
+	// still under way counts as done (the bar is behind the back either way).
+	const bool bPassing = Bar.Place == EBarPlace::Passing;
+	const ETrickStance FromWrap = BarStateMachine::StanceForWrap(BarStateMachine::EffectiveWrapDeg(Bar), Bar.bRouteBehind || bPassing);
+	if (bTouchdown)
+	{
+		StanceSettleSecondsLeft = StanceSettleSeconds;
+		// The physics body did not turn in the air: keep the straps' side for the bar while it is held.
+		StanceNoseSideSign = LastBarNoseSideSign;
+	}
+	if (StanceSettleSecondsLeft > 0.0f)
+	{
+		// Just landed: the body comes off the attitude onto the rail it faces over the first steps, and the
+		// stance is the one the lines give once it has (the touchdown step's body can still be a little
+		// short of the rail).
+		StanceSettleSecondsLeft = FMath::Max(StanceSettleSecondsLeft - StepSeconds, 0.0f);
+		if (FromWrap != RidingStance)
+		{
+			SetRidingStance(FromWrap);
+		}
+		else if (!bTouchdown && RidingStance != ETrickStance::Heelside)
+		{
+			StanceSeconds += StepSeconds;
+		}
+		return;
+	}
+	if (RidingStance == ETrickStance::Heelside)
+	{
+		return;
+	}
+	if (FromWrap == ETrickStance::Heelside)
+	{
+		// Come round to face the kite some other way (a carve): heelside, nothing to slide.
+		SetRidingStance(ETrickStance::Heelside);
+		return;
+	}
+	StanceSeconds += StepSeconds;
+	if (StanceTurnBufferLeft > 0.0f)
+	{
+		// Blind with the lines passed round in the air: the half turn on to heelside on X, once the pull
+		// is low enough for the bar to come round (the surface pass's limit).
+		const float TensionBW = Kite ? Kite->GetLineTensionN() / FMath::Max(BoardMovement->MassKg * KiteUnits::GravityMS2, 1.0f) : 0.0f;
+		if (TensionBW < BarTunables.SurfacePassMaxTensionBW)
+		{
+			UE_LOG(LogKiteSurf, Log, TEXT("Stance: blind to heelside on X, the lines already passed (tension %.2f body weights)"), TensionBW);
+			StartUnwindingStanceTurn();
+			return;
+		}
+		StanceTurnBufferLeft = FMath::Max(StanceTurnBufferLeft - StepSeconds, 0.0f);
+	}
+	const float HoldSeconds = RidingStance == ETrickStance::Toeside ? ToesideHoldSeconds : BlindHoldSeconds;
+	if (StanceSeconds >= HoldSeconds - 0.5f * StepSeconds && !bPassing)
+	{
+		// The hold is over: the slide round back to heelside, as for any rider with the back to the kite.
+		UE_LOG(LogKiteSurf, Log, TEXT("Stance: %s held %.2f s, sliding round to heelside"), *UEnum::GetDisplayValueAsText(RidingStance).ToString(), StanceSeconds);
+		StartUnwindingStanceTurn();
+	}
+}
+
+void AKiteRiderPawn::StartUnwindingStanceTurn()
+{
+	// Turning so the wrap goes back towards 0: a wrap under 0 (toeside, or blind with the lines passed)
+	// rises, which is the chest going towards the back foot, now at the board's leading end; a wrap over
+	// 0 (blind, not passed) falls, back the way the backside 180 came.
+	StartStanceTurn(BarStateMachine::EffectiveWrapDeg(Bar) < 0.0f);
+}
+
+void AKiteRiderPawn::StartStanceTurn(bool bViaTravelNose)
+{
+	const float BoardYawDeg = GetActorRotation().Yaw;
+	const float OldSide = ChooseStanceSide(BoardYawDeg, RiderFacingYawDeg);
+	// The board's leading end: its nose, unless it is moving tail first.
+	const FVector Velocity2D = BoardMovement ? FVector(BoardMovement->Velocity.X, BoardMovement->Velocity.Y, 0.0f) : FVector::ZeroVector;
+	const float NoseSign = (Velocity2D.SizeSquared() > 1.0f && FVector::DotProduct(GetActorForwardVector(), Velocity2D) < 0.0f) ? -1.0f : 1.0f;
+	RiderStanceSide = -OldSide;
+	RiderFacingYawDeg = FRotator::NormalizeAxis(BoardYawDeg + 90.0f * RiderStanceSide);
+	// The offset comes off towards 0 (UpdateRiderPose), so its sign is the way the body turns. Just under
+	// 180, so FMath::FixedTurn takes it down the side given rather than the way it picks at exactly 180.
+	RiderTurnOffsetDeg = 179.0f * OldSide * NoseSign * (bViaTravelNose ? 1.0f : -1.0f);
+	BackToKiteSeconds = 0.0f;
+	SetRidingStance(ETrickStance::Heelside);
+}
+
 float AKiteRiderPawn::ChooseStanceSide(float BoardYawDeg, float PreferredFacingYawDeg)
 {
 	// The rider stands across the board, so they face one rail or the other: +1 is the board's right.
@@ -2078,8 +2239,9 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 		// face it again. In the air they are free to spin.
 		const FVector StanceFacing = FRotator(0.0f, BoardYawDeg + 90.0f * RiderStanceSide, 0.0f).Vector();
 		const bool bBackToKite = bHasKite && !bAirborne && FVector::DotProduct(StanceFacing, KiteNow) < -0.25f;
+		// A toeside or blind landing (T3.5) is held instead: StepStance ends it with the same slide round.
 		BackToKiteSeconds = bBackToKite ? BackToKiteSeconds + DeltaTime : 0.0f;
-		if (BackToKiteSeconds > RiderSwitchDelaySeconds)
+		if (BackToKiteSeconds > RiderSwitchDelaySeconds && RidingStance == ETrickStance::Heelside)
 		{
 			RiderStanceSide = -RiderStanceSide;
 			RiderTurnOffsetDeg = FRotator::NormalizeAxis(RiderTurnOffsetDeg + 180.0f);
@@ -2118,6 +2280,22 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	RigInput.BodyUp = BodyUp.GetSafeNormal();
 	// The crouch: the load, or the tuck in the air.
 	RigInput.Crouch = FMath::Max(Load, RiderAttitude ? RiderAttitude->GetTuckAmount() : 0.0f);
+	// Riding toeside (T3.5) the hips face away from the kite and the torso twists back towards it over
+	// them, to the side the kite is on as the twist starts; only on the water, gone in the air.
+	{
+		float TwistTarget = 0.0f;
+		if (RidingStance == ETrickStance::Toeside && !bAirborne && bHasKite)
+		{
+			if (FMath::Abs(DrawnTorsoTwistDeg) < 1.0f)
+			{
+				const FVector RightOfFacing = FVector::CrossProduct(FVector::UpVector, Facing);
+				TorsoTwistSign = FVector::DotProduct(KiteNow, RightOfFacing) >= 0.0f ? 1.0f : -1.0f;
+			}
+			TwistTarget = ToesideTorsoTwistDeg * TorsoTwistSign;
+		}
+		DrawnTorsoTwistDeg = bViewInitialized ? FMath::FInterpConstantTo(DrawnTorsoTwistDeg, TwistTarget, DeltaTime, TorsoTwistRateDegPerSec) : TwistTarget;
+		RigInput.TorsoTwistDeg = DrawnTorsoTwistDeg * (1.0f - FMath::SmoothStep(0.0f, 1.0f, RiderAirBlend));
+	}
 	// On the water RigInput.BodyQuat stays unset and the rig solves from the level Facing and BodyUp.
 	// In the air it is the rider attitude's body. Over RiderHandoverSeconds from the take-off, and
 	// back after the landing, the torso turns between the two and the pelvis line with it, so the
@@ -2145,7 +2323,7 @@ void AKiteRiderPawn::UpdateRiderPose(float DeltaTime)
 	}
 	const float GrabWeight = FMath::Lerp(GrabState.GetPrevReachWeight(), GrabState.GetReachWeight(), LastRenderAlpha);
 	const float FootWeight = bBoardOffDrawn ? 0.0f : FMath::SmoothStep(0.0f, 1.0f, FMath::Lerp(GrabState.GetPrevFootOut(), GrabState.GetFootOut(), LastRenderAlpha));
-	const float NoseSideSign = FVector::DotProduct(RigInput.Board.GetUnitAxis(EAxis::X), RiderPose.Torso.GetAxisY()) >= 0.0f ? 1.0f : -1.0f;
+	const float NoseSideSign = FVector::DotProduct(RigInput.Board.GetUnitAxis(EAxis::X), RiderPose.Hips.GetAxisY()) >= 0.0f ? 1.0f : -1.0f;
 	const int32 FrontRigSide = NoseSideSign > 0.0f ? 1 : 0;
 	const bool bGrabDrawn = !bBoardOffDrawn && GrabState.IsHandOffBar() && GrabWeight > 0.0f;
 	const ETrickHand GrabHand = GrabState.GetHand();

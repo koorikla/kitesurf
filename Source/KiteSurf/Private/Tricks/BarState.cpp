@@ -100,6 +100,8 @@ FBarEvents BarStateMachine::Step(FBarState& S, const FBarInputs& In, const FBarT
 		S.JumpPasses.Reset();
 	}
 	S.bWasAirborne = In.bAirborne;
+	// The surface grace: full in the air, running down from the touchdown.
+	S.SurfaceGraceLeftSeconds = In.bAirborne ? T.SurfacePassGraceSeconds : FMath::Max(S.SurfaceGraceLeftSeconds - Dt, 0.0f);
 
 	if (S.Place == EBarPlace::Lost)
 	{
@@ -150,11 +152,13 @@ FBarEvents BarStateMachine::Step(FBarState& S, const FBarInputs& In, const FBarT
 		S.Place = (FMath::Abs(S.WrapDeg) >= 90.0f && S.bRouteBehind) ? EBarPlace::BehindBack : EBarPlace::Front;
 	}
 
-	// Pass.
+	// Pass. On the water (the surface pass from riding blind, T3.5) the feet on the board take part
+	// of the pull, so it may start with more tension on the lines.
 	const bool bSlack = TensionBW < T.PassSlackTensionBW;
 	S.SlackSeconds = bSlack ? S.SlackSeconds + Dt : 0.0f;
 	S.PassBufferLeft = In.bPassPressed ? T.PassRequestBufferSeconds : FMath::Max(S.PassBufferLeft - Dt, 0.0f);
-	if (S.Place != EBarPlace::Passing && S.PassBufferLeft > 0.0f && bSlack
+	const bool bSlackForPass = In.bAirborne ? bSlack : TensionBW < T.SurfacePassMaxTensionBW;
+	if (S.Place != EBarPlace::Passing && S.PassBufferLeft > 0.0f && bSlackForPass
 		&& BackToKiteDeg(In.Body, In.LineDirWorld) <= T.PassBackToKiteDeg)
 	{
 		S.Place = EBarPlace::Passing;
@@ -163,16 +167,19 @@ FBarEvents BarStateMachine::Step(FBarState& S, const FBarInputs& In, const FBarT
 		S.PassWaterSeconds = 0.0f;
 		S.PassSense = S.WrapDeg >= 0.0f ? 1.0f : -1.0f;
 		S.PassBufferLeft = 0.0f;
+		S.bPassFromWater = !In.bAirborne;
+		S.bPassJoinsJump = In.bAirborne || S.SurfaceGraceLeftSeconds > TimerEpsSeconds;
 		E.bPassStarted = true;
 	}
 	if (S.Place == EBarPlace::Passing)
 	{
-		if (TensionBW > T.PassLoseTensionBW)
+		if (TensionBW > (S.bPassFromWater ? T.SurfacePassLoseTensionBW : T.PassLoseTensionBW))
 		{
 			LoseBar(S, E, EBarLossCause::PassUnderLoad);
 			return E;
 		}
-		S.PassT += T.PassDurationSeconds > 0.0f ? Dt / T.PassDurationSeconds : 1.0f;
+		const float Duration = S.bPassFromWater ? T.SurfacePassSeconds : T.PassDurationSeconds;
+		S.PassT += Duration > 0.0f ? Dt / Duration : 1.0f;
 		if (!In.bAirborne)
 		{
 			S.PassWaterSeconds += Dt;
@@ -188,12 +195,17 @@ FBarEvents BarStateMachine::Step(FBarState& S, const FBarInputs& In, const FBarT
 			S.PassT = 0.0f;
 			E.bPassDone = true;
 			E.PassKind = In.bAirborne ? ETrickPassKind::Air : ETrickPassKind::Surface;
-			FBarPassRecord Record;
-			Record.Sense = SenseOf(S.PassSense);
-			Record.Kind = E.PassKind;
-			S.JumpPasses.Add(Record);
+			if (S.bPassJoinsJump)
+			{
+				FBarPassRecord Record;
+				Record.Sense = SenseOf(S.PassSense);
+				Record.Kind = E.PassKind;
+				S.JumpPasses.Add(Record);
+			}
+			S.bPassFromWater = false;
+			S.bPassJoinsJump = true;
 		}
-		else if (S.PassWaterSeconds > T.SurfacePassGraceSeconds + TimerEpsSeconds)
+		else if (!S.bPassFromWater && S.PassWaterSeconds > T.SurfacePassGraceSeconds + TimerEpsSeconds)
 		{
 			LoseBar(S, E, EBarLossCause::PassUnfinished);
 			return E;
@@ -234,6 +246,19 @@ float BarStateMachine::EffectiveWrapDeg(const FBarState& S)
 bool BarStateMachine::CanLandRideable(const FBarState& S, const FBarTunables& T)
 {
 	return S.Place != EBarPlace::Lost && FMath::Abs(EffectiveWrapDeg(S)) < T.WrappedLandDeg;
+}
+
+bool BarStateMachine::MaySurfacePassJoinJump(const FBarState& S)
+{
+	if (S.bHooked || S.Place == EBarPlace::Lost)
+	{
+		return false;
+	}
+	if (S.Place == EBarPlace::Passing)
+	{
+		return S.bPassFromWater && S.bPassJoinsJump;
+	}
+	return S.bRouteBehind && S.WrapDeg >= 90.0f && S.SurfaceGraceLeftSeconds > TimerEpsSeconds;
 }
 
 ETrickStance BarStateMachine::StanceForWrap(float WrapDeg, bool bRouteBehind)

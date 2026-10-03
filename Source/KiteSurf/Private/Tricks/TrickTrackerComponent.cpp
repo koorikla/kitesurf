@@ -118,11 +118,19 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 			*BoardOffText, Finished.Inversions.Num(), Finished.SpinDeg, Finished.SpinHalfTurns,
 			AboutUpDeg, AboutUpDeg - Finished.SpinDeg,
 			Rotation.GetFrame().Sigma, Finished.NetHeadingDeg, *UEnum::GetValueAsString(Finished.LandingStance), *BarText, *RaleyText);
+		bLastLandingNewTrick = false;
 		if (UWorld* World = GetWorld())
 		{
 			if (UKiteSurfGameInstance* GameInstance = World->GetGameInstance<UKiteSurfGameInstance>())
 			{
-				GameInstance->RecordTrickLanding(Finished);
+				bLastLandingNewTrick = GameInstance->RecordTrickLanding(Finished);
+				if (bLastLandingNewTrick)
+				{
+					// A trick landed for the first time this save is kept even if the player quits
+					// without saving another way (review batch D, problem 7: the book was not saved
+					// when a trick was first landed).
+					GameInstance->SaveSettingsToDisk();
+				}
 			}
 		}
 	}

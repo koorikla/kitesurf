@@ -162,8 +162,9 @@ public:
 
 	/**
 	 * Counts a finished jump in the trick book (FTrickBook::RecordLanding, twin-tip). True when it
-	 * was the first landing of that trick. Does not write to disk: SaveSettingsToDisk does. Not
-	 * yet fed by the game; the trick tracker wiring will call it.
+	 * was the first landing of that trick. Does not write to disk itself: called by
+	 * UTrickTrackerComponent::StepTracker on every finished jump, which calls SaveSettingsToDisk
+	 * when this returns true (review batch D, problem 7).
 	 */
 	bool RecordTrickLanding(const FJumpRecord& Record);
 

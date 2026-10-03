@@ -3,8 +3,20 @@
 #include "CoreGlobals.h"
 #include "Engine/World.h"
 #include "BoardMovementComponent.h"
+#include "KiteComponent.h"
 #include "KiteRiderPawn.h"
+#include "KiteSurfGameMode.h"
+#include "KiteSurfHUD.h"
+#include "KiteSurfUnits.h"
+#include "WindComponent.h"
+#include "Tricks/JumpRecord.h"
 #include "Tricks/LandingEvaluator.h"
+#include "Tricks/TrickTrackerComponent.h"
+#include "UI/KiteSurfGameInstance.h"
+#include "UI/KiteSurfSaveGame.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -66,6 +78,147 @@ namespace TrickFeedbackTest
 		Verdict.Cause = Cause;
 		return Verdict;
 	}
+
+	constexpr float FrameSeconds = 1.0f / 60.0f;
+
+	/**
+	 * A rider on the water in steady wind along +X (FLiveRide in TrickLiveRotationTests.cpp, trimmed
+	 * to what TrickBookSavedOnUnlock needs: no HUD, no camera).
+	 */
+	struct FTrickRide
+	{
+		UWorld* World = nullptr;
+		AKiteRiderPawn* Pawn = nullptr;
+		UKiteComponent* Kite = nullptr;
+		UBoardMovementComponent* Board = nullptr;
+		UTrickTrackerComponent* Tracker = nullptr;
+
+		explicit FTrickRide(float WindKnots = 30.0f)
+		{
+			World = UWorld::CreateWorld(EWorldType::Game, false);
+			Pawn = World ? World->SpawnActor<AKiteRiderPawn>() : nullptr;
+			if (!Pawn)
+			{
+				return;
+			}
+			Kite = Pawn->GetKite();
+			Board = Pawn->GetBoardMovement();
+			Tracker = Pawn->GetTrickTracker();
+			if (!Kite || !Board || !Tracker)
+			{
+				return;
+			}
+			if (UWindComponent* Wind = Pawn->GetWind())
+			{
+				Wind->BaseWind = FVector(KiteUnits::KnotsToCmS(WindKnots), 0.0f, 0.0f);
+				Wind->GustStrength = 0.0f;
+				Wind->DirectionDriftDeg = 0.0f;
+			}
+			AKiteSurfGameMode::InitializeRide(Pawn, KiteUnits::KnotsToCmS(12.0f), 1.0f);
+			Kite->bParkHoldAssist = true;
+			Kite->SetKiteModel(EKiteModel::Loop);
+			Kite->SetKiteSize(UKiteComponent::RecommendKiteSizeM2(WindKnots));
+		}
+
+		~FTrickRide()
+		{
+			if (World)
+			{
+				World->DestroyWorld(false);
+			}
+		}
+
+		bool IsValid() const { return World && Pawn && Kite && Board && Tracker; }
+		bool HasReached(float SimSeconds) const { return Pawn->GetSimTimeSeconds() + 0.5f * Pawn->SimStepSeconds >= SimSeconds; }
+		void Frame() { Pawn->Tick(FrameSeconds); }
+		void SimulateUntil(float SimSeconds) { while (!HasReached(SimSeconds)) { Frame(); } }
+		bool IsAirborne() const { return Board->GetBoardState() == EBoardState::Airborne; }
+	};
+
+	/**
+	 * TrickLiveRotationTests' timed 30 kn jump with no pre-wind ("Straight air"): the bar hard over,
+	 * weight on the tail, the jump button held and let go 0.66 s after the bar reaches the kite, a
+	 * crouch for the landing. Reliably lands Clean (batch C: KiteSurf.Trick.CardGradeMatchesVerdict).
+	 * SendAt is the sim time (s) to start the send from, so the same ride can fly it twice in a row.
+	 */
+	bool FlyStraightAirJump(FTrickRide& Ride, float SendAt)
+	{
+		AKiteRiderPawn* Pawn = Ride.Pawn;
+		Ride.SimulateUntil(SendAt);
+		Pawn->SteerKite(-1.0f);
+		Ride.Board->SetWeightShift(-1.0f);
+		Pawn->SetLoadHeld(true);
+		Pawn->SetPreWind(FVector2D::ZeroVector);
+		const float ReleaseAt = SendAt + FMath::RoundToFloat((0.66f + Ride.Kite->GetSteeringDeadTimeSeconds()) * 30.0f) / 30.0f;
+		while (!Ride.HasReached(ReleaseAt) && !Ride.IsAirborne())
+		{
+			Ride.Frame();
+		}
+		Pawn->SheetKite(1.0f);
+		Pawn->ReleaseLoadAndPop();
+		Ride.Board->SetWeightShift(0.0f);
+		Pawn->SteerKite(0.0f);
+
+		bool bWasAir = false;
+		bool bLanded = false;
+		const float EndAt = ReleaseAt + 20.0f;
+		while (!Ride.HasReached(EndAt))
+		{
+			Ride.Frame();
+			if (Ride.IsAirborne())
+			{
+				bWasAir = true;
+				if (Ride.Board->Velocity.Z < 0.0f)
+				{
+					Pawn->SetLoadHeld(true); // coming down: crouch for the landing
+				}
+			}
+			else if (bWasAir)
+			{
+				bLanded = Ride.Board->WasLastLandingClean();
+				break;
+			}
+		}
+		Pawn->SetLoadHeld(false);
+		return bLanded;
+	}
+
+	/**
+	 * Backs up the player's real Settings save (if any) before a test that must exercise the real
+	 * disk path - UKiteSurfGameInstance::SaveSettingsToDisk always writes the default slot, with no
+	 * way to redirect it to a test slot - and restores it byte for byte afterward, or deletes the
+	 * slot if it did not exist before. The same path SchoolOnboardingTests.cpp's FTutorialSettingsGuard
+	 * reads to prove a save is unchanged; this one expects a change, and undoes it.
+	 */
+	struct FDefaultSlotGuard
+	{
+		FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"), UKiteSurfSaveGame::DefaultSaveSlot + TEXT(".sav"));
+		bool bExisted = false;
+		TArray<uint8> Bytes;
+
+		FDefaultSlotGuard()
+		{
+			// FileExists first: LoadFileToArray on a missing file logs an engine warning (the slot
+			// is usually empty - no settings save has been written in this worktree yet).
+			bExisted = IFileManager::Get().FileExists(*Path);
+			if (bExisted)
+			{
+				FFileHelper::LoadFileToArray(Bytes, *Path);
+			}
+		}
+
+		~FDefaultSlotGuard()
+		{
+			if (bExisted)
+			{
+				FFileHelper::SaveArrayToFile(Bytes, *Path);
+			}
+			else
+			{
+				IFileManager::Get().Delete(*Path);
+			}
+		}
+	};
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickStompedLandingRumbles, "KiteSurf.Trick.StompedLandingRumbles", TrickFeedbackTest::Flags)
@@ -178,6 +331,108 @@ bool FKiteSurfTrickRotationWhooshFollowsSpin::RunTest(const FString& Parameters)
 	const FRideAudioMix FastestMix = AKiteRiderPawn::ComputeAudioMix(Fastest);
 	TestTrue(TEXT("Nothing is louder than full volume, however fast the spin reads"), FastestMix.RotationVolume <= 0.75f + 1e-4f);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickNewTrickNoticeOnce, "KiteSurf.Trick.NewTrickNoticeOnce", TrickFeedbackTest::Flags)
+
+bool FKiteSurfTrickNewTrickNoticeOnce::RunTest(const FString& Parameters)
+{
+	// HUD-level, as KiteSurf.Trick.CardGradeMatchesVerdict checks AKiteSurfHUD::FormatJumpCard
+	// directly: ShowJumpCard's bIsNewTrick is UpdateJumpCard passing through
+	// UTrickTrackerComponent::WasLastLandingNewTrick (review batch D, problem 7).
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	AKiteSurfHUD* HUD = World ? World->SpawnActor<AKiteSurfHUD>() : nullptr;
+	if (!TestNotNull(TEXT("HUD spawned"), HUD))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("No notice before any jump card"), HUD->GetNewTrickNoticeText().IsEmpty());
+
+	FJumpRecord BackRoll;
+	BackRoll.TrickName = TEXT("Back roll");
+	BackRoll.ApexHeightCm = 500.0f;
+	BackRoll.Grade = ELandingGrade::Clean;
+
+	// The first landing of a trick: the notice names it.
+	HUD->ShowJumpCard(BackRoll, true);
+	TestEqual(TEXT("The notice names the newly landed trick"), HUD->GetNewTrickNoticeText(), FString(TEXT("NEW TRICK: Back roll")));
+
+	// A repeat of the same trick: the card is still shown, but with no notice.
+	HUD->ShowJumpCard(BackRoll, false);
+	TestTrue(TEXT("A repeat shows no notice"), HUD->GetNewTrickNoticeText().IsEmpty());
+	TestFalse(TEXT("but the card itself is still up"), HUD->GetJumpCardText().IsEmpty());
+
+	// A different trick, also landed for the first time: its own notice.
+	FJumpRecord FrontRoll;
+	FrontRoll.TrickName = TEXT("Front roll");
+	FrontRoll.ApexHeightCm = 400.0f;
+	FrontRoll.Grade = ELandingGrade::Stomped;
+	HUD->ShowJumpCard(FrontRoll, true);
+	TestEqual(TEXT("A different new trick gets its own notice"), HUD->GetNewTrickNoticeText(), FString(TEXT("NEW TRICK: Front roll")));
+
+	// The notice goes with the card: once that clears (no tracker, as with no pawn), so does the notice.
+	HUD->UpdateJumpCard(nullptr, 0.0f);
+	TestTrue(TEXT("No card once the tracker is gone"), HUD->GetJumpCardText().IsEmpty());
+	TestTrue(TEXT("and so no notice either"), HUD->GetNewTrickNoticeText().IsEmpty());
+
+	World->DestroyWorld(false);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickTrickBookSavedOnUnlock, "KiteSurf.Trick.TrickBookSavedOnUnlock", TrickFeedbackTest::Flags)
+
+bool FKiteSurfTrickTrickBookSavedOnUnlock::RunTest(const FString& Parameters)
+{
+	using namespace TrickFeedbackTest;
+
+	// Guards the real Settings slot for the whole test: UTrickTrackerComponent::StepTracker calls
+	// UKiteSurfGameInstance::SaveSettingsToDisk, which always writes it, with no test slot to redirect
+	// to. The guard restores whatever was there (or removes the slot) when the test ends.
+	FDefaultSlotGuard SlotGuard;
+
+	FTrickRide Ride(30.0f);
+	if (!TestTrue(TEXT("Ride fixture created"), Ride.IsValid()))
+	{
+		return false;
+	}
+	UKiteSurfGameInstance* GameInstance = NewObject<UKiteSurfGameInstance>(GEngine);
+	Ride.World->SetGameInstance(GameInstance);
+
+	if (!TestTrue(TEXT("The first jump lands"), FlyStraightAirJump(Ride, 8.0f)))
+	{
+		Ride.World->SetGameInstance(nullptr);
+		return false;
+	}
+	TestEqual(TEXT("One jump recorded"), Ride.Tracker->GetJumpRecordCount(), 1);
+	TestTrue(TEXT("The first landing of this trick is new"), Ride.Tracker->WasLastLandingNewTrick());
+	TestEqual(TEXT("The game instance's book has it"), GameInstance->GetTrickBook().Num(), 1);
+
+	// A fresh read, never into SlotGuard.Bytes: that is the pre-test backup its destructor restores.
+	TArray<uint8> BytesAfterFirst;
+	const bool bSavedAfterFirst = FFileHelper::LoadFileToArray(BytesAfterFirst, *SlotGuard.Path);
+	TestTrue(TEXT("Unlocking a trick reaches the real Settings slot (SaveSettingsToDisk)"), bSavedAfterFirst);
+	const FDateTime StampAfterFirst = IFileManager::Get().GetTimeStamp(*SlotGuard.Path);
+	if (TestTrue(TEXT("The saved book has the trick"), bSavedAfterFirst))
+	{
+		const UKiteSurfSaveGame* FromDisk = UKiteSurfSaveGame::LoadOrCreateSettings();
+		TestTrue(TEXT("...read back from the default slot"), FromDisk && FromDisk->TrickBook.Num() == 1);
+	}
+
+	// A repeat of the same trick: not new, nothing extra saved (the slot's own timestamp is untouched).
+	const float SecondSendAt = Ride.Pawn->GetSimTimeSeconds() + 8.0f;
+	if (!TestTrue(TEXT("The second jump lands"), FlyStraightAirJump(Ride, SecondSendAt)))
+	{
+		Ride.World->SetGameInstance(nullptr);
+		return false;
+	}
+	TestEqual(TEXT("Two jumps recorded"), Ride.Tracker->GetJumpRecordCount(), 2);
+	TestFalse(TEXT("A repeat landing of the same trick is not new"), Ride.Tracker->WasLastLandingNewTrick());
+	TestEqual(TEXT("Still one trick in the book"), GameInstance->GetTrickBook().Num(), 1);
+	TestEqual(TEXT("No extra write to the Settings slot for a repeat"), IFileManager::Get().GetTimeStamp(*SlotGuard.Path), StampAfterFirst);
+
+	Ride.World->SetGameInstance(nullptr);
 	return true;
 }
 

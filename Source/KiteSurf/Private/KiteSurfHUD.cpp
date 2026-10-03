@@ -276,12 +276,14 @@ FString AKiteSurfHUD::FormatTrickTicker(const FJumpRecord& LiveJump)
 	return HasTrickElement(Signature) ? TrickNaming::Name(Signature) : FString();
 }
 
-void AKiteSurfHUD::ShowJumpCard(const FJumpRecord& Record)
+void AKiteSurfHUD::ShowJumpCard(const FJumpRecord& Record, bool bIsNewTrick)
 {
 	JumpCardText = FormatJumpCard(Record);
 	JumpCardGrade = Record.Grade;
 	JumpCardRemainingTime = 4.0f;
 	TickerText.Reset();
+	bJumpCardIsNewTrick = bIsNewTrick;
+	NewTrickRecordName = Record.TrickName;
 }
 
 void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float DeltaTime)
@@ -293,6 +295,7 @@ void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float D
 		JumpCardText.Reset();
 		TickerText.Reset();
 		JumpCardRemainingTime = 0.0f;
+		bJumpCardIsNewTrick = false;
 		return;
 	}
 
@@ -302,7 +305,7 @@ void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float D
 		FJumpRecord Record;
 		if (Tracker->GetLastJumpRecord(Record) && Record.ApexHeightCm >= MinHeightCm)
 		{
-			ShowJumpCard(Record);
+			ShowJumpCard(Record, Tracker->WasLastLandingNewTrick());
 			return;
 		}
 	}
@@ -322,6 +325,7 @@ void AKiteSurfHUD::UpdateJumpCard(const UTrickTrackerComponent* Tracker, float D
 		if (JumpCardRemainingTime <= 0.0f)
 		{
 			JumpCardText.Reset();
+			bJumpCardIsNewTrick = false;
 		}
 	}
 }
@@ -529,6 +533,17 @@ void AKiteSurfHUD::DrawHUD()
 			DrawText(CauseLine, GradeColor(JumpCardGrade), ScreenW * 0.5f - CauseW * 0.5f, LineY, nullptr, 1.1f);
 		}
 		BelowReadoutY += CardH + 20.0f;
+	}
+
+	// The jump card just shown is also the first landing of its trick (review batch D, problem 7).
+	const FString NewTrickText = GetNewTrickNoticeText();
+	if (!NewTrickText.IsEmpty())
+	{
+		float NoticeW = 0.0f;
+		float NoticeH = 0.0f;
+		GetTextSize(NewTrickText, NoticeW, NoticeH, nullptr, 1.2f);
+		DrawText(NewTrickText, FLinearColor(1.0f, 0.85f, 0.2f), ScreenW * 0.5f - NoticeW * 0.5f, BelowReadoutY - 6.0f, nullptr, 1.2f);
+		BelowReadoutY += NoticeH + 10.0f;
 	}
 
 	if (ShouldShowNewBest())

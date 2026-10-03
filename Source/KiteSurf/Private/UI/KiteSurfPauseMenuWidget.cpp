@@ -556,6 +556,13 @@ void UKiteSurfPauseMenuWidget::OnQuitClicked()
 {
 	if (UWorld* World = GetWorld())
 	{
+		// A trick landed for the first time this session saves itself (TrickTrackerComponent::
+		// StepTracker), but any other unsaved change (settings, a session or heat best) would
+		// otherwise be lost on quit (review batch D, problem 7).
+		if (UKiteSurfGameInstance* GI = Cast<UKiteSurfGameInstance>(World->GetGameInstance()))
+		{
+			GI->SaveSettingsToDisk();
+		}
 		UGameplayStatics::SetGamePaused(World, false);
 		UKismetSystemLibrary::QuitGame(World, GetOwningPlayer(), EQuitPreference::Quit, false);
 	}

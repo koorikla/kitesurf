@@ -9,6 +9,7 @@
 #include "Tricks/GrabState.h"
 #include "Tricks/BarState.h"
 #include "Tricks/RiderAttitudeComponent.h"
+#include "Tricks/LandingEvaluator.h"
 #include "KiteRiderPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -42,6 +43,8 @@ struct FRideAudioState
 	/** How hard the edge is driven: carving or a loaded crouch. 0..1. */
 	float EdgeEffort = 0.0f;
 	bool bAirborne = false;
+	/** The rider's total angular speed in the air, |omega| (rad/s): 0 unless a rotation is under way (URiderAttitudeComponent::IsSimulating). */
+	float SpinRadS = 0.0f;
 };
 
 /** Volume and pitch for each sound loop, and how much of the music's second layer to play. */
@@ -60,6 +63,9 @@ struct FRideAudioMix
 	float KitePitch = 1.0f;
 	/** A luffing canopy flapping. */
 	float FlutterVolume = 0.0f;
+	/** A rotation in the air: rises with the spin rate (review batch D, tricks.md 6.9). */
+	float RotationVolume = 0.0f;
+	float RotationPitch = 1.0f;
 	/** The music's in-the-air layer, 0..1 of the music volume. */
 	float AirMusic = 0.0f;
 };
@@ -598,6 +604,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Haptics")
 	float HapticYankTensionN = 2200.0f;
 
+	/** Adds a short camera punch (UpdateCamera eases it back out), clamped to CameraKickMaxDeg. */
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void KickCamera(float AmountDeg);
+
+	/** How much of the camera kick is left (deg), for tests. */
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	float GetCameraKickDeg() const { return CameraKickDeg; }
+
 	/**
 	 * Uses the controller's motion sensors as the bar: tilt it like a bar to steer, tip its top
 	 * towards you to pull the bar in. While it is on and a controller with sensors is found, the
@@ -721,6 +735,8 @@ public:
 	USoundBase* GetLandingSound() const { return LandingSound.Get(); }
 	USoundBase* GetCrashSound() const { return CrashSound.Get(); }
 	USoundBase* GetResetSound() const { return ResetSound.Get(); }
+	USoundBase* GetStompSound() const { return StompSound.Get(); }
+	UAudioComponent* GetRotationLoop() const { return RotationLoopComponent.Get(); }
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	float GetCurrentSteerInput() const { return CurrentSteerInput; }
@@ -892,6 +908,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
 	float CameraPivotLevelSeconds;
 
+	/**
+	 * A short, decaying kick added to the look pitch: a Stomped landing's camera punch (review batch
+	 * D). KickCamera adds to it, up to CameraKickMaxDeg; UpdateCamera eases it back to 0 at
+	 * CameraKickDecaySpeed, so it never becomes a new resting state. It never touches roll, which the
+	 * camera otherwise never uses, so the horizon stays level through the kick.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraKickMaxDeg = 6.0f;
+
+	/** How fast the camera kick eases back to 0 (1/s, FInterpTo). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float CameraKickDecaySpeed = 10.0f;
+
+	/** The camera kick a Stomped landing adds (deg). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0"))
+	float StompCameraKickDeg = 3.5f;
+
 	/** Lean away from the kite at full line load (deg). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rider")
 	float RiderMaxLeanDeg;
@@ -1000,6 +1033,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> FlutterLoopComponent;
 
+	/** A rotation in the air: pitch and volume follow the spin rate (review batch D, tricks.md 6.9). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<UAudioComponent> RotationLoopComponent;
+
 	/** The ride's music: two loops of the same length played in step. The second comes in while the rider is in the air. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<UAudioComponent> MusicBaseComponent;
@@ -1030,6 +1067,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
 	TObjectPtr<USoundBase> ResetSound;
+
+	/** A Stomped landing's extra one-shot, on top of the g-scaled splash (review batch D). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Audio")
+	TObjectPtr<USoundBase> StompSound;
 
 	// Enhanced Input
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -1120,6 +1161,15 @@ private:
 
 	UFUNCTION()
 	void HandleBoardLanding(float LandingG);
+
+	/**
+	 * The grade-specific layer on top of HandleBoardLanding's g-scaled splash and buzz (review batch
+	 * D): Stomped gets a heavy haptic, a short camera kick and its own one-shot; Sketchy a light
+	 * wobble. Clean adds nothing here, and Crash is HandleBoardCrash's job (bound to OnBoardCrash,
+	 * broadcast right after this on a crash landing), unchanged.
+	 */
+	UFUNCTION()
+	void HandleBoardLandingVerdict(const FLandingVerdict& Verdict);
 
 	void UpdateAudioModulation(float DeltaTime);
 
@@ -1365,6 +1415,8 @@ private:
 	float CameraCurrentBoomPitchDeg;
 	/** Where the boom pivot was last frame, to predict the boom's location lag (cm). */
 	FVector CameraLastPivotLocation;
+	/** The camera kick left to ease out (deg); see CameraKickMaxDeg. */
+	float CameraKickDeg = 0.0f;
 	bool bBoardVisualOverride;
 	float RiderFacingYawDeg;
 	float RiderStanceSide;

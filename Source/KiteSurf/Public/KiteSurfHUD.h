@@ -189,8 +189,12 @@ public:
 	 */
 	void UpdateJumpCard(const UTrickTrackerComponent* Tracker, float DeltaTime);
 
-	/** Shows a record's card now (and clears the ticker). UpdateJumpCard calls it; tests can too. */
-	void ShowJumpCard(const FJumpRecord& Record);
+	/**
+	 * Shows a record's card now (and clears the ticker). UpdateJumpCard calls it; tests can too.
+	 * bIsNewTrick is UTrickTrackerComponent::WasLastLandingNewTrick: the first landing of that
+	 * trick this save, shown as GetNewTrickNoticeText's "NEW TRICK: <name>" (review batch D).
+	 */
+	void ShowJumpCard(const FJumpRecord& Record, bool bIsNewTrick = false);
 
 	/**
 	 * Names a jump in progress for the ticker; empty while it has no element (loop, rotation, grab...).
@@ -209,6 +213,13 @@ public:
 	/** The live trick name while in the air; empty when there is nothing to name. */
 	UFUNCTION(BlueprintPure, Category = "UI|Jump")
 	FString GetTrickTickerText() const { return TickerText; }
+
+	/**
+	 * "NEW TRICK: <name>" while the jump card now showing is the first landing of its trick this
+	 * save; empty otherwise, including once the card itself has gone (review batch D, problem 7).
+	 */
+	UFUNCTION(BlueprintPure, Category = "UI|Jump")
+	FString GetNewTrickNoticeText() const { return (bJumpCardIsNewTrick && !JumpCardText.IsEmpty()) ? FString::Printf(TEXT("NEW TRICK: %s"), *NewTrickRecordName) : FString(); }
 
 	/** A session clock: seconds left rounded up, as "1:30", "0:09" or "0:00". */
 	static FString FormatSessionClock(float SecondsLeft);
@@ -362,6 +373,9 @@ protected:
 	ELandingGrade JumpCardGrade = ELandingGrade::Clean;
 	float JumpCardRemainingTime = 0.0f;
 	int32 SeenRecordCount = 0;
+	/** The jump card now showing is also the first landing of its trick (review batch D, problem 7). */
+	bool bJumpCardIsNewTrick = false;
+	FString NewTrickRecordName;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "UI|Jump")
 	float JumpRejectionRemainingTime = 0.0f;

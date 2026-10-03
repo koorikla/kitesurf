@@ -78,6 +78,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Tricks")
 	bool GetLastJumpRecord(FJumpRecord& OutRecord) const { return Session.GetLastRecord(OutRecord); }
 
+	/**
+	 * True while the most recently finished jump's trick was landed for the first time this save
+	 * (UKiteSurfGameInstance::RecordTrickLanding's return value, read the same step the jump
+	 * finishes). Unchanged by a step that finishes no jump; review batch D, problem 7.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Tricks")
+	bool WasLastLandingNewTrick() const { return bLastLandingNewTrick; }
+
 	/** A take-off was seen and the jump has not ended. */
 	UFUNCTION(BlueprintPure, Category = "Tricks")
 	bool IsJumpInProgress() const { return Session.GetRecorder().IsJumpOpen(); }
@@ -115,4 +123,5 @@ private:
 
 	FJumpSession Session;
 	FJumpRecord LiveJump;
+	bool bLastLandingNewTrick = false;
 };

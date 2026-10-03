@@ -292,6 +292,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	SprayLoopComponent = MakeLoop(TEXT("SprayLoopComponent"), TEXT("/Game/Audio/SW_SprayLoop"));
 	KiteLoopComponent = MakeLoop(TEXT("KiteLoopComponent"), TEXT("/Game/Audio/SW_KiteLoop"));
 	FlutterLoopComponent = MakeLoop(TEXT("FlutterLoopComponent"), TEXT("/Game/Audio/SW_FlutterLoop"));
+	RotationLoopComponent = MakeLoop(TEXT("RotationLoopComponent"), TEXT("/Game/Audio/SW_RotationWhoosh"));
 
 	// Music: plays through a pause, and is not part of the world's sound.
 	MusicBaseComponent = MakeLoop(TEXT("MusicBaseComponent"), TEXT("/Game/Audio/MU_RideBase"));
@@ -310,6 +311,7 @@ AKiteRiderPawn::AKiteRiderPawn()
 	LandingSound = FindSound(TEXT("/Game/Audio/SW_Landing"));
 	CrashSound = FindSound(TEXT("/Game/Audio/SW_Crash"));
 	ResetSound = FindSound(TEXT("/Game/Audio/SW_ResetCue"));
+	StompSound = FindSound(TEXT("/Game/Audio/SW_Stomp"));
 	KiteCrashSound = FindSound(TEXT("/Game/Audio/SW_KiteCrash"));
 	RelaunchSound = FindSound(TEXT("/Game/Audio/SW_Relaunch"));
 	AgroundSound = FindSound(TEXT("/Game/Audio/SW_Aground"));
@@ -391,6 +393,7 @@ void AKiteRiderPawn::BeginPlay()
 		BoardMovement->OnBoardCrash.AddDynamic(this, &AKiteRiderPawn::HandleBoardCrash);
 		BoardMovement->OnBoardReset.AddDynamic(this, &AKiteRiderPawn::HandleBoardReset);
 		BoardMovement->OnBoardLanding.AddDynamic(this, &AKiteRiderPawn::HandleBoardLanding);
+		BoardMovement->OnBoardLandingVerdict.AddDynamic(this, &AKiteRiderPawn::HandleBoardLandingVerdict);
 	}
 	if (Kite)
 	{
@@ -399,7 +402,7 @@ void AKiteRiderPawn::BeginPlay()
 	}
 
 	// The two music loops start on the same frame so that they stay in step.
-	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get(), SprayLoopComponent.Get(), KiteLoopComponent.Get(), FlutterLoopComponent.Get(), MusicBaseComponent.Get(), MusicAirComponent.Get() })
+	for (UAudioComponent* Loop : { WindLoopComponent.Get(), WaterLoopComponent.Get(), LineLoopComponent.Get(), SprayLoopComponent.Get(), KiteLoopComponent.Get(), FlutterLoopComponent.Get(), RotationLoopComponent.Get(), MusicBaseComponent.Get(), MusicAirComponent.Get() })
 	{
 		if (Loop && Loop->GetSound())
 		{
@@ -2986,11 +2989,15 @@ void AKiteRiderPawn::UpdateCamera(float DeltaTime)
 	CameraCurrentFOVDeg = FMath::Clamp(FMath::Max(CameraCurrentFOVDeg, FovFromTanHalf(RequiredTan)), 1.0f, HardMaxFovDeg);
 	CameraCurrentBoomPitchDeg = BoomPitchFor(CameraCurrentArmCm);
 
+	// The camera kick (a Stomped landing's punch): eased back to 0, never a new resting state, and
+	// added to the look pitch only, so the horizon stays level through it.
+	CameraKickDeg = FMath::FInterpTo(CameraKickDeg, 0.0f, DeltaTime, CameraKickDecaySpeed);
+
 	// The boom keeps the camera above the water; the camera itself tilts to look up at the kite.
 	// Neither ever rolls, so the horizon stays level.
 	CameraBoom->TargetArmLength = CameraCurrentArmCm;
 	CameraBoom->SetWorldRotation(FRotator(CameraCurrentBoomPitchDeg, CameraYawDeg, 0.0f));
-	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraCurrentBoomPitchDeg, 0.0f, 0.0f));
+	FollowCamera->SetRelativeRotation(FRotator(CameraLookPitchDeg - CameraCurrentBoomPitchDeg + CameraKickDeg, 0.0f, 0.0f));
 	FollowCamera->SetFieldOfView(CameraCurrentFOVDeg);
 }
 
@@ -3042,6 +3049,34 @@ void AKiteRiderPawn::HandleBoardLanding(float LandingG)
 	PlayHaptic(HapticIntensity, HapticDuration, true);
 }
 
+void AKiteRiderPawn::HandleBoardLandingVerdict(const FLandingVerdict& Verdict)
+{
+	// On top of HandleBoardLanding's g-scaled splash and buzz (every non-crash landing) and
+	// HandleBoardCrash's own thump (a crash, bound to OnBoardCrash, broadcast right after this):
+	// Stomped sells the result landing well, Sketchy warns something was off. Clean and Crash add
+	// nothing here (review batch D, docs/tricks/review.md section 4).
+	switch (Verdict.Grade)
+	{
+	case ELandingGrade::Stomped:
+		PlayHaptic(1.0f, 0.3f, true);
+		KickCamera(StompCameraKickDeg);
+		PlayOneShot(StompSound, 0.9f);
+		break;
+	case ELandingGrade::Sketchy:
+		PlayHaptic(0.3f, 0.18f, false);
+		break;
+	case ELandingGrade::Clean:
+	case ELandingGrade::Crash:
+	default:
+		break;
+	}
+}
+
+void AKiteRiderPawn::KickCamera(float AmountDeg)
+{
+	CameraKickDeg = FMath::Clamp(CameraKickDeg + AmountDeg, 0.0f, CameraKickMaxDeg);
+}
+
 FRideAudioMix AKiteRiderPawn::ComputeAudioMix(float ApparentWindKnots, float BoardSpeedKnots, bool bOnWater, float LineTensionN)
 {
 	FRideAudioState State;
@@ -3082,6 +3117,13 @@ FRideAudioMix AKiteRiderPawn::ComputeAudioMix(const FRideAudioState& State)
 
 	// A canopy with no load in it flaps, as long as there is wind to flap it.
 	Mix.FlutterVolume = 0.5f * FMath::Clamp(State.KiteLuff, 0.0f, 1.0f) * FMath::Clamp(State.ApparentWindKnots / 12.0f, 0.0f, 1.0f);
+
+	// A rotation in the air: a whoosh that rises with the spin rate (tricks.md 6.9), quiet for a
+	// gentle wobble, full for a fast spin. 7 rad/s (~400 deg/s) is a little past
+	// RiderAttitudeComponent's PreWindSpinRateDegS (360 deg/s), a fast spin's nominal rate.
+	const float SpinAmount = FMath::Clamp(State.SpinRadS / 7.0f, 0.0f, 1.0f);
+	Mix.RotationVolume = State.bAirborne ? 0.75f * SpinAmount : 0.0f;
+	Mix.RotationPitch = 0.8f + 0.6f * SpinAmount;
 
 	// The music lifts while the rider is in the air.
 	Mix.AirMusic = State.bAirborne ? 1.0f : 0.0f;
@@ -3125,6 +3167,11 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 			}
 		}
 	}
+	// The rider's rotation (T1.2): the attitude only simulates in the air, so this is 0 on the water.
+	if (RiderAttitude && RiderAttitude->IsSimulating())
+	{
+		State.SpinRadS = RiderAttitude->GetAngularVelocity().Size();
+	}
 	const FRideAudioMix Target = ComputeAudioMix(State);
 
 	// Eased so that a gust or the board leaving the water is heard as a swell, not a switch.
@@ -3139,6 +3186,9 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	AudioMix.KiteVolume = FMath::FInterpTo(AudioMix.KiteVolume, Target.KiteVolume, DeltaTime, Ease);
 	AudioMix.KitePitch = FMath::FInterpTo(AudioMix.KitePitch, Target.KitePitch, DeltaTime, Ease);
 	AudioMix.FlutterVolume = FMath::FInterpTo(AudioMix.FlutterVolume, Target.FlutterVolume, DeltaTime, Ease);
+	// A rotation starts and stops quickly, so it is eased faster than the wind and the kite.
+	AudioMix.RotationVolume = FMath::FInterpTo(AudioMix.RotationVolume, Target.RotationVolume, DeltaTime, 2.0f * Ease);
+	AudioMix.RotationPitch = FMath::FInterpTo(AudioMix.RotationPitch, Target.RotationPitch, DeltaTime, 2.0f * Ease);
 	// The air layer comes in quickly on take-off and lingers for a couple of seconds after landing.
 	AudioMix.AirMusic = FMath::FInterpConstantTo(AudioMix.AirMusic, Target.AirMusic, DeltaTime, Target.AirMusic > AudioMix.AirMusic ? 2.5f : 0.45f);
 
@@ -3157,6 +3207,7 @@ void AKiteRiderPawn::UpdateAudioModulation(float DeltaTime)
 	Apply(SprayLoopComponent, AudioMix.SprayVolume, 1.0f);
 	Apply(KiteLoopComponent, AudioMix.KiteVolume, AudioMix.KitePitch);
 	Apply(FlutterLoopComponent, AudioMix.FlutterVolume, 1.0f);
+	Apply(RotationLoopComponent, AudioMix.RotationVolume, AudioMix.RotationPitch);
 
 	// Music sits under the sound of the ride. Its pitch never moves, or the layers would drift apart.
 	if (MusicBaseComponent)

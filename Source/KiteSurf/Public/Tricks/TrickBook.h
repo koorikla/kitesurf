@@ -58,8 +58,9 @@ struct KITESURF_API FTrickBookEntry
 /**
  * The tricks the player has landed (T2.7, docs/tricks/T2.md). A trick unlocks on its first
  * landing; a crash never unlocks or improves anything. Entries are kept in the order they were
- * first landed. Pure: the game instance owns one and saves it with the settings. Not yet fed by
- * the game: the trick tracker calls UKiteSurfGameInstance::RecordTrickLanding once it is wired.
+ * first landed. Pure: the game instance owns one and saves it with the settings. Fed by the game:
+ * UTrickTrackerComponent::StepTracker calls UKiteSurfGameInstance::RecordTrickLanding on every
+ * finished jump, and saves at once when it unlocks a new trick (review batch D, problem 7).
  */
 USTRUCT(BlueprintType)
 struct KITESURF_API FTrickBook

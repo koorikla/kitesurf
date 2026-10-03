@@ -216,6 +216,22 @@ def kite_whoosh_loop(seconds=4.0):
     return normalise(make_loop(out, loop, fade), 0.8)
 
 
+def rotation_whoosh_loop(seconds=1.5):
+    """Air rushing past the rider's own head through a rotation: brighter and closer than the
+    kite's roar, with a fast flutter riding on top (review batch D, tricks.md 6.9: a rotation
+    whoosh whose pitch follows the spin rate). The game drives its volume and pitch; this loop
+    just has to read as air right at the ears, with no low rumble to anchor it in place."""
+    loop, fade = int(seconds * RATE), int(0.25 * RATE)
+    count = loop + fade
+    rush = bandpass(noise(count, 101), 500.0, 3400.0)
+    hiss = bandpass(noise(count, 102), 2200.0, 7200.0)
+    out = []
+    for index in range(count):
+        flutter = 0.75 + 0.25 * periodic(index, loop, 11, 0.0)
+        out.append(rush[index] * 0.9 * flutter + hiss[index] * 0.35)
+    return normalise(make_loop(out, loop, fade), 0.8)
+
+
 def flutter_loop(seconds=2.0):
     """A canopy with no load in it flapping: quick, uneven slaps of cloth."""
     loop = int(seconds * RATE)
@@ -265,6 +281,18 @@ def splash(seconds, seed, thump_hz, brightness_hz, attack=0.004, bubbles=0):
             # A bubble's note rises as it shrinks.
             out[start + offset] += level * math.sin(2.0 * math.pi * pitch * t * (1.0 + 6.0 * t)) * math.exp(-60.0 * t)
     return normalise(fade_out(out), 0.9)
+
+
+def stomp():
+    """A trick stomped clean: a bigger, brighter splash than an ordinary landing, with a quick
+    slap on top to sell the impact (review batch D: the feedback for a landed trick)."""
+    count = int(0.55 * RATE)
+    out = splash(0.55, 91, 85.0, 7000.0, attack=0.003, bubbles=6)
+    slap = bandpass(noise(count, 92), 1200.0, 6000.0)
+    for index in range(count):
+        t = index / RATE
+        out[index] += slap[index] * math.exp(-60.0 * t) * min(t / 0.004, 1.0) * 0.5
+    return normalise(fade_out(out), 0.95)
 
 
 def pop():
@@ -349,9 +377,11 @@ SOUNDS = {
     "SW_LineLoop": line_loop,
     "SW_KiteLoop": kite_whoosh_loop,
     "SW_FlutterLoop": flutter_loop,
+    "SW_RotationWhoosh": rotation_whoosh_loop,
     "SW_Pop": pop,
     "SW_Landing": lambda: splash(0.85, 42, 90.0, 5200.0),
     "SW_Crash": lambda: splash(1.8, 43, 60.0, 4200.0, attack=0.008, bubbles=14),
+    "SW_Stomp": stomp,
     "SW_KiteCrash": kite_crash,
     "SW_Relaunch": relaunch,
     "SW_Aground": aground,
@@ -363,7 +393,7 @@ SOUNDS = {
 }
 
 # Loops, which the game keeps playing and fades up and down, against one-shots.
-LOOPS = ("SW_WindLoop", "SW_WaterLoop", "SW_SprayLoop", "SW_LineLoop", "SW_KiteLoop", "SW_FlutterLoop")
+LOOPS = ("SW_WindLoop", "SW_WaterLoop", "SW_SprayLoop", "SW_LineLoop", "SW_KiteLoop", "SW_FlutterLoop", "SW_RotationWhoosh")
 
 # A sound quieter than this was not synthesised properly.
 MIN_RMS = 0.04

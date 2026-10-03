@@ -208,14 +208,12 @@ FString AKiteSurfHUD::FormatJumpCard(const FJumpRecord& Record)
 		Card += FString::Printf(TEXT("  (repeat %d%%)"), FMath::RoundToInt(100.0f * Record.RepeatFactor));
 	}
 	Card += FString::Printf(TEXT("\n%.1f g landing"), Record.LandingG);
-	if (Record.Grade == ELandingGrade::Sketchy || Record.Grade == ELandingGrade::Crash)
+	// T2.6: one line, the cause the board's verdict picked. The grade is the same verdict's, which names
+	// a cause only for a sketchy landing or a crash, so the two agree.
+	const FString Cause = LandingCauseLine(Record.LandingCause);
+	if (!Cause.IsEmpty())
 	{
-		// T2.6: one line, the cause the board's verdict picked.
-		const FString Cause = LandingCauseLine(Record.LandingCause);
-		if (!Cause.IsEmpty())
-		{
-			Card += TEXT("\n") + Cause;
-		}
+		Card += TEXT("\n") + Cause;
 	}
 	return Card;
 }

@@ -620,8 +620,8 @@ bool FKiteSurfTrickNamesMegaloopBackRollFromRecord::RunTest(const FString& Param
 	return true;
 }
 
-// T2.6: every cause has a short, distinct line; a bad landing's card carries the verdict's cause as a
-// third line, and a good one never does.
+// T2.6: every cause has a short, distinct line; a card carries the verdict's cause as a third line
+// whenever there is one, which is only for a sketchy landing or a crash.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfHUDJumpCardShowsCause, "KiteSurf.HUD.JumpCardShowsCause", TrickRecognizerTest::Flags)
 
 bool FKiteSurfHUDJumpCardShowsCause::RunTest(const FString& Parameters)
@@ -662,10 +662,12 @@ bool FKiteSurfHUDJumpCardShowsCause::RunTest(const FString& Parameters)
 	Sketchy.LandingCause = ELandingCause::KiteTooLow;
 	TestTrue(TEXT("A sketchy landing with a cause shows it"), AKiteSurfHUD::FormatJumpCard(Sketchy).EndsWith(TEXT("\nKite too low at touchdown")));
 
+	// The grade and the cause are both the board's verdict's (decision 6), which names a cause only
+	// for a sketchy landing or a crash: a clean card has no cause and two lines.
 	FJumpRecord Clean = Crash;
 	Clean.Grade = ELandingGrade::Clean;
-	Clean.LandingCause = ELandingCause::TooHard;
-	TestFalse(TEXT("A landing the card calls clean shows no cause line"), AKiteSurfHUD::FormatJumpCard(Clean).Contains(TEXT("too hard")));
+	Clean.LandingCause = ELandingCause::None;
+	TestEqual(TEXT("A clean landing keeps two lines"), AKiteSurfHUD::FormatJumpCard(Clean), FString(TEXT("Back roll  CLEAN  0 pts\n5.1 g landing")));
 
 	FJumpRecord NoCause = Crash;
 	NoCause.LandingCause = ELandingCause::None;

@@ -13,6 +13,7 @@
 #include "Tricks/JumpRecord.h"
 #include "Tricks/LandingEvaluator.h"
 #include "Tricks/RiderAttitudeComponent.h"
+#include "Tricks/TrickScoring.h"
 #include "Tricks/TrickTrackerComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -133,6 +134,8 @@ namespace TrickLiveRotationTest
 		float TickerInversionAt = -1.0f;
 		FString Card;
 		FString CardCause;
+		/** Why a pop was not taken, when it was not. */
+		FString Note;
 	};
 
 	FString Join(const TArray<FString>& Lines)
@@ -208,6 +211,56 @@ namespace TrickLiveRotationTest
 		R.RecordCount = Ride.Tracker->GetJumpRecordCount();
 		Ride.Tracker->GetLastJumpRecord(R.Record);
 		Pawn->SetLoadHeld(false);
+		return R;
+	}
+
+	/**
+	 * CameraFramingTests' FramesBigJump send at 20 kn (9 m2 kite, 81 kg): 10 s of riding, the kite sent
+	 * up past the zenith with the weight back for 1.2 s, then a pop with the bar out and centred. A
+	 * jump of about 3 m that comes down softly with the kite high.
+	 */
+	FLiveJump RunSoftSend()
+	{
+		FLiveJump R;
+		FLiveRide Ride(20.0f);
+		if (!Ride.IsValid())
+		{
+			return R;
+		}
+		R.bValid = true;
+		AKiteRiderPawn* Pawn = Ride.Pawn;
+		Ride.Board->MassKg = 81.0f;
+		Ride.Kite->SetKiteSize(9.0f);
+		Ride.SimulateUntil(10.0f);
+		Pawn->SteerKite(-1.0f);
+		Ride.Board->SetWeightShift(-1.0f);
+		Ride.SimulateUntil(11.2f);
+		Pawn->SheetKite(1.0f);
+		const EJumpRejectReason Reject = Ride.Board->Jump();
+		R.Note = UEnum::GetValueAsString(Reject);
+		Ride.Board->SetWeightShift(0.0f);
+		Pawn->SteerKite(0.0f);
+		bool bWasAir = false;
+		while (Reject == EJumpRejectReason::None && !Ride.HasReached(23.2f))
+		{
+			Ride.Frame();
+			if (Ride.IsAirborne())
+			{
+				R.bTookOff = true;
+				bWasAir = true;
+				R.AirSeconds += FrameSeconds;
+			}
+			else if (bWasAir && Ride.Board->GetJumpCount() > 0)
+			{
+				R.bLanded = true;
+				R.Verdict = Ride.Board->GetLastLandingVerdict();
+				R.Card = Ride.HUD->GetJumpCardText();
+				R.CardCause = Ride.HUD->GetJumpCardCauseText();
+				break;
+			}
+		}
+		R.RecordCount = Ride.Tracker->GetJumpRecordCount();
+		Ride.Tracker->GetLastJumpRecord(R.Record);
 		return R;
 	}
 
@@ -343,6 +396,64 @@ bool FKiteSurfTrickUnderRotatedCrashShowsCause::RunTest(const FString& Parameter
 	}
 	Ride.HUD->ShowJumpCard(Record);
 	TestEqual(TEXT("The card shows one cause line"), Ride.HUD->GetJumpCardCauseText(), FString(TEXT("Under-rotated: commit the roll earlier")));
+	return true;
+}
+
+// Decision 6: the record's grade, and so the card's, is the board's landing verdict's. A soft 3 m
+// send at 20 kn (kite high) is graded stomped or clean by both; the timed 30 kn jump lands hot
+// (sinking over 6 m/s), which the verdict calls sketchy, too hard, and so do the record and the card
+// now (the record-only GradeLanding, which does not read the sink, called it clean).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FKiteSurfTrickCardGradeMatchesVerdict, "KiteSurf.Trick.CardGradeMatchesVerdict", TrickLiveRotationTest::Flags)
+
+bool FKiteSurfTrickCardGradeMatchesVerdict::RunTest(const FString& Parameters)
+{
+	using namespace TrickLiveRotationTest;
+	auto Check = [this](const TCHAR* What, const FLiveJump& R)
+	{
+		AddInfo(FString::Printf(TEXT("%s: %s, execution %.2f%s"), What, *Describe(R), R.Record.Score.Execution,
+			R.Note.IsEmpty() ? TEXT("") : *(TEXT(", pop: ") + R.Note)));
+		TestTrue(FString::Printf(TEXT("%s: ride fixture created"), What), R.bValid);
+		if (!TestTrue(FString::Printf(TEXT("%s: took off and landed"), What), R.bTookOff && R.bLanded))
+		{
+			return false;
+		}
+		TestEqual(FString::Printf(TEXT("%s: one record"), What), R.RecordCount, 1);
+		TestEqual(FString::Printf(TEXT("%s: landed, not crashed"), What), R.Record.Outcome, EJumpOutcome::Landed);
+		TestEqual(FString::Printf(TEXT("%s: the record's grade is the verdict's"), What), R.Record.Grade, R.Verdict.Grade);
+		TestEqual(FString::Printf(TEXT("%s: and so is its cause"), What), R.Record.LandingCause, R.Verdict.Cause);
+		TestNearlyEqual(FString::Printf(TEXT("%s: the execution follows the grade"), What), R.Record.Score.Execution,
+			TrickScoring::ExecutionFactor(R.Verdict.Grade), 1e-6f);
+		const FString Card = AKiteSurfHUD::FormatJumpCard(R.Record);
+		TestTrue(FString::Printf(TEXT("%s: the card shows the verdict's grade ('%s')"), What, *Card),
+			Card.Contains(FString::Printf(TEXT("  %s  "), *AKiteSurfHUD::GradeText(R.Verdict.Grade))));
+		const FString CauseLine = AKiteSurfHUD::LandingCauseLine(R.Verdict.Cause);
+		const FString ExpectedEnd = CauseLine.IsEmpty() ? FString(TEXT(" g landing")) : TEXT("\n") + CauseLine;
+		TestTrue(FString::Printf(TEXT("%s: the card ends with the verdict's cause line, if any"), What), Card.EndsWith(ExpectedEnd));
+		if (!R.Card.IsEmpty())
+		{
+			TestEqual(FString::Printf(TEXT("%s: the HUD shows the record's card"), What), R.Card, Card);
+			TestEqual(FString::Printf(TEXT("%s: with the verdict's cause line"), What), R.CardCause, CauseLine);
+		}
+		return true;
+	};
+
+	const FLiveJump Soft = RunSoftSend();
+	if (Check(TEXT("Soft send at 20 kn"), Soft))
+	{
+		TestTrue(FString::Printf(TEXT("It lands stomped or clean (%s)"), *UEnum::GetValueAsString(Soft.Verdict.Grade)),
+			Soft.Verdict.Grade == ELandingGrade::Stomped || Soft.Verdict.Grade == ELandingGrade::Clean);
+		TestEqual(TEXT("with no cause"), Soft.Verdict.Cause, ELandingCause::None);
+		TestTrue(FString::Printf(TEXT("The HUD card is up and has two lines ('%s')"), *Soft.Card), !Soft.Card.IsEmpty() && Soft.CardCause.IsEmpty());
+	}
+
+	const FLiveJump Timed = RunLiveJump(FVector2D::ZeroVector);
+	if (Check(TEXT("Timed jump at 30 kn"), Timed))
+	{
+		TestEqual(TEXT("The timed jump lands hot: sketchy"), Timed.Verdict.Grade, ELandingGrade::Sketchy);
+		TestTrue(FString::Printf(TEXT("with a cause (%s)"), *UEnum::GetValueAsString(Timed.Verdict.Cause)), Timed.Verdict.Cause != ELandingCause::None);
+		TestTrue(FString::Printf(TEXT("The HUD card is up and says SKETCHY ('%s')"), *Timed.Card), Timed.Card.Contains(TEXT("  SKETCHY  ")));
+		TestFalse(TEXT("and has the cause line"), Timed.CardCause.IsEmpty());
+	}
 	return true;
 }
 

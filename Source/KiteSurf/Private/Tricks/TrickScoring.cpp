@@ -28,6 +28,16 @@ ELandingGrade TrickScoring::GradeLanding(float YawDeg, float LandingG, float Kit
 	return Grade == ELandingGrade::Crash ? ELandingGrade::Sketchy : Grade;
 }
 
+ELandingGrade TrickScoring::GradeFromVerdict(ELandingGrade VerdictGrade, bool bCrashed)
+{
+	if (bCrashed)
+	{
+		return ELandingGrade::Crash;
+	}
+	// The board crashes on every Crash verdict, so a landing it rode away from is at worst sketchy.
+	return VerdictGrade == ELandingGrade::Crash ? ELandingGrade::Sketchy : VerdictGrade;
+}
+
 float TrickScoring::ExecutionFactor(ELandingGrade Grade, const FTrickScoringSettings& Settings)
 {
 	switch (Grade)

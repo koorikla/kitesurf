@@ -84,6 +84,17 @@ struct FJumpRecorderInput
 	/** Why the last landing was graded down: UBoardMovementComponent::GetLastLandingVerdict().Cause. */
 	ELandingCause LastLandingCause = ELandingCause::None;
 
+	/**
+	 * The board graded the last landing (LandingEvaluator::Evaluate), so LastLandingGrade is its verdict.
+	 * The tracker always sets it: the board sets the verdict on the same landing that counts the jump.
+	 * False in pure tests that build snapshots without a board; the record is then graded by
+	 * TrickScoring::GradeLanding.
+	 */
+	bool bHasLandingVerdict = false;
+
+	/** The last landing's grade: UBoardMovementComponent::GetLastLandingVerdict().Grade. Used only with bHasLandingVerdict. */
+	ELandingGrade LastLandingGrade = ELandingGrade::Clean;
+
 	/** The board's nose (world, unit): UBoardMovementComponent::GetBoardWorldQuat().GetAxisX(). Stands in for the travel direction at a take-off with no speed along the water. */
 	FVector BoardForward = FVector::ForwardVector;
 
@@ -175,6 +186,10 @@ struct FJumpRecorderSettings
  * A finalised record also gets the landing verdict's cause (LastLandingCause) and its trick fields:
  * the signature from TrickRecognition::SignatureFromJump (which reads the rotation fields),
  * TrickNaming::Name and FamilyKey, the grade, and the score from TrickScoring::ScoreJump.
+ * The grade is the board's verdict (docs/tricks/README.md decision 6) through
+ * TrickScoring::GradeFromVerdict when the snapshot has one (bHasLandingVerdict), otherwise the
+ * signature's TrickScoring::GradeLanding over the record; a crash outcome is Crash either way. The
+ * score's execution factor follows that grade.
  * RepeatFactor is left at 1; FJumpSession applies it.
  */
 class KITESURF_API FJumpRecorder

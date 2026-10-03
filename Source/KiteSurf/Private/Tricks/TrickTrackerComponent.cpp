@@ -66,7 +66,12 @@ void UTrickTrackerComponent::StepTracker(float StepSeconds)
 	In.LastLandingG = Board->GetLastLandingG();
 	In.LastLandingAngleDeg = Board->GetLastLandingAngleDeg();
 	In.bLastLandingClean = Board->WasLastLandingClean();
-	In.LastLandingCause = Board->GetLastLandingVerdict().Cause;
+	// The board's landing verdict owns the record's grade (decision 6). It is set on the landing that
+	// counts the jump, which is the only step the recorder reads it on.
+	const FLandingVerdict Verdict = Board->GetLastLandingVerdict();
+	In.LastLandingCause = Verdict.Cause;
+	In.bHasLandingVerdict = true;
+	In.LastLandingGrade = Verdict.Grade;
 	In.BoardForward = Board->GetBoardWorldQuat().GetAxisX();
 	// The rider's rotation. The attitude stepped before the board, so on the touchdown step it still
 	// holds the body as it met the water.

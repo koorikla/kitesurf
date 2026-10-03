@@ -164,6 +164,10 @@ struct FJumpRecord
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	FString FamilyKey;
 
+	/**
+	 * The board's landing verdict's grade (TrickScoring::GradeFromVerdict; docs/tricks/README.md
+	 * decision 6), Crash for a crashed jump. Records built without a board use TrickScoring::GradeLanding.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Tricks")
 	ELandingGrade Grade = ELandingGrade::Clean;
 

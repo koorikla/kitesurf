@@ -30,7 +30,38 @@
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 
+#if PLATFORM_LINUX
+// The SDL instance the engine already runs (ApplicationCore exports it), as KiteMotionBar.cpp uses.
+#include <SDL3/SDL.h>
+#endif
+
 DEFINE_LOG_CATEGORY(LogKiteSurf);
+
+namespace
+{
+	/**
+	 * Keeps the controller working when the game window loses keyboard focus. SDL, which the
+	 * engine reads gamepads through on Linux, drops every gamepad event while none of its windows
+	 * has keyboard focus unless SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS is on. On a desktop with
+	 * focus-follows-mouse (Hyprland's default, follow_mouse = 1) a nudged mouse moves the focus to
+	 * the next window and the pad goes dead until the player clicks back into the game. The engine
+	 * itself does not gate gamepad events on focus, so this hint is all it takes. An environment
+	 * variable SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=0 still wins, for anyone who wants it off.
+	 */
+	void AllowGamepadInputWithoutFocus()
+	{
+#if PLATFORM_LINUX
+		if (SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"))
+		{
+			UE_LOG(LogKiteSurf, Log, TEXT("Gamepad input keeps working while the window is not focused."));
+		}
+		else
+		{
+			UE_LOG(LogKiteSurf, Log, TEXT("Gamepad background input left as the environment sets it (SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS)."));
+		}
+#endif
+	}
+}
 
 class FKiteSurfGameModule : public FDefaultGameModuleImpl
 {
@@ -38,6 +69,8 @@ public:
 	virtual void StartupModule() override
 	{
 		FDefaultGameModuleImpl::StartupModule();
+
+		AllowGamepadInputWithoutFocus();
 
 		IConsoleManager::Get().RegisterConsoleCommand(
 			TEXT("kitesurf.SmokeFrames"),

@@ -149,6 +149,14 @@ void AKiteSurfGameMode::RestartPlayerAtTransform(AController* NewPlayer, const F
 void AKiteSurfGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+	// The ride takes the mouse, as resuming from the pause menu does: the main menu leaves it free
+	// (game and UI, not locked) and that would otherwise carry over into the ride, so the hidden
+	// cursor could drift out of the window and, with focus-follows-mouse, take the focus with it.
+	if (NewPlayer && NewPlayer->IsLocalPlayerController())
+	{
+		NewPlayer->bShowMouseCursor = false;
+		NewPlayer->SetInputMode(FInputModeGameOnly());
+	}
 	// Here rather than in RestartPlayer: RestartPlayer runs InitializeRide more than once (through
 	// RestartPlayerAtPlayerStart), and the lesson's set-up has to come after the last of them.
 	const UGameInstance* GameInstance = GetGameInstance();
